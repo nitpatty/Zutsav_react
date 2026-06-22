@@ -32,8 +32,11 @@ const loggedSendEmail = async ({ to, subject, html, event = 'manual', templateNa
 
 /**
  * Send a WhatsApp template message and record the result.
+ * languageCode should be passed from the DB template record.
+ * Returns null without throwing when WhatsApp is not configured.
+ * Throws (and marks log as failed) on Meta API errors.
  */
-const loggedSendWhatsApp = async ({ to, templateName, components = [], event = 'manual', recipientId = null, recipientName = '' }) => {
+const loggedSendWhatsApp = async ({ to, templateName, languageCode = 'en', components = [], event = 'manual', recipientId = null, recipientName = '' }) => {
   const log = await NotificationLog.create({
     type: 'whatsapp',
     event,
@@ -45,12 +48,21 @@ const loggedSendWhatsApp = async ({ to, templateName, components = [], event = '
   });
 
   try {
-    const res  = await sendWhatsApp(to, templateName, components);
-    log.status   = 'delivered';
-    log.response = res || {};
+    const res = await sendWhatsApp(to, templateName, components, languageCode);
+
+    if (res === null) {
+      // sendWhatsApp returns null only when WhatsApp is not configured — treat as skipped
+      log.status = 'failed';
+      log.error  = 'WhatsApp not configured (WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID missing)';
+    } else {
+      log.status   = 'delivered';
+      log.response = res;
+    }
   } catch (err) {
+    // Meta API error — e.g. template not found, invalid phone, expired token
     log.status = 'failed';
     log.error  = err.message;
+    console.error('[WhatsApp] send failed:', err.message);
   }
 
   await log.save();

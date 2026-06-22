@@ -1,18 +1,21 @@
 const Kit     = require('../models/Kit');
 const Product = require('../models/Product');
+const Pooja   = require('../models/Pooja');
 
 const makeSlug = (name) => name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-/**
- * Calculate the total cost of kit items from product prices.
- * Returns { totalCost, computedSellingPrice } based on discountType + discountValue.
- */
 const computeKitPricing = async (items, discountType, discountValue) => {
   let totalCost = 0;
   for (const item of items) {
-    const product = await Product.findById(item.productId).select('price salePrice');
+    const product = await Product.findById(item.productId).select('price salePrice variants');
     if (product) {
-      const unitPrice = product.salePrice || product.price;
+      let unitPrice;
+      if (item.variantId && product.variants?.length > 0) {
+        const variant = product.variants.find((v) => v.variantId === item.variantId);
+        unitPrice = variant ? variant.price : (product.salePrice || product.price);
+      } else {
+        unitPrice = product.salePrice || product.price;
+      }
       totalCost += unitPrice * item.quantity;
     }
   }
@@ -37,46 +40,67 @@ exports.getKits = async (req, res, next) => {
 
     const kits = await Kit.find(query)
       .populate({ path: 'items.productId', select: 'name price salePrice images stock isActive' })
+      .populate('linkedPoojas', 'name slug')
       .sort({ isFeatured: -1, createdAt: -1 })
       .limit(+limit)
       .skip((+page - 1) * +limit);
 
     const total = await Kit.countDocuments(query);
     res.json({ success: true, kits, total, page: +page });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 };
 
 // GET /api/marketplace/kits/:id
 exports.getKit = async (req, res, next) => {
   try {
     const kit = await Kit.findOne({ _id: req.params.id, isActive: true })
-      .populate({ path: 'items.productId', select: 'name price salePrice images stock isActive' });
+      .populate({ path: 'items.productId', select: 'name price salePrice images stock isActive' })
+      .populate('linkedPoojas', 'name slug image');
     if (!kit) return res.status(404).json({ success: false, message: 'Kit not found' });
     res.json({ success: true, kit });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
+};
+
+// GET /api/marketplace/kits/by-pooja/:poojaId  — public
+exports.getKitsByPooja = async (req, res, next) => {
+  try {
+    const kits = await Kit.find({ isActive: true, linkedPoojas: req.params.poojaId })
+      .populate({ path: 'items.productId', select: 'name price salePrice images stock isActive' })
+      .sort({ isFeatured: -1, discountPrice: 1 });
+    res.json({ success: true, kits });
+  } catch (err) { next(err); }
 };
 
 // POST /api/marketplace/kits  [admin]
 exports.createKit = async (req, res, next) => {
   try {
-    const { name, description, discountType = 'percentage', discountValue = 0, discountPrice, items: rawItems, isFeatured } = req.body;
-    const items = typeof rawItems === 'string' ? JSON.parse(rawItems) : rawItems;
+    const {
+      name, description,
+      discountType = 'percentage', discountValue = 0, discountPrice,
+      items: rawItems, isFeatured,
+      linkedPoojas: rawLinkedPoojas,
+    } = req.body;
+    const items        = typeof rawItems        === 'string' ? JSON.parse(rawItems)        : rawItems;
+    const linkedPoojas = rawLinkedPoojas
+      ? (typeof rawLinkedPoojas === 'string' ? JSON.parse(rawLinkedPoojas) : rawLinkedPoojas)
+      : [];
 
     for (const item of items) {
       const product = await Product.findById(item.productId);
-      if (!product || !product.isActive)
+      if (!product || !product.isActive || product.isDeleted)
         return res.status(400).json({ success: false, message: `Product ${item.productId} not found or inactive` });
-      if (product.stock < 1)
-        return res.status(400).json({ success: false, message: `Product "${product.name}" is out of stock` });
+
+      if (item.variantId && product.variants?.length > 0) {
+        const variant = product.variants.find((v) => v.variantId === item.variantId);
+        if (!variant || variant.stock < 1)
+          return res.status(400).json({ success: false, message: `Variant "${item.variantLabel || item.variantId}" of "${product.name}" is out of stock` });
+      } else {
+        if (product.stock < 1)
+          return res.status(400).json({ success: false, message: `Product "${product.name}" is out of stock` });
+      }
     }
 
     const { totalCost, computedSellingPrice } = await computeKitPricing(items, discountType, +discountValue);
-
-    // Admin may manually override selling price
     const sellingPrice = discountPrice !== undefined && discountPrice !== '' ? +discountPrice : computedSellingPrice;
 
     const baseSlug = makeSlug(name);
@@ -94,12 +118,11 @@ exports.createKit = async (req, res, next) => {
       discountValue: +discountValue,
       discountPrice: sellingPrice,
       image,
-      isFeatured: isFeatured === 'true' || isFeatured === true,
+      isFeatured:    isFeatured === 'true' || isFeatured === true,
+      linkedPoojas,
     });
     res.status(201).json({ success: true, kit });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 };
 
 // PATCH /api/marketplace/kits/:id  [admin]
@@ -107,13 +130,18 @@ exports.updateKit = async (req, res, next) => {
   try {
     const updates = { ...req.body };
     if (req.file) updates.image = `uploads/products/${req.file.filename}`;
-    if (typeof updates.items === 'string') updates.items = JSON.parse(updates.items);
+    if (typeof updates.items        === 'string') updates.items        = JSON.parse(updates.items);
+    if (typeof updates.linkedPoojas === 'string') updates.linkedPoojas = JSON.parse(updates.linkedPoojas);
 
     if (updates.items) {
       for (const item of updates.items) {
         const product = await Product.findById(item.productId);
-        if (!product || !product.isActive)
+        if (!product || !product.isActive || product.isDeleted)
           return res.status(400).json({ success: false, message: `Product ${item.productId} not found or inactive` });
+        if (item.variantId && product.variants?.length > 0) {
+          const variant = product.variants.find((v) => v.variantId === item.variantId);
+          if (!variant) return res.status(400).json({ success: false, message: `Variant not found for "${product.name}"` });
+        }
       }
       const { totalCost, computedSellingPrice } = await computeKitPricing(
         updates.items,
@@ -132,9 +160,7 @@ exports.updateKit = async (req, res, next) => {
     const kit = await Kit.findByIdAndUpdate(req.params.id, updates, { new: true });
     if (!kit) return res.status(404).json({ success: false, message: 'Kit not found' });
     res.json({ success: true, kit });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 };
 
 // DELETE /api/marketplace/kits/:id  [admin]
@@ -142,21 +168,16 @@ exports.deleteKit = async (req, res, next) => {
   try {
     await Kit.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ success: true, message: 'Kit removed' });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 };
 
-// GET /api/marketplace/kits/compute-price  [admin helper]
+// POST /api/marketplace/kits/compute-price  [admin helper]
 exports.computePrice = async (req, res, next) => {
   try {
     const { items: rawItems, discountType = 'percentage', discountValue = 0 } = req.body;
     const items = typeof rawItems === 'string' ? JSON.parse(rawItems) : rawItems;
     if (!items?.length) return res.json({ success: true, totalCost: 0, computedSellingPrice: 0 });
-
     const result = await computeKitPricing(items, discountType, +discountValue);
     res.json({ success: true, ...result });
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 };

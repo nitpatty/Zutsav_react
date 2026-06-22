@@ -7,12 +7,13 @@ import {
   ChevronLeft, ChevronRight, Search, Star, Users, BarChart3,
   BookOpen, Menu, X, Shield, CreditCard, MessageSquare,
   Package, MapPin, Tv, Gift, Mail, ClipboardList,
-  GraduationCap, Briefcase,
+  GraduationCap, Briefcase, IndianRupee,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { ThemeSwatchRow } from '../ui/ThemeSwitcher';
 import { useNotifications } from '../../context/NotificationContext';
+import { useSettings } from '../../context/SettingsContext';
 
 /* ── Nav item configs per role ─────────────────────────── */
 const USER_NAV = [
@@ -30,7 +31,7 @@ const USER_NAV = [
 
 const PANDIT_NAV = [
   { icon: LayoutDashboard, label: 'Dashboard',        path: '/pandit/dashboard' },
-  { icon: User,            label: 'My Profile',        path: '/pandit/dashboard?tab=profile' },
+  { icon: User,            label: 'My Profile',        path: '/pandit/profile' },
   { icon: BookOpen,        label: 'My Bookings',       path: '/pandit/dashboard?tab=bookings' },
   { icon: Calendar,        label: 'Availability',      path: '/pandit/dashboard?tab=availability' },
   { icon: CalendarDays,    label: 'Festival Calendar', path: '/pandit/dashboard?tab=festivals' },
@@ -53,6 +54,7 @@ const ADMIN_NAV = [
   { icon: Briefcase,      label: 'Specializations',      path: '/admin?tab=specialization-masters' },
   { icon: MapPin,         label: 'Temple Directory',     path: '/admin?tab=temples' },
   { icon: Tv,              label: 'Livestreams',       path: '/admin?tab=livestreams' },
+  { icon: IndianRupee,     label: 'Payout Management', path: '/admin?tab=payouts' },
   { icon: Gift,            label: 'Referral Stats',    path: '/admin?tab=referrals' },
   { icon: Mail,            label: 'Communication',     path: '/admin?tab=comm-center' },
   { icon: Settings,        label: 'System Settings',   path: '/admin?tab=system-settings' },
@@ -158,6 +160,7 @@ function NavItem({ item, collapsed, isActive, onClick }) {
 export default function Sidebar({ mobileOpen, onMobileClose }) {
   const { user, logout } = useAuth();
   const { currentTheme } = useTheme();
+  const { logoUrl, platformName } = useSettings();
   const location  = useLocation();
   const navigate  = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -194,28 +197,41 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
       >
         <Link to="/" className={`flex items-center min-w-0 flex-1 ${collapsed ? 'justify-center' : ''}`}>
           <AnimatePresence>
-            {collapsed ? (
-              <motion.img
-                key="collapsed-logo"
-                src="https://zutsav.com/storage/settings/admin_logo_1778665731.png"
-                alt="Zutsav"
+            {logoUrl ? (
+              collapsed ? (
+                <motion.img
+                  key="collapsed-logo"
+                  src={logoUrl}
+                  alt={platformName}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="h-7 w-7 object-contain flex-shrink-0"
+                />
+              ) : (
+                <motion.img
+                  key="expanded-logo"
+                  src={logoUrl}
+                  alt={platformName}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -8 }}
+                  transition={{ duration: 0.15 }}
+                  className="h-8 w-auto object-contain"
+                />
+              )
+            ) : (
+              <motion.span
+                key="text-logo"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15 }}
-                className="h-7 w-7 object-contain flex-shrink-0"
-              />
-            ) : (
-              <motion.img
-                key="expanded-logo"
-                src="https://zutsav.com/storage/settings/admin_logo_1778665731.png"
-                alt="Zutsav"
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -8 }}
-                transition={{ duration: 0.15 }}
-                className="h-8 w-auto object-contain"
-              />
+                className={`font-serif font-bold text-[var(--t-primary)] ${collapsed ? 'text-xl' : 'text-lg'}`}
+              >
+                {collapsed ? platformName?.[0] || 'Z' : (platformName || 'Zutsav')}
+              </motion.span>
             )}
           </AnimatePresence>
         </Link>

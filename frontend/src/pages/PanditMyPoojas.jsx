@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Plus, Edit3, Trash2, Eye, CheckCircle, Clock, XCircle, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
+import { parseDurationForForm } from '../utils/durationFormatter';
 
 const STATUS_BADGE = {
   pending:  'bg-yellow-100 text-yellow-700',
@@ -19,7 +20,7 @@ const STATUS_ICON = {
 function PoojaForm({ categories, initial, onSave, onCancel, loading }) {
   const [form, setForm] = useState(initial || {
     name: '', categoryId: '', description: '', shortDesc: '',
-    price: '', duration: '', requirements: '', benefits: '', languages: '',
+    price: '', durationValue: '', durationUnit: 'hours', requirements: '', benefits: '', languages: '',
   });
   const [image, setImage] = useState(null);
 
@@ -70,7 +71,19 @@ function PoojaForm({ categories, initial, onSave, onCancel, loading }) {
         </div>
         <div>
           <label className="label">Duration</label>
-          <input className="input" placeholder="e.g. 2 hours" value={form.duration} onChange={set('duration')} />
+          <div className="flex gap-2">
+            <input
+              type="number" min="1" max="30"
+              className="input w-24"
+              placeholder="e.g. 2"
+              value={form.durationValue}
+              onChange={set('durationValue')}
+            />
+            <select className="input flex-1" value={form.durationUnit} onChange={set('durationUnit')}>
+              <option value="hours">Hours</option>
+              <option value="days">Days</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -172,12 +185,21 @@ export default function PanditMyPoojas() {
   };
 
   const startEdit = (pooja) => {
+    // Resolve structured duration; fall back to parsing legacy string
+    let durationValue = pooja.durationValue ? String(pooja.durationValue) : '';
+    let durationUnit  = pooja.durationUnit  || 'hours';
+    if (!durationValue && pooja.duration) {
+      const parsed = parseDurationForForm(pooja.duration);
+      if (parsed) { durationValue = parsed.durationValue; durationUnit = parsed.durationUnit; }
+    }
     setEditing({
       ...pooja,
-      categoryId:   pooja.categoryId?._id || pooja.categoryId || '',
-      requirements: pooja.requirements?.join(', ') || '',
-      benefits:     pooja.benefits?.join(', ') || '',
-      languages:    pooja.languages?.join(', ') || '',
+      categoryId:    pooja.categoryId?._id || pooja.categoryId || '',
+      requirements:  pooja.requirements?.join(', ') || '',
+      benefits:      pooja.benefits?.join(', ') || '',
+      languages:     pooja.languages?.join(', ') || '',
+      durationValue,
+      durationUnit,
     });
     setView('edit');
   };

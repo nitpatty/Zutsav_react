@@ -5,6 +5,7 @@ import {
   ChevronDown, MapPin, ShoppingBag, Search,
 } from 'lucide-react';
 import API from '../api/axios';
+import { formatDuration } from '../utils/durationFormatter';
 
 // ─── Static data ──────────────────────────────────────────────────────────────
 
@@ -128,12 +129,13 @@ function FaqItem({ faq, index, open, toggle }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function Home() {
-  const [categories,     setCategories]     = useState([]);
-  const [featuredPoojas, setFeaturedPoojas] = useState([]);
-  const [festivals,      setFestivals]      = useState([]);
-  const [faqOpen,        setFaqOpen]        = useState(null);
-  const [catLoading,     setCatLoading]     = useState(true);
-  const [poojaLoading,   setPoojaLoading]   = useState(true);
+  const [categories,      setCategories]      = useState([]);
+  const [featuredPoojas,  setFeaturedPoojas]  = useState([]);
+  const [festivals,       setFestivals]       = useState([]);
+  const [faqOpen,         setFaqOpen]         = useState(null);
+  const [catLoading,      setCatLoading]      = useState(true);
+  const [poojaLoading,    setPoojaLoading]    = useState(true);
+  const [festivalLoading, setFestivalLoading] = useState(true);
   const [heroSearch,     setHeroSearch]     = useState('');
 
   const navigate = useNavigate();
@@ -150,7 +152,10 @@ export default function Home() {
   useEffect(() => {
     API.get('/poojas/categories').then(({ data }) => setCategories(data.categories)).catch(() => {}).finally(() => setCatLoading(false));
     API.get('/poojas?featured=true&limit=6').then(({ data }) => setFeaturedPoojas(data.poojas)).catch(() => {}).finally(() => setPoojaLoading(false));
-    API.get('/festivals').then(({ data }) => setFestivals((data.festivals || []).slice(0, 4))).catch(() => {});
+    API.get('/festivals?upcoming=true&limit=5')
+      .then(({ data }) => setFestivals((data.festivals || []).filter((f) => f.name && f.name.trim())))
+      .catch(() => setFestivals([]))
+      .finally(() => setFestivalLoading(false));
   }, []);
 
   const toggleFaq = (i) => setFaqOpen(faqOpen === i ? null : i);
@@ -408,7 +413,7 @@ export default function Home() {
                         <div className="flex items-center justify-between">
                           <div>
                             <span className="font-display text-2xl font-bold text-saffron-600">₹{p.price.toLocaleString('en-IN')}</span>
-                            {p.duration && <span className="text-xs text-gray-400 ml-2 font-sans">· {p.duration}</span>}
+                            {formatDuration(p) && <span className="text-xs text-gray-400 ml-2 font-sans">· {formatDuration(p)}</span>}
                           </div>
                           <Link to={`/book/${p.slug}`} onClick={(e) => e.stopPropagation()} className="btn-primary text-sm px-5 py-2 rounded-xl">
                             Book Now
@@ -472,30 +477,50 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════
           UPCOMING FESTIVALS — dark sacred
       ═══════════════════════════════════════════════════════ */}
-      {festivals.length > 0 && (
-        <section
-          ref={festivalRef}
-          className="section-pad text-white overflow-hidden relative"
-          style={{ background: 'linear-gradient(145deg, #1C1C1E 0%, #2a1500 55%, #1C1C1E 100%)' }}
-        >
-          <div className="absolute inset-0 sacred-pattern opacity-10 pointer-events-none" />
+      <section
+        ref={festivalRef}
+        className="section-pad text-white overflow-hidden relative"
+        style={{ background: 'linear-gradient(145deg, #1C1C1E 0%, #2a1500 55%, #1C1C1E 100%)' }}
+      >
+        <div className="absolute inset-0 sacred-pattern opacity-10 pointer-events-none" />
 
-          <div className="container-pad relative">
-            <div className="flex items-end justify-between mb-14 flex-wrap gap-4">
-              <div>
-                <EyebrowTag light>Celebrate Together</EyebrowTag>
-                <h2 className="font-display text-4xl md:text-5xl font-bold text-white leading-tight" style={{ letterSpacing: '-0.03em' }}>
-                  Upcoming Festivals
-                </h2>
-              </div>
-              <Link to="/festivals" className="flex items-center gap-2 font-semibold text-sm hover:gap-3 transition-all font-sans" style={{ color: '#C9A84C' }}>
-                Full Calendar <ArrowRight size={14} />
-              </Link>
+        <div className="container-pad relative">
+          <div className="flex items-end justify-between mb-14 flex-wrap gap-4">
+            <div>
+              <EyebrowTag light>Celebrate Together</EyebrowTag>
+              <h2 className="font-display text-4xl md:text-5xl font-bold text-white leading-tight" style={{ letterSpacing: '-0.03em' }}>
+                Upcoming Festivals
+              </h2>
             </div>
+            <Link to="/festivals" className="flex items-center gap-2 font-semibold text-sm hover:gap-3 transition-all font-sans" style={{ color: '#C9A84C' }}>
+              Full Calendar <ArrowRight size={14} />
+            </Link>
+          </div>
 
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {festivalLoading ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="glass-dark rounded-2xl p-6 animate-pulse">
+                  <div className="h-8 w-8 rounded-full bg-white/10 mb-4" />
+                  <div className="h-4 bg-white/10 rounded mb-2 w-3/4" />
+                  <div className="h-3 bg-white/10 rounded w-1/2" />
+                </div>
+              ))}
+            </div>
+          ) : festivals.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-5xl mb-4">🪔</div>
+              <p className="text-gray-300 font-sans text-base">No upcoming festivals available.</p>
+              <p className="text-gray-500 font-sans text-sm mt-1">Check back later or view the full calendar.</p>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
               {festivals.map((f, i) => {
-                const daysUntil = Math.ceil((new Date(f.date) - new Date()) / (1000 * 60 * 60 * 24));
+                const festDate  = new Date(f.date);
+                const today     = new Date();
+                today.setHours(0, 0, 0, 0);
+                const daysUntil = Math.ceil((festDate - today) / (1000 * 60 * 60 * 24));
+                const dayName   = festDate.toLocaleDateString('en-IN', { weekday: 'long' });
                 return (
                   <div
                     key={f._id}
@@ -504,19 +529,25 @@ export default function Home() {
                   >
                     <div className="flex items-center justify-between mb-4">
                       <span className="text-3xl">🎉</span>
-                      {daysUntil >= 0 && daysUntil <= 30 && (
+                      {daysUntil === 0 ? (
                         <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full font-sans"
-                          style={{ background: 'rgba(255,107,0,0.2)', color: '#ffb85a' }}>
-                          {daysUntil === 0 ? 'Today!' : `${daysUntil}d away`}
+                          style={{ background: 'rgba(255,107,0,0.25)', color: '#ffb85a' }}>
+                          Today!
+                        </span>
+                      ) : daysUntil > 0 && (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full font-sans"
+                          style={{ background: 'rgba(255,107,0,0.15)', color: '#ffb85a' }}>
+                          {daysUntil} {daysUntil === 1 ? 'Day' : 'Days'} Left
                         </span>
                       )}
                     </div>
                     <h3 className="font-display font-bold text-lg leading-snug mb-2" style={{ color: '#C9A84C', letterSpacing: '-0.01em' }}>{f.name}</h3>
-                    <p className="text-xs text-gray-400 font-sans">
-                      {new Date(f.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    <p className="text-xs text-gray-300 font-sans">
+                      {festDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
                     </p>
+                    <p className="text-xs text-gray-500 font-sans mt-0.5">{dayName}</p>
                     {f.tithiDate && <p className="text-xs text-gray-500 mt-1 font-sans">{f.tithiDate}</p>}
-                    <div className="mt-5 pt-4 border-t border-white/8">
+                    <div className="mt-5 pt-4 border-t border-white/10">
                       <Link to="/poojas" className="text-xs font-semibold flex items-center gap-1 hover:gap-2 transition-all font-sans" style={{ color: '#FF6B00' }}>
                         Book a Pooja <ArrowRight size={11} />
                       </Link>
@@ -525,9 +556,9 @@ export default function Home() {
                 );
               })}
             </div>
-          </div>
-        </section>
-      )}
+          )}
+        </div>
+      </section>
 
       {/* ═══════════════════════════════════════════════════════
           WHY ZUTSAV

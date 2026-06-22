@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText } from 'lucide-react';
+import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight } from 'lucide-react';
 import CommunicationCenter from '../components/admin/CommunicationCenter';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import ProfilePhoto from '../components/shared/ProfilePhoto';
-import MapPicker from '../components/shared/MapPicker';
+import MapPicker, { forwardGeocode } from '../components/shared/MapPicker';
 import PincodeInput from '../components/shared/PincodeInput';
 
 
@@ -37,6 +37,7 @@ export default function AdminDashboard() {
       {tab === 'referrals'             && <ReferralStatsTab />}
       {tab === 'comm-center'           && <CommunicationCenter />}
       {tab === 'system-settings'       && <SystemSettingsTab />}
+      {tab === 'payouts'               && <PayoutsTab />}
       {tab === 'profile'               && <AdminProfile user={user} refreshUser={refreshUser} />}
     </div>
   );
@@ -210,6 +211,18 @@ function BookingsTab() {
     }
   };
 
+  const handleRejectCompletion = async (bookingId) => {
+    const reason = window.prompt('Reason for rejecting completion (required):');
+    if (!reason || !reason.trim()) return;
+    try {
+      await API.patch(`/admin/bookings/${bookingId}/reject-completion`, { reason: reason.trim() });
+      toast.success('Completion request rejected. Pandit has been notified.');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not reject completion');
+    }
+  };
+
   const openPayoutAssign = (booking) => {
     setPayoutBooking(booking);
     setPayoutAmount(booking.payout?.amount || '');
@@ -312,9 +325,14 @@ function BookingsTab() {
                           <span className="text-[10px] text-teal-700 font-semibold bg-teal-50 px-2 py-1 rounded-lg">Awaiting pooja</span>
                         )}
                         {b.status === 'completion_requested' && (
-                          <button onClick={() => handleApproveCompletion(b._id)} className="text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium" style={{ background: '#1B1F3B', color: 'white' }}>
-                            Approve Completion
-                          </button>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => handleApproveCompletion(b._id)} className="text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium" style={{ background: '#1B1F3B', color: 'white' }}>
+                              ✓ Approve
+                            </button>
+                            <button onClick={() => handleRejectCompletion(b._id)} className="text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap font-medium bg-red-100 text-red-700 hover:bg-red-200">
+                              ✗ Reject
+                            </button>
+                          </div>
                         )}
                         {b.status === 'completed' && (!b.payout || b.payout.status === 'none') && (
                           <button onClick={() => openPayoutAssign(b)} className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap">
@@ -643,6 +661,253 @@ function BookingsTab() {
   );
 }
 
+// ─── Pandit Profile Drawer ────────────────────────────────────
+function PanditProfileDrawer({ panditId, onClose }) {
+  const [pandit,   setPandit]   = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [prices,   setPrices]   = useState({});   // { poojaId: approvedPrice }
+  const [saving,   setSaving]   = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    API.get(`/admin/pandits/${panditId}`)
+      .then(({ data }) => {
+        setPandit(data.pandit);
+        // Pre-fill editable approved prices from existing data
+        const init = {};
+        (data.pandit.poojaCharges || []).forEach((c) => {
+          const id = typeof c.poojaId === 'object' ? c.poojaId?._id : c.poojaId;
+          if (id && c.approvedPrice != null) init[id] = c.approvedPrice;
+        });
+        setPrices(init);
+      })
+      .catch(() => toast.error('Failed to load pandit profile'))
+      .finally(() => setLoading(false));
+  }, [panditId]);
+
+  const saveApprovedPrices = async () => {
+    const priceList = Object.entries(prices)
+      .filter(([, v]) => v !== '' && v != null)
+      .map(([poojaId, approvedPrice]) => ({ poojaId, approvedPrice: +approvedPrice }));
+    if (priceList.length === 0) { toast.error('Enter at least one approved price'); return; }
+    setSaving(true);
+    try {
+      await API.patch(`/admin/pandits/${panditId}/pooja-price`, { prices: priceList });
+      toast.success('Approved prices saved');
+      // Refresh local poojaCharges display
+      const { data } = await API.get(`/admin/pandits/${panditId}`);
+      setPandit(data.pandit);
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  const kycBadge = {
+    not_submitted:    'bg-gray-100 text-gray-600',
+    submitted:        'bg-blue-100 text-blue-700',
+    approved:         'bg-green-100 text-green-700',
+    rejected:         'bg-red-100 text-red-700',
+    reupload_required:'bg-purple-100 text-purple-700',
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      {/* Backdrop */}
+      <div className="flex-1 bg-black/50" onClick={onClose} />
+      {/* Drawer panel */}
+      <div className="w-full max-w-2xl bg-white h-full overflow-y-auto shadow-2xl flex flex-col">
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center gap-4">
+          <div className="flex-1 min-w-0">
+            {pandit && (
+              <>
+                <h2 className="font-bold text-gray-800 text-lg truncate">{pandit.name}</h2>
+                <p className="text-xs text-gray-400">{pandit.email} · {pandit.phone}</p>
+              </>
+            )}
+            {loading && <div className="h-5 w-48 bg-gray-100 rounded-lg animate-pulse" />}
+          </div>
+          <button onClick={onClose} className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center shrink-0">
+            <X size={16} className="text-gray-600" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader size={28} className="text-gray-300 animate-spin" />
+          </div>
+        ) : pandit ? (
+          <div className="flex-1 p-6 space-y-6">
+            {/* Profile card */}
+            <div className="flex gap-4 items-start">
+              <div className="w-16 h-16 bg-saffron-100 rounded-2xl overflow-hidden shrink-0 flex items-center justify-center">
+                {pandit.profilePhoto
+                  ? <img src={`http://localhost:5000/${pandit.profilePhoto}`} className="w-full h-full object-cover" alt="" />
+                  : <User size={24} className="text-saffron-400" />}
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex flex-wrap gap-2">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${kycBadge[pandit.kycStatus || 'not_submitted']}`}>
+                    KYC: {(pandit.kycStatus || 'not_submitted').replace(/_/g, ' ')}
+                  </span>
+                  <span className={panditStatus[pandit.status] || 'badge-pending'}>
+                    {pandit.status?.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600">{pandit.bio || <span className="text-gray-300 italic">No bio</span>}</p>
+                <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-1">
+                  <span className="flex items-center gap-1"><Star size={11} /> {pandit.rating?.toFixed(1) || '0.0'} ({pandit.totalReviews || 0} reviews)</span>
+                  <span className="flex items-center gap-1"><Clock size={11} /> {pandit.experience || 0} yrs exp</span>
+                  {pandit.city && <span className="flex items-center gap-1"><MapPin size={11} /> {pandit.city}, {pandit.state}</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Personal Info */}
+            <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Personal Info</p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {[
+                  ['Father Name', pandit.fatherName],
+                  ['Gender',      pandit.gender],
+                  ['DOB',         pandit.dob ? new Date(pandit.dob).toLocaleDateString('en-IN') : null],
+                  ['City',        pandit.city],
+                  ['State',       pandit.state],
+                  ['Pincode',     pandit.pincode],
+                ].map(([label, val]) => val ? (
+                  <div key={label}>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</p>
+                    <p className="font-medium text-gray-700 capitalize">{val}</p>
+                  </div>
+                ) : null)}
+              </div>
+              {pandit.languages?.length > 0 && (
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Languages</p>
+                  <div className="flex flex-wrap gap-1">
+                    {pandit.languages.map((l) => (
+                      <span key={l} className="bg-white border border-gray-200 text-gray-600 text-xs px-2 py-0.5 rounded-full">{l}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {pandit.specializations?.length > 0 && (
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Specializations</p>
+                  <div className="flex flex-wrap gap-1">
+                    {pandit.specializations.map((s, i) => (
+                      <span key={i} className="bg-saffron-50 text-saffron-700 text-xs px-2 py-0.5 rounded-full border border-saffron-200">
+                        {s.name}{s.yearsOfExperience > 0 ? ` (${s.yearsOfExperience}y)` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Service Coverage</p>
+                <p className="text-sm text-gray-700 capitalize">
+                  {pandit.serviceCoverage?.type?.replace(/_/g, ' ') || 'city'}
+                  {pandit.serviceCoverage?.type === 'radius' && ` (${pandit.serviceCoverage.radiusKm} km)`}
+                </p>
+              </div>
+            </div>
+
+            {/* Pooja Services & Pricing */}
+            <div className="bg-gray-50 rounded-2xl p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Pooja Services & Pricing</p>
+                <span className="text-xs text-gray-400">{pandit.selectedPoojas?.length || 0} poojas selected</span>
+              </div>
+
+              {(!pandit.selectedPoojas || pandit.selectedPoojas.length === 0) ? (
+                <p className="text-sm text-gray-400 text-center py-4">No poojas selected by this pandit</p>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    {/* Header */}
+                    <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-3 text-[10px] text-gray-400 uppercase tracking-wide">
+                      <span>Pooja</span>
+                      <span className="w-20 text-right">Expected ₹</span>
+                      <span className="w-28 text-right">Approved Price</span>
+                      <span className="w-16 text-center">Status</span>
+                    </div>
+                    {pandit.selectedPoojas.map((pooja) => {
+                      const poojaId = typeof pooja === 'object' ? pooja._id : pooja;
+                      const poojaName = typeof pooja === 'object' ? pooja.name : poojaId;
+                      const charge = (pandit.poojaCharges || []).find(
+                        (c) => (typeof c.poojaId === 'object' ? c.poojaId?._id : c.poojaId)?.toString() === poojaId?.toString()
+                      );
+                      const isApproved = charge?.priceApprovalStatus === 'approved';
+                      return (
+                        <div key={poojaId} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center bg-white rounded-xl px-3 py-2.5 border border-gray-100">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-800 truncate">{poojaName}</p>
+                            {typeof pooja === 'object' && pooja.categoryId?.name && (
+                              <p className="text-[10px] text-gray-400">{pooja.categoryId.name}</p>
+                            )}
+                          </div>
+                          <div className="w-20 text-right text-sm text-gray-600 font-medium">
+                            {charge?.expectedCharges > 0 ? `₹${charge.expectedCharges}` : <span className="text-gray-300">—</span>}
+                          </div>
+                          <div className="w-28 flex items-center gap-1">
+                            <span className="text-xs text-gray-500">₹</span>
+                            <input
+                              type="number" min="0" step="100"
+                              className="input text-sm text-right py-1 px-2 w-full"
+                              placeholder="Set price"
+                              value={prices[poojaId] ?? ''}
+                              onChange={(e) => setPrices((p) => ({ ...p, [poojaId]: e.target.value }))}
+                            />
+                          </div>
+                          <div className="w-16 flex justify-center">
+                            {isApproved ? (
+                              <span className="flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full">
+                                <BadgeCheck size={10} /> Set
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">Pending</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button onClick={saveApprovedPrices} disabled={saving}
+                    className="btn-primary w-full py-2.5 flex items-center justify-center gap-2 text-sm">
+                    <Save size={14} /> {saving ? 'Saving...' : 'Save Approved Prices'}
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* KYC Documents */}
+            {pandit.kycFrontImage && (
+              <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">KYC Documents</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {[
+                    ['Front', pandit.kycFrontImage],
+                    ['Back',  pandit.kycBackImage],
+                    ['Selfie',pandit.kycSelfieImage],
+                    ['Address Proof', pandit.kycAddressProof],
+                  ].map(([label, url]) => url ? (
+                    <a key={label} href={`http://localhost:5000/${url}`} target="_blank" rel="noopener noreferrer"
+                      className="bg-white border border-gray-100 rounded-xl p-3 flex items-center gap-2 hover:border-saffron-300 transition-colors">
+                      <FileText size={14} className="text-saffron-500 shrink-0" />
+                      <span className="text-xs text-gray-600">{label}</span>
+                    </a>
+                  ) : null)}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Profile not found</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Pandits / KYC Tab ────────────────────────────────────────
 const KYC_FILTER_TABS = [
   { key: 'submitted',          label: 'Pending Review',   color: 'bg-blue-500 text-white' },
@@ -677,6 +942,8 @@ function PanditsTab() {
   const [loading,       setLoading]       = useState(true);
   const [kycFilter,     setKycFilter]     = useState('submitted');
   const [expanded,      setExpanded]      = useState(null);
+  const [search,        setSearch]        = useState('');
+  const [profileDrawer, setProfileDrawer] = useState(null); // panditId
 
   // KYC action modal state
   const [modal,         setModal]         = useState(null); // { panditId, action: 'reject'|'reupload' }
@@ -696,6 +963,13 @@ function PanditsTab() {
   };
 
   useEffect(() => { load(); }, [kycFilter]);
+
+  const filteredPandits = search.trim()
+    ? pandits.filter((p) => {
+        const q = search.toLowerCase();
+        return p.name?.toLowerCase().includes(q) || p.email?.toLowerCase().includes(q) || p.phone?.includes(q) || p.city?.toLowerCase().includes(q);
+      })
+    : pandits;
 
   const kycAction = async (id, action, actionReason) => {
     try {
@@ -747,11 +1021,22 @@ function PanditsTab() {
 
   return (
     <div className="space-y-4">
+      {profileDrawer && (
+        <PanditProfileDrawer panditId={profileDrawer} onClose={() => setProfileDrawer(null)} />
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-gray-800">Pandit KYC Management</h1>
-        <button onClick={load} className="text-xs text-gray-400 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
-          <RotateCcw size={12} /> Refresh
-        </button>
+        <h1 className="text-2xl font-bold text-gray-800">Pandit Directory</h1>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input className="input pl-8 py-1.5 text-sm w-52" placeholder="Search name, city, phone..."
+              value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <button onClick={load} className="text-xs text-gray-400 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
+            <RotateCcw size={12} /> Refresh
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -765,7 +1050,7 @@ function PanditsTab() {
 
       {loading ? <LoadingSpinner /> : (
         <div className="space-y-4">
-          {pandits.map((p) => {
+          {filteredPandits.map((p) => {
             const completion = calcAdminCompletion(p);
             const kycStatus  = p.kycStatus || 'not_submitted';
             const isExpanded = expanded === p._id;
@@ -815,6 +1100,10 @@ function PanditsTab() {
 
                   {/* Actions */}
                   <div className="flex gap-2 flex-wrap shrink-0 items-start">
+                    <button onClick={() => setProfileDrawer(p._id)}
+                      className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg flex items-center gap-1">
+                      <User size={12} /> View Profile
+                    </button>
                     <button onClick={() => setExpanded(isExpanded ? null : p._id)}
                       className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg flex items-center gap-1">
                       <FileText size={12} /> {isExpanded ? 'Hide' : 'View Docs'}
@@ -890,10 +1179,10 @@ function PanditsTab() {
               </div>
             );
           })}
-          {pandits.length === 0 && (
+          {filteredPandits.length === 0 && (
             <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
               <ShieldCheck size={36} className="text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-400">No pandits in this category</p>
+              <p className="text-gray-400">{search ? 'No pandits match your search' : 'No pandits in this category'}</p>
             </div>
           )}
         </div>
@@ -1164,22 +1453,89 @@ function UsersTab() {
 }
 
 // ─── Poojas Tab ───────────────────────────────────────────────
+const EMPTY_POOJA_FORM = { name:'', categoryIds:[], price:'', durationValue:'', durationUnit:'hours', shortDesc:'', description:'', requirements:'', benefits:'', languages:'Hindi, English, Sanskrit' };
+const POOJA_STATUS_TABS = ['all','active','inactive','deleted','featured'];
+
+function PoojaFormFields({ form, setForm, categories, image, setImage }) {
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const toggleCategory = (id) => setForm((f) => {
+    const ids = f.categoryIds.includes(id) ? f.categoryIds.filter((x) => x !== id) : [...f.categoryIds, id];
+    return { ...f, categoryIds: ids };
+  });
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="label">Name *</label><input required className="input" value={form.name} onChange={set('name')} /></div>
+        <div>
+          <label className="label">Categories * <span className="text-gray-400 text-xs font-normal">(select one or more)</span></label>
+          <div className="border rounded-xl p-2 max-h-36 overflow-y-auto grid grid-cols-2 gap-1" style={{ borderColor: 'var(--t-border)' }}>
+            {categories.map((c) => (
+              <label key={c._id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:bg-saffron-50 text-xs">
+                <input type="checkbox" checked={form.categoryIds.includes(c._id)} onChange={() => toggleCategory(c._id)} className="accent-saffron-500" />
+                <span className="text-gray-700">{c.name}</span>
+              </label>
+            ))}
+          </div>
+          {form.categoryIds.length === 0 && <p className="text-xs text-red-500 mt-1">Select at least one category</p>}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="label">Price (₹) *</label><input required type="number" min="0" className="input" value={form.price} onChange={set('price')} /></div>
+        <div>
+          <label className="label">Duration</label>
+          <div className="flex gap-2">
+            <input type="number" min="1" max="30" className="input w-24" placeholder="e.g. 2" value={form.durationValue} onChange={set('durationValue')} />
+            <select className="input flex-1" value={form.durationUnit} onChange={set('durationUnit')}>
+              <option value="hours">Hours</option>
+              <option value="days">Days</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div><label className="label">Short Description</label><input className="input" value={form.shortDesc} onChange={set('shortDesc')} /></div>
+      <div><label className="label">Full Description</label><textarea rows={3} className="input resize-none" value={form.description} onChange={set('description')} /></div>
+      <div><label className="label">Supported Languages <span className="text-gray-400 text-xs font-normal">(comma-separated — shown to user in booking)</span></label><input className="input" placeholder="Hindi, English, Sanskrit..." value={form.languages} onChange={set('languages')} /></div>
+      <div><label className="label">Requirements (comma-separated)</label><input className="input" placeholder="Rice, Ghee, Flowers..." value={form.requirements} onChange={set('requirements')} /></div>
+      <div><label className="label">Benefits (comma-separated)</label><input className="input" value={form.benefits} onChange={set('benefits')} /></div>
+      <div>
+        <label className="label">Image</label>
+        <input type="file" accept="image/*" onChange={(e) => setImage(e.target.files[0])} className="text-sm" />
+        {image && <p className="text-xs text-gray-400 mt-1">{image.name}</p>}
+      </div>
+    </>
+  );
+}
+
 function PoojasTab() {
-  const [categories, setCategories] = useState([]);
-  const [poojas,     setPoojas]     = useState([]);
-  const [catForm,    setCatForm]    = useState({ name: '', description: '' });
-  const [poojaForm,  setPoojaForm]  = useState({ name:'', categoryId:'', price:'', duration:'', shortDesc:'', description:'', requirements:'', benefits:'', languages:'Hindi' });
-  const [catImage,   setCatImage]   = useState(null);
-  const [poojaImage, setPoojaImage] = useState(null);
-  const [tab2,       setTab2]       = useState('categories');
+  const [categories,   setCategories]   = useState([]);
+  const [poojas,       setPoojas]       = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [saving,       setSaving]       = useState(false);
+  const [catForm,      setCatForm]      = useState({ name: '', description: '' });
+  const [poojaForm,    setPoojaForm]    = useState(EMPTY_POOJA_FORM);
+  const [catImage,     setCatImage]     = useState(null);
+  const [poojaImage,   setPoojaImage]   = useState(null);
+  const [tab2,         setTab2]         = useState('poojas');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [search,       setSearch]       = useState('');
+  const [editingPooja, setEditingPooja] = useState(null);
 
   const reload = () => {
-    API.get('/poojas/categories').then(({ data }) => setCategories(data.categories));
-    API.get('/poojas?limit=50').then(({ data }) => setPoojas(data.poojas));
+    setLoading(true);
+    Promise.all([
+      API.get('/poojas/categories'),
+      API.get(`/poojas/admin-catalog?status=${statusFilter}${search ? `&search=${encodeURIComponent(search)}` : ''}`),
+    ]).then(([cats, pjs]) => {
+      setCategories(cats.data.categories || []);
+      setPoojas(pjs.data.poojas || []);
+    }).finally(() => setLoading(false));
   };
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => { reload(); }, [statusFilter]);
 
+  const handleSearchSubmit = (e) => { e.preventDefault(); reload(); };
+
+  // ── Category CRUD ──
   const createCategory = async (e) => {
     e.preventDefault();
     const fd = new FormData();
@@ -1190,25 +1546,92 @@ function PoojasTab() {
       await API.post('/poojas/categories', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Category created!');
       setCatForm({ name:'', description:'' }); setCatImage(null);
+      API.get('/poojas/categories').then(({ data }) => setCategories(data.categories || []));
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+  };
+
+  // ── Pooja CRUD ──
+  const buildPoojaFD = (form, image) => {
+    const fd = new FormData();
+    if (form.name)         fd.append('name', form.name);
+    if (form.price)        fd.append('price', form.price);
+    if (form.durationValue)fd.append('durationValue', form.durationValue);
+    if (form.durationUnit) fd.append('durationUnit', form.durationUnit);
+    if (form.shortDesc)    fd.append('shortDesc', form.shortDesc);
+    if (form.description)  fd.append('description', form.description);
+    fd.set('categoryIds',    JSON.stringify(form.categoryIds));
+    fd.set('requirements',   JSON.stringify(form.requirements.split(',').map((s) => s.trim()).filter(Boolean)));
+    fd.set('benefits',       JSON.stringify(form.benefits.split(',').map((s) => s.trim()).filter(Boolean)));
+    fd.set('languages',      JSON.stringify(form.languages.split(',').map((s) => s.trim()).filter(Boolean)));
+    if (image) fd.append('image', image);
+    return fd;
+  };
+
+  const handleCreatePooja = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await API.post('/poojas', buildPoojaFD(poojaForm, poojaImage), { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Pooja added!');
+      setPoojaForm(EMPTY_POOJA_FORM); setPoojaImage(null);
+      setTab2('poojas');
+      reload();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  const startEditPooja = (p) => {
+    setEditingPooja(p);
+    // Build categoryIds from whichever field is populated
+    const ids = (p.categoryIds?.length > 0
+      ? p.categoryIds.map((c) => c._id || c)
+      : p.categoryId ? [p.categoryId?._id || p.categoryId] : []);
+    setPoojaForm({
+      name:          p.name,
+      categoryIds:   ids,
+      price:         String(p.price),
+      durationValue: p.durationValue ? String(p.durationValue) : '',
+      durationUnit:  p.durationUnit || 'hours',
+      shortDesc:     p.shortDesc || '',
+      description:   p.description || '',
+      requirements:  (p.requirements || []).join(', '),
+      benefits:      (p.benefits     || []).join(', '),
+      languages:     (p.languages    || []).join(', ') || 'Hindi, English, Sanskrit',
+    });
+    setPoojaImage(null);
+    setTab2('edit-pooja');
+  };
+
+  const handleUpdatePooja = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await API.patch(`/poojas/${editingPooja._id}`, buildPoojaFD(poojaForm, poojaImage), { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Pooja updated!');
+      setEditingPooja(null); setPoojaForm(EMPTY_POOJA_FORM); setPoojaImage(null);
+      setTab2('poojas');
+      reload();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  const handleTogglePooja = async (p) => {
+    try {
+      await API.patch(`/poojas/${p._id}/status`);
+      toast.success(p.isActive ? 'Pooja deactivated' : 'Pooja activated');
       reload();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
   };
 
-  const createPooja = async (e) => {
-    e.preventDefault();
-    const fd = new FormData();
-    Object.entries(poojaForm).forEach(([k,v]) => fd.append(k,v));
-    if (poojaImage) fd.append('image', poojaImage);
-    fd.set('requirements', JSON.stringify(poojaForm.requirements.split(',').map(s=>s.trim()).filter(Boolean)));
-    fd.set('benefits',     JSON.stringify(poojaForm.benefits.split(',').map(s=>s.trim()).filter(Boolean)));
-    fd.set('languages',    JSON.stringify(poojaForm.languages.split(',').map(s=>s.trim()).filter(Boolean)));
+  const handleDeletePooja = async (p) => {
+    if (!window.confirm(`Delete "${p.name}"? This is permanent if no bookings exist.`)) return;
     try {
-      await API.post('/poojas', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success('Pooja added!');
-      setPoojaForm({ name:'', categoryId:'', price:'', duration:'', shortDesc:'', description:'', requirements:'', benefits:'', languages:'Hindi' });
-      setPoojaImage(null);
+      await API.delete(`/poojas/${p._id}`);
+      toast.success('Pooja deleted');
       reload();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete');
+    }
   };
 
   const toggleFeatured = async (p) => {
@@ -1216,25 +1639,24 @@ function PoojasTab() {
     reload();
   };
 
-  const deletePooja = async (id) => {
-    if (!window.confirm('Deactivate this pooja?')) return;
-    await API.delete(`/poojas/${id}`);
-    toast.success('Deactivated');
-    reload();
-  };
+  const navBtn = (v, lbl) => (
+    <button key={v} onClick={() => setTab2(v)}
+      className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${tab2===v ? 'bg-saffron-500 text-white' : 'bg-white border text-gray-600'}`}>
+      {lbl || v.replace('-', ' ')}
+    </button>
+  );
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-gray-800">Pooja Management</h1>
-      <div className="flex gap-2">
-        {['categories','poojas','add-category','add-pooja'].map((t) => (
-          <button key={t} onClick={() => setTab2(t)}
-            className={`px-4 py-1.5 rounded-full text-xs font-medium capitalize transition-all ${tab2===t ? 'bg-saffron-500 text-white' : 'bg-white border text-gray-600'}`}>
-            {t.replace('-',' ')}
-          </button>
-        ))}
+      <div className="flex gap-2 flex-wrap">
+        {navBtn('poojas', 'Poojas')}
+        {navBtn('categories', 'Categories')}
+        {navBtn('add-category', '+ Add Category')}
+        {navBtn('add-pooja', '+ Add Pooja')}
       </div>
 
+      {/* ── Categories ── */}
       {tab2 === 'categories' && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {categories.map((c) => (
@@ -1247,74 +1669,132 @@ function PoojasTab() {
         </div>
       )}
 
+      {/* ── Poojas List ── */}
       {tab2 === 'poojas' && (
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-saffron-50 text-xs text-gray-500 text-left border-b">
-                {['Name','Category','Price','Featured','Actions'].map(h=><th key={h} className="px-4 py-3">{h}</th>)}
-              </tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                {poojas.map((p) => (
-                  <tr key={p._id}>
-                    <td className="px-4 py-3 font-medium text-gray-800">{p.name}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{p.categoryId?.name}</td>
-                    <td className="px-4 py-3 font-bold text-saffron-600">₹{p.price?.toLocaleString('en-IN')}</td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => toggleFeatured(p)} className={`text-xs px-2 py-0.5 rounded-full ${p.isFeatured ? 'bg-gold-100 text-gold-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {p.isFeatured ? '⭐ Featured' : 'Not Featured'}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button onClick={() => deletePooja(p._id)} className="text-xs text-red-500 hover:underline">Deactivate</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="space-y-3">
+          {/* Search + Status Filters */}
+          <div className="flex flex-wrap gap-3 items-center">
+            <form onSubmit={handleSearchSubmit} className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input className="input pl-9 text-sm w-64" placeholder="Search poojas..." value={search}
+                onChange={(e) => setSearch(e.target.value)} />
+            </form>
+            <div className="flex gap-1 flex-wrap">
+              {POOJA_STATUS_TABS.map((s) => (
+                <button key={s} onClick={() => { setStatusFilter(s); setSearch(''); }}
+                  className={`px-3 py-1 rounded-full text-xs font-medium capitalize transition-all ${statusFilter===s ? 'bg-saffron-500 text-white' : 'bg-white border text-gray-500 hover:border-saffron-300'}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {loading ? (
+            <div className="space-y-2">{[1,2,3].map((i) => <div key={i} className="h-14 bg-white rounded-xl animate-pulse border border-gray-100" />)}</div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-saffron-50 text-xs text-gray-500 text-left border-b">
+                  {['Pooja','Category','Price','Featured','Status','Actions'].map((h) => (
+                    <th key={h} className="px-4 py-3 font-semibold">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody className="divide-y divide-gray-50">
+                  {poojas.map((p) => (
+                    <tr key={p._id} className={p.isDeleted ? 'opacity-50 bg-red-50/20' : 'hover:bg-gray-50/50 transition-colors'}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {p.image
+                            ? <img src={`http://localhost:5000/${p.image}`} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                            : <div className="w-8 h-8 rounded-lg bg-saffron-50 flex items-center justify-center shrink-0 text-sm">🪔</div>}
+                          <span className="font-medium text-gray-800 text-sm">{p.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">
+                        {(p.categoryIds?.length > 0
+                          ? p.categoryIds.map((c) => c.name || c).join(', ')
+                          : p.categoryId?.name) || '—'}
+                      </td>
+                      <td className="px-4 py-3 font-bold text-saffron-600 text-xs">₹{p.price?.toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3">
+                        {!p.isDeleted && (
+                          <button onClick={() => toggleFeatured(p)}
+                            className={`text-xs px-2 py-0.5 rounded-full ${p.isFeatured ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {p.isFeatured ? '⭐ Yes' : 'No'}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {p.isDeleted
+                          ? <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">Deleted</span>
+                          : <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {p.isActive ? 'Active' : 'Inactive'}
+                            </span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {!p.isDeleted && (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => startEditPooja(p)} title="Edit"
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                              <Edit3 size={13} />
+                            </button>
+                            <button onClick={() => handleTogglePooja(p)} title={p.isActive ? 'Deactivate' : 'Activate'}
+                              className={`p-1.5 rounded-lg transition-colors ${p.isActive ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`}>
+                              {p.isActive ? <EyeOff size={13} /> : <Eye size={13} />}
+                            </button>
+                            <button onClick={() => handleDeletePooja(p)} title="Delete"
+                              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {poojas.length === 0 && (
+                    <tr><td colSpan={6} className="py-12 text-center text-gray-400 text-sm">No poojas found</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
+      {/* ── Add Category ── */}
       {tab2 === 'add-category' && (
         <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-md">
           <h2 className="font-bold text-gray-800 mb-4">Add Category</h2>
           <form onSubmit={createCategory} className="space-y-4">
             <div><label className="label">Name *</label><input required className="input" value={catForm.name} onChange={(e)=>setCatForm({...catForm,name:e.target.value})} /></div>
             <div><label className="label">Description</label><textarea rows={2} className="input resize-none" value={catForm.description} onChange={(e)=>setCatForm({...catForm,description:e.target.value})} /></div>
-            <div>
-              <label className="label">Category Image</label>
-              <input type="file" accept="image/*" onChange={(e)=>setCatImage(e.target.files[0])} className="text-sm" />
-            </div>
+            <div><label className="label">Category Image</label><input type="file" accept="image/*" onChange={(e)=>setCatImage(e.target.files[0])} className="text-sm" /></div>
             <button type="submit" className="btn-primary flex items-center gap-2"><Plus size={16} />Create Category</button>
           </form>
         </div>
       )}
 
+      {/* ── Add Pooja ── */}
       {tab2 === 'add-pooja' && (
         <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-xl">
           <h2 className="font-bold text-gray-800 mb-4">Add Pooja</h2>
-          <form onSubmit={createPooja} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Name *</label><input required className="input" value={poojaForm.name} onChange={(e)=>setPoojaForm({...poojaForm,name:e.target.value})} /></div>
-              <div>
-                <label className="label">Category *</label>
-                <select required className="input" value={poojaForm.categoryId} onChange={(e)=>setPoojaForm({...poojaForm,categoryId:e.target.value})}>
-                  <option value="">Select category</option>
-                  {categories.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Price (₹) *</label><input required type="number" className="input" value={poojaForm.price} onChange={(e)=>setPoojaForm({...poojaForm,price:e.target.value})} /></div>
-              <div><label className="label">Duration</label><input className="input" placeholder="e.g. 2 hours" value={poojaForm.duration} onChange={(e)=>setPoojaForm({...poojaForm,duration:e.target.value})} /></div>
-            </div>
-            <div><label className="label">Short Description</label><input className="input" value={poojaForm.shortDesc} onChange={(e)=>setPoojaForm({...poojaForm,shortDesc:e.target.value})} /></div>
-            <div><label className="label">Full Description</label><textarea rows={3} className="input resize-none" value={poojaForm.description} onChange={(e)=>setPoojaForm({...poojaForm,description:e.target.value})} /></div>
-            <div><label className="label">Requirements (comma-separated)</label><input className="input" placeholder="Rice, Ghee, Flowers..." value={poojaForm.requirements} onChange={(e)=>setPoojaForm({...poojaForm,requirements:e.target.value})} /></div>
-            <div><label className="label">Benefits (comma-separated)</label><input className="input" value={poojaForm.benefits} onChange={(e)=>setPoojaForm({...poojaForm,benefits:e.target.value})} /></div>
-            <div><label className="label">Image</label><input type="file" accept="image/*" onChange={(e)=>setPoojaImage(e.target.files[0])} className="text-sm" /></div>
-            <button type="submit" className="btn-primary flex items-center gap-2"><Plus size={16} />Add Pooja</button>
+          <form onSubmit={handleCreatePooja} className="space-y-4">
+            <PoojaFormFields form={poojaForm} setForm={setPoojaForm} categories={categories} image={poojaImage} setImage={setPoojaImage} />
+            <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2"><Plus size={16} />{saving ? 'Adding...' : 'Add Pooja'}</button>
+          </form>
+        </div>
+      )}
+
+      {/* ── Edit Pooja ── */}
+      {tab2 === 'edit-pooja' && editingPooja && (
+        <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-xl">
+          <div className="flex items-center gap-3 mb-4">
+            <button onClick={() => { setTab2('poojas'); setEditingPooja(null); }} className="text-sm text-saffron-600 hover:underline">← Back</button>
+            <h2 className="font-bold text-gray-800">Edit: {editingPooja.name}</h2>
+          </div>
+          <form onSubmit={handleUpdatePooja} className="space-y-4">
+            <PoojaFormFields form={poojaForm} setForm={setPoojaForm} categories={categories} image={poojaImage} setImage={setPoojaImage} />
+            <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2"><Save size={16} />{saving ? 'Saving...' : 'Save Changes'}</button>
           </form>
         </div>
       )}
@@ -2253,130 +2733,431 @@ function OrdersTab() {
 }
 
 // ─── Marketplace Tab (Products + Kits) ────────────────────────
+const VISIBILITY_META = {
+  marketplace: { label: 'Marketplace', cls: 'bg-green-100 text-green-700' },
+  kit_only:    { label: 'Kit Only',    cls: 'bg-blue-100 text-blue-700'   },
+  both:        { label: 'Both',        cls: 'bg-purple-100 text-purple-700' },
+};
+
+const EMPTY_PRODUCT_FORM = {
+  name: '', category: 'samagri', price: '', salePrice: '', stock: '',
+  description: '', tags: '', visibilityType: 'marketplace', variants: [],
+};
+
+function VariantBuilder({ variants, setVariants }) {
+  const add = () => setVariants((v) => [...v, { quantity: '', price: '', salePrice: '', stock: '', isActive: true }]);
+  const rm  = (i) => setVariants((v) => v.filter((_, idx) => idx !== i));
+  const upd = (i, k, val) => setVariants((v) => v.map((item, idx) => idx === i ? { ...item, [k]: val } : item));
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="label mb-0">Quantity Variants</label>
+        <span className="text-xs text-gray-400">If variants are used, Price/Stock above are ignored</span>
+      </div>
+      {variants.length > 0 && (
+        <div className="space-y-2 mb-2">
+          <div className="grid gap-2 text-xs font-medium text-gray-400 px-1" style={{ gridTemplateColumns: '1fr 90px 90px 70px 40px 28px' }}>
+            <span>Quantity (5g, 50g, 1kg…)</span>
+            <span>Price (₹)</span>
+            <span>Sale Price</span>
+            <span>Stock</span>
+            <span>Active</span>
+            <span />
+          </div>
+          {variants.map((v, i) => (
+            <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 90px 90px 70px 40px 28px' }}>
+              <input className="input text-sm" placeholder="e.g. 50g" value={v.quantity}
+                onChange={(e) => upd(i, 'quantity', e.target.value)} />
+              <input type="number" min="0" className="input text-sm" placeholder="₹" value={v.price}
+                onChange={(e) => upd(i, 'price', e.target.value)} />
+              <input type="number" min="0" className="input text-sm" placeholder="₹ (opt)" value={v.salePrice || ''}
+                onChange={(e) => upd(i, 'salePrice', e.target.value)} />
+              <input type="number" min="0" className="input text-sm" placeholder="0" value={v.stock}
+                onChange={(e) => upd(i, 'stock', e.target.value)} />
+              <button type="button" onClick={() => upd(i, 'isActive', !v.isActive)}
+                className={`w-9 h-5 rounded-full transition-colors relative ${v.isActive !== false ? 'bg-green-500' : 'bg-gray-300'}`}>
+                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${v.isActive !== false ? 'left-4' : 'left-0.5'}`} />
+              </button>
+              <button type="button" onClick={() => rm(i)}
+                className="flex items-center justify-center w-7 h-7 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors text-lg leading-none shrink-0">
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <button type="button" onClick={add}
+        className="text-sm text-saffron-600 hover:underline flex items-center gap-1">
+        <Plus size={12} /> Add Variant
+      </button>
+    </div>
+  );
+}
+
+function ProductForm({ form, setForm, images, setImages, onSubmit, submitLabel, loading }) {
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const variants    = form.variants || [];
+  const setVariants = (fn) => setForm((f) => ({ ...f, variants: typeof fn === 'function' ? fn(f.variants || []) : fn }));
+  const hasVariants = variants.length > 0;
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div><label className="label">Name *</label><input required className="input" value={form.name} onChange={set('name')} /></div>
+        <div>
+          <label className="label">Category *</label>
+          <select required className="input" value={form.category} onChange={set('category')}>
+            {['samagri','rudraksha','yantra','incense','idol','books','pooja_essentials','other'].map((c) => (
+              <option key={c} value={c} className="capitalize">{c.replace('_', ' ')}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Price/Stock (flat) — dimmed when variants present */}
+      {!hasVariants && (
+        <div className="grid grid-cols-3 gap-3">
+          <div><label className="label">Price (₹) *</label><input required type="number" min="0" className="input" value={form.price} onChange={set('price')} /></div>
+          <div><label className="label">Sale Price</label><input type="number" min="0" className="input" value={form.salePrice} onChange={set('salePrice')} /></div>
+          <div><label className="label">Stock *</label><input required type="number" min="0" className="input" value={form.stock} onChange={set('stock')} /></div>
+        </div>
+      )}
+      {hasVariants && (
+        <div className="text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
+          Price and Stock are managed per-variant below.
+        </div>
+      )}
+
+      <VariantBuilder variants={variants} setVariants={setVariants} />
+
+      {form.sku && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400">SKU:</span>
+          <code className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">{form.sku}</code>
+        </div>
+      )}
+
+      <div>
+        <label className="label">Visibility *</label>
+        <select className="input" value={form.visibilityType} onChange={set('visibilityType')}>
+          <option value="marketplace">Marketplace Product — visible to customers</option>
+          <option value="kit_only">Kit Only — not visible in marketplace</option>
+          <option value="both">Both — visible in marketplace and kits</option>
+        </select>
+      </div>
+      <div><label className="label">Description</label><textarea rows={2} className="input resize-none" value={form.description} onChange={set('description')} /></div>
+      <div><label className="label">Tags (comma-separated)</label><input className="input" value={form.tags} onChange={set('tags')} /></div>
+      <div>
+        <label className="label">Images (up to 5)</label>
+        <input type="file" accept="image/*" multiple onChange={(e) => setImages([...e.target.files])} className="text-sm" />
+        {images.length > 0 && <p className="text-xs text-gray-400 mt-1">{images.length} file(s) selected</p>}
+      </div>
+      <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
+        <Plus size={16} /> {submitLabel}
+      </button>
+    </form>
+  );
+}
+
 function MarketplaceTab() {
-  const [view, setView] = useState('products');
-  const [products, setProducts] = useState([]);
-  const [kits, setKits] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [productForm, setProductForm] = useState({ name:'', category:'samagri', price:'', salePrice:'', stock:'', description:'', tags:'' });
+  const [view,          setView]          = useState('products');
+  const [products,      setProducts]      = useState([]);
+  const [kits,          setKits]          = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [saving,        setSaving]        = useState(false);
+  const [search,        setSearch]        = useState('');
+  const [editingProd,   setEditingProd]   = useState(null);
+  const [productForm,   setProductForm]   = useState(EMPTY_PRODUCT_FORM);
   const [productImages, setProductImages] = useState([]);
 
-  // Kit form state with auto-pricing
-  const [kitForm, setKitForm] = useState({ name:'', description:'', discountType:'percentage', discountValue:'0', isFeatured:false });
-  const [kitItems, setKitItems] = useState([{ productId:'', quantity:1 }]);
-  const [kitImage, setKitImage] = useState(null);
-  const [kitTotalCost, setKitTotalCost] = useState(0);
+  const [kitForm,         setKitForm]         = useState({ name:'', description:'', discountType:'percentage', discountValue:'0', isFeatured:false });
+  const [kitItems,        setKitItems]        = useState([{ productId:'', quantity:1 }]);
+  const [kitLinkedPoojas, setKitLinkedPoojas] = useState([]);
+  const [kitImage,        setKitImage]        = useState(null);
+  const [kitTotalCost,    setKitTotalCost]    = useState(0);
   const [kitSellingPrice, setKitSellingPrice] = useState('');
-  const [kitPriceOverride, setKitPriceOverride] = useState(false);
+  const [kitPriceOverride,setKitPriceOverride]= useState(false);
+  const [availablePoojas, setAvailablePoojas] = useState([]);
 
   const load = () => {
     setLoading(true);
     Promise.all([
-      API.get('/marketplace/products?limit=50'),
+      API.get('/marketplace/admin/products'),
       API.get('/marketplace/kits?limit=50'),
-    ]).then(([p, k]) => { setProducts(p.data.products); setKits(k.data.kits); }).finally(() => setLoading(false));
+      API.get('/poojas/admin-catalog?status=active'),
+    ]).then(([p, k, pj]) => {
+      setProducts(p.data.products || []);
+      setKits(k.data.kits || []);
+      setAvailablePoojas(pj.data.poojas || []);
+    }).finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
 
-  // Recompute kit total & selling price whenever items or discount changes
-  useEffect(() => {
-    const validItems = kitItems.filter((i) => i.productId);
-    if (validItems.length === 0) { setKitTotalCost(0); if (!kitPriceOverride) setKitSellingPrice(''); return; }
+  // Kit builder products: active, non-deleted, any visibility type
+  const kitBuilderProducts = products.filter((p) => p.isActive && !p.isDeleted && p.stock > 0);
 
+  // Frontend search filter
+  const filteredProducts = products.filter((p) =>
+    !search || p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.category.toLowerCase().includes(search.toLowerCase()) ||
+    (p.tags || []).some((t) => t.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  // Auto-recompute kit pricing
+  useEffect(() => {
+    const valid = kitItems.filter((i) => i.productId);
+    if (!valid.length) { setKitTotalCost(0); if (!kitPriceOverride) setKitSellingPrice(''); return; }
     let total = 0;
-    for (const item of validItems) {
-      const prod = products.find((p) => p._id === item.productId);
-      if (prod) total += (prod.salePrice || prod.price) * item.quantity;
+    for (const item of valid) {
+      const prod = kitBuilderProducts.find((p) => p._id === item.productId);
+      if (prod) {
+        const variant = item.variantId ? prod.variants?.find((v) => v.variantId === item.variantId) : null;
+        const unitPrice = variant ? variant.price : (prod.salePrice || prod.price);
+        total += unitPrice * item.quantity;
+      }
     }
     setKitTotalCost(total);
-
     if (!kitPriceOverride) {
       const disc = parseFloat(kitForm.discountValue) || 0;
-      let selling = total;
-      if (kitForm.discountType === 'percentage') selling = total - (total * disc) / 100;
-      else if (kitForm.discountType === 'fixed')  selling = total - disc;
-      setKitSellingPrice(Math.max(0, Math.round(selling)).toString());
+      let sell = kitForm.discountType === 'percentage' ? total - (total * disc) / 100 : total - disc;
+      setKitSellingPrice(Math.max(0, Math.round(sell)).toString());
     }
   }, [kitItems, kitForm.discountType, kitForm.discountValue, products, kitPriceOverride]);
 
-  const createProduct = async (e) => {
-    e.preventDefault();
-    const fd = new FormData();
-    Object.entries(productForm).forEach(([k,v]) => { if(v) fd.append(k,v); });
-    fd.set('tags', JSON.stringify(productForm.tags.split(',').map(s=>s.trim()).filter(Boolean)));
-    productImages.forEach((f) => fd.append('images', f));
-    try {
-      await API.post('/marketplace/products', fd, { headers: {'Content-Type':'multipart/form-data'} });
-      toast.success('Product created');
-      setProductForm({ name:'', category:'samagri', price:'', salePrice:'', stock:'', description:'', tags:'' });
-      setProductImages([]);
-      load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+  // ── Product CRUD ──────────────────────────────────────────
+  const startEdit = (p) => {
+    setEditingProd(p);
+    setProductForm({
+      name:           p.name,
+      sku:            p.sku || '',
+      category:       p.category,
+      price:          String(p.price || ''),
+      salePrice:      p.salePrice ? String(p.salePrice) : '',
+      stock:          String(p.stock || ''),
+      description:    p.description || '',
+      tags:           (p.tags || []).join(', '),
+      visibilityType: p.visibilityType || 'marketplace',
+      variants:       (p.variants || []).map((v) => ({
+        quantity:  v.quantity,
+        price:     String(v.price),
+        salePrice: v.salePrice ? String(v.salePrice) : '',
+        stock:     String(v.stock),
+        isActive:  v.isActive !== false,
+      })),
+    });
+    setProductImages([]);
+    setView('edit-product');
   };
 
-  const createKit = async (e) => {
-    e.preventDefault();
-    const validItems = kitItems.filter((i) => i.productId);
-    if (validItems.length === 0) { toast.error('Add at least one product to the kit'); return; }
-    if (!kitSellingPrice || +kitSellingPrice < 0) { toast.error('Enter a valid selling price'); return; }
-
+  const buildProductFD = (form, images) => {
     const fd = new FormData();
-    fd.append('name',          kitForm.name);
-    fd.append('description',   kitForm.description);
-    fd.append('discountType',  kitForm.discountType);
+    Object.entries(form).forEach(([k, v]) => {
+      if (k === 'variants' || k === 'sku') return; // handled separately
+      if (v !== '') fd.append(k, v);
+    });
+    fd.set('tags', JSON.stringify(form.tags.split(',').map((s) => s.trim()).filter(Boolean)));
+    if (form.variants?.length > 0) {
+      fd.set('variants', JSON.stringify(form.variants));
+    }
+    images.forEach((f) => fd.append('images', f));
+    return fd;
+  };
+
+  const handleCreateProduct = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await API.post('/marketplace/products', buildProductFD(productForm, productImages), { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Product created');
+      setProductForm(EMPTY_PRODUCT_FORM);
+      setProductImages([]);
+      setView('products');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  const handleUpdateProduct = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await API.patch(`/marketplace/products/${editingProd._id}`, buildProductFD(productForm, productImages), { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Product updated');
+      setEditingProd(null);
+      setProductForm(EMPTY_PRODUCT_FORM);
+      setProductImages([]);
+      setView('products');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setSaving(false); }
+  };
+
+  const handleDeleteProduct = async (p) => {
+    if (!window.confirm(`Delete "${p.name}"? This cannot be undone.`)) return;
+    try {
+      await API.delete(`/marketplace/products/${p._id}`);
+      toast.success('Product deleted');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to delete'); }
+  };
+
+  const handleToggleProduct = async (p) => {
+    try {
+      await API.patch(`/marketplace/products/${p._id}/status`);
+      toast.success(p.isActive ? 'Product deactivated' : 'Product activated');
+      load();
+    } catch { toast.error('Failed'); }
+  };
+
+  // ── Kit CRUD ──────────────────────────────────────────────
+  const handleCreateKit = async (e) => {
+    e.preventDefault();
+    const valid = kitItems.filter((i) => i.productId);
+    if (!valid.length) { toast.error('Add at least one product'); return; }
+    if (!kitSellingPrice || +kitSellingPrice < 0) { toast.error('Enter a valid selling price'); return; }
+    const fd = new FormData();
+    fd.append('name', kitForm.name);
+    fd.append('description', kitForm.description);
+    fd.append('discountType', kitForm.discountType);
     fd.append('discountValue', kitForm.discountValue);
     fd.append('discountPrice', kitSellingPrice);
-    fd.append('isFeatured',    String(kitForm.isFeatured));
-    fd.append('items',         JSON.stringify(validItems));
+    fd.append('isFeatured', String(kitForm.isFeatured));
+    fd.append('items', JSON.stringify(valid));
+    fd.append('linkedPoojas', JSON.stringify(kitLinkedPoojas));
     if (kitImage) fd.append('image', kitImage);
+    setSaving(true);
     try {
-      await API.post('/marketplace/kits', fd, { headers: {'Content-Type':'multipart/form-data'} });
+      await API.post('/marketplace/kits', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Kit created');
       setKitForm({ name:'', description:'', discountType:'percentage', discountValue:'0', isFeatured:false });
       setKitItems([{ productId:'', quantity:1 }]);
-      setKitImage(null);
-      setKitTotalCost(0);
-      setKitSellingPrice('');
-      setKitPriceOverride(false);
+      setKitLinkedPoojas([]);
+      setKitImage(null); setKitTotalCost(0); setKitSellingPrice(''); setKitPriceOverride(false);
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setSaving(false); }
   };
 
-  const deleteKit = async (id) => {
+  const handleDeleteKit = async (id) => {
     if (!window.confirm('Remove kit?')) return;
     await API.delete(`/marketplace/kits/${id}`);
     toast.success('Kit removed');
     load();
   };
 
+  const navBtn = (v, lbl) => (
+    <button key={v} onClick={() => setView(v)}
+      className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${view===v ? 'bg-saffron-500 text-white' : 'bg-white border text-gray-600'}`}>
+      {lbl || v.replace('-', ' ')}
+    </button>
+  );
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-gray-800">Marketplace Management</h1>
       <div className="flex gap-2 flex-wrap">
-        {['products','kits','add-product','add-kit'].map((v) => (
-          <button key={v} onClick={() => setView(v)}
-            className={`px-4 py-1.5 rounded-full text-xs font-medium capitalize transition-all ${view===v ? 'bg-saffron-500 text-white' : 'bg-white border text-gray-600'}`}>
-            {v.replace('-',' ')}
-          </button>
-        ))}
+        {navBtn('products', 'Products')}
+        {navBtn('kits', 'Kits')}
+        {navBtn('add-product', '+ Add Product')}
+        {navBtn('add-kit', '+ Add Kit')}
       </div>
 
-      {view === 'products' && !loading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {products.map((p) => (
-            <div key={p._id} className="bg-white rounded-2xl border border-gray-100 p-4">
-              {p.images?.[0] && <img src={`http://localhost:5000/${p.images[0]}`} alt="" className="w-full h-32 object-cover rounded-xl mb-3" />}
-              <p className="font-semibold text-gray-800 text-sm">{p.name}</p>
-              <p className="text-xs text-gray-500 mt-0.5 capitalize">{p.category} · Stock: {p.stock}</p>
-              <p className="text-saffron-600 font-bold text-sm mt-1">
-                {p.salePrice ? <><s className="text-gray-400">₹{p.price}</s> ₹{p.salePrice}</> : `₹${p.price}`}
-              </p>
+      {/* ── Products List ── */}
+      {view === 'products' && (
+        <div className="space-y-3">
+          <div className="relative max-w-sm">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input className="input pl-9 text-sm" placeholder="Search by name, category, tag..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          {loading ? (
+            <div className="space-y-2">{[1,2,3].map((i) => <div key={i} className="h-14 bg-white rounded-xl animate-pulse border border-gray-100" />)}</div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 text-xs text-gray-500 border-b">
+                  {['Product','Category','Visibility','Price','Stock','Status','Actions'].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left font-semibold">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filteredProducts.map((p) => (
+                    <tr key={p._id} className={p.isDeleted ? 'opacity-50 bg-red-50/20' : 'hover:bg-gray-50/50 transition-colors'}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {p.images?.[0]
+                            ? <img src={`http://localhost:5000/${p.images[0]}`} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                            : <div className="w-8 h-8 rounded-lg bg-saffron-50 flex items-center justify-center shrink-0 text-sm">📦</div>}
+                          <span className="font-medium text-gray-800 text-sm">{p.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 capitalize text-xs">{p.category}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${(VISIBILITY_META[p.visibilityType] || VISIBILITY_META.marketplace).cls}`}>
+                          {(VISIBILITY_META[p.visibilityType] || VISIBILITY_META.marketplace).label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-bold text-saffron-600 text-xs whitespace-nowrap">
+                        {p.salePrice ? <><s className="text-gray-400 font-normal">₹{p.price}</s> ₹{p.salePrice}</> : `₹${p.price}`}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">{p.stock}</td>
+                      <td className="px-4 py-3">
+                        {p.isDeleted
+                          ? <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">Deleted</span>
+                          : <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {p.isActive ? 'Active' : 'Inactive'}
+                            </span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {!p.isDeleted && (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => startEdit(p)} title="Edit" className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                              <Edit3 size={13} />
+                            </button>
+                            <button onClick={() => handleToggleProduct(p)} title={p.isActive ? 'Deactivate' : 'Activate'}
+                              className={`p-1.5 rounded-lg transition-colors ${p.isActive ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`}>
+                              {p.isActive ? <EyeOff size={13} /> : <Eye size={13} />}
+                            </button>
+                            <button onClick={() => handleDeleteProduct(p)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredProducts.length === 0 && (
+                    <tr><td colSpan={7} className="py-12 text-center text-gray-400 text-sm">No products found</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          ))}
+          )}
         </div>
       )}
 
+      {/* ── Add Product ── */}
+      {view === 'add-product' && (
+        <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-xl">
+          <h2 className="font-bold text-gray-800 mb-4">Add Product</h2>
+          <ProductForm form={productForm} setForm={setProductForm} images={productImages} setImages={setProductImages}
+            onSubmit={handleCreateProduct} submitLabel="Add Product" loading={saving} />
+        </div>
+      )}
+
+      {/* ── Edit Product ── */}
+      {view === 'edit-product' && editingProd && (
+        <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-xl">
+          <div className="flex items-center gap-3 mb-4">
+            <button onClick={() => { setView('products'); setEditingProd(null); }} className="text-sm text-saffron-600 hover:underline">← Back</button>
+            <h2 className="font-bold text-gray-800">Edit: {editingProd.name}</h2>
+          </div>
+          <ProductForm form={productForm} setForm={setProductForm} images={productImages} setImages={setProductImages}
+            onSubmit={handleUpdateProduct} submitLabel="Save Changes" loading={saving} />
+        </div>
+      )}
+
+      {/* ── Kits List ── */}
       {view === 'kits' && !loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {kits.map((k) => (
@@ -2387,26 +3168,21 @@ function MarketplaceTab() {
                   <p className="font-semibold text-gray-800">{k.name}</p>
                   <p className="text-xs text-gray-500 mt-0.5">{k.items?.length} items</p>
                   {k.totalCost > 0 && (
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Cost: ₹{k.totalCost?.toLocaleString('en-IN')}
-                      {k.discountValue > 0 && (
-                        <span className="ml-1 text-green-600">
-                          − {k.discountType === 'percentage' ? `${k.discountValue}%` : `₹${k.discountValue}`}
-                        </span>
-                      )}
+                    <p className="text-xs text-gray-400 mt-0.5">Cost: ₹{k.totalCost?.toLocaleString('en-IN')}
+                      {k.discountValue > 0 && <span className="ml-1 text-green-600"> − {k.discountType === 'percentage' ? `${k.discountValue}%` : `₹${k.discountValue}`}</span>}
                     </p>
                   )}
                   <p className="text-saffron-600 font-bold text-sm mt-0.5">Sell: ₹{k.discountPrice?.toLocaleString('en-IN')}</p>
                 </div>
-                <button onClick={() => deleteKit(k._id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={15} /></button>
+                <button onClick={() => handleDeleteKit(k._id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={15} /></button>
               </div>
               <div className="mt-2 flex flex-wrap gap-1">
-                {k.items?.slice(0,3).map((item, i) => (
+                {k.items?.slice(0, 3).map((item, i) => (
                   <span key={i} className="text-xs bg-saffron-50 text-saffron-700 px-2 py-0.5 rounded-full">
                     {item.productId?.name || '—'} ×{item.quantity}
                   </span>
                 ))}
-                {k.items?.length > 3 && <span className="text-xs text-gray-400">+{k.items.length-3} more</span>}
+                {k.items?.length > 3 && <span className="text-xs text-gray-400">+{k.items.length - 3} more</span>}
               </div>
             </div>
           ))}
@@ -2414,66 +3190,57 @@ function MarketplaceTab() {
         </div>
       )}
 
-      {view === 'add-product' && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-xl">
-          <h2 className="font-bold text-gray-800 mb-4">Add Product</h2>
-          <form onSubmit={createProduct} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">Name *</label><input required className="input" value={productForm.name} onChange={(e)=>setProductForm({...productForm,name:e.target.value})} /></div>
-              <div>
-                <label className="label">Category *</label>
-                <select required className="input" value={productForm.category} onChange={(e)=>setProductForm({...productForm,category:e.target.value})}>
-                  {['samagri','rudraksha','yantra','incense','idol','other'].map(c=><option key={c} value={c} className="capitalize">{c}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><label className="label">Price (₹) *</label><input required type="number" className="input" value={productForm.price} onChange={(e)=>setProductForm({...productForm,price:e.target.value})} /></div>
-              <div><label className="label">Sale Price</label><input type="number" className="input" value={productForm.salePrice} onChange={(e)=>setProductForm({...productForm,salePrice:e.target.value})} /></div>
-              <div><label className="label">Stock *</label><input required type="number" className="input" value={productForm.stock} onChange={(e)=>setProductForm({...productForm,stock:e.target.value})} /></div>
-            </div>
-            <div><label className="label">Description</label><textarea rows={2} className="input resize-none" value={productForm.description} onChange={(e)=>setProductForm({...productForm,description:e.target.value})} /></div>
-            <div><label className="label">Tags (comma-separated)</label><input className="input" value={productForm.tags} onChange={(e)=>setProductForm({...productForm,tags:e.target.value})} /></div>
-            <div>
-              <label className="label">Images (up to 5)</label>
-              <input type="file" accept="image/*" multiple onChange={(e)=>setProductImages([...e.target.files])} className="text-sm" />
-            </div>
-            <button type="submit" className="btn-primary flex items-center gap-2"><Plus size={16} />Add Product</button>
-          </form>
-        </div>
-      )}
-
+      {/* ── Add Kit ── */}
       {view === 'add-kit' && (
         <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-2xl">
           <h2 className="font-bold text-gray-800 mb-4">Create Kit</h2>
-          <form onSubmit={createKit} className="space-y-4">
+          <form onSubmit={handleCreateKit} className="space-y-4">
             <div><label className="label">Kit Name *</label><input required className="input" value={kitForm.name} onChange={(e)=>setKitForm({...kitForm,name:e.target.value})} /></div>
             <div><label className="label">Description</label><textarea rows={2} className="input resize-none" value={kitForm.description} onChange={(e)=>setKitForm({...kitForm,description:e.target.value})} /></div>
 
-            {/* ── Kit Items ── */}
             <div>
-              <label className="label">Kit Items *</label>
+              <label className="label">Kit Items * <span className="text-gray-400 font-normal text-xs">(includes kit-only products)</span></label>
               <div className="space-y-2">
                 {kitItems.map((item, idx) => {
-                  const prod = products.find((p) => p._id === item.productId);
+                  // Resolve the selected product and optionally selected variant
+                  const prod = kitBuilderProducts.find((p) => p._id === item.productId);
+                  const variant = prod?.variants?.find((v) => v.variantId === item.variantId);
+                  const unitPrice = variant ? variant.price : (prod ? (prod.salePrice || prod.price) : 0);
+                  // Kit dropdown value: "productId" for flat, "productId::variantId" for variants
+                  const selectValue = item.variantId ? `${item.productId}::${item.variantId}` : (item.productId || '');
                   return (
                     <div key={idx} className="flex gap-2 items-center">
-                      <select className="input flex-1 text-sm"
-                        value={item.productId}
-                        onChange={(e) => { const n=[...kitItems]; n[idx].productId=e.target.value; setKitItems(n); }}>
+                      <select className="input flex-1 text-sm" value={selectValue}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const [pid, vid] = val.includes('::') ? val.split('::') : [val, null];
+                          const p = kitBuilderProducts.find((p) => p._id === pid);
+                          const vt = vid ? p?.variants?.find((v) => v.variantId === vid) : null;
+                          const n = [...kitItems];
+                          n[idx] = { ...n[idx], productId: pid, variantId: vid || null, variantLabel: vt?.quantity || null };
+                          setKitItems(n);
+                        }}>
                         <option value="">Select product</option>
-                        {products.filter(p=>p.isActive&&p.stock>0).map((p) => (
-                          <option key={p._id} value={p._id}>{p.name} — ₹{p.salePrice||p.price}</option>
-                        ))}
+                        {kitBuilderProducts.map((p) =>
+                          p.variants?.length > 0 ? (
+                            <optgroup key={p._id} label={p.name + (p.visibilityType === 'kit_only' ? ' (Kit Only)' : '')}>
+                              {p.variants.map((v) => (
+                                <option key={v.variantId} value={`${p._id}::${v.variantId}`}>
+                                  {v.quantity} — ₹{v.price} (Stock: {v.stock})
+                                </option>
+                              ))}
+                            </optgroup>
+                          ) : (
+                            <option key={p._id} value={p._id}>
+                              {p.name} — ₹{p.salePrice || p.price}{p.visibilityType === 'kit_only' ? ' (Kit Only)' : ''}
+                            </option>
+                          )
+                        )}
                       </select>
                       <input type="number" min="1" className="input w-20 text-sm" value={item.quantity}
                         onChange={(e)=>{ const n=[...kitItems]; n[idx].quantity=+e.target.value||1; setKitItems(n); }} />
-                      {prod && (
-                        <span className="text-xs text-saffron-600 font-medium whitespace-nowrap">
-                          ₹{((prod.salePrice||prod.price) * item.quantity).toLocaleString('en-IN')}
-                        </span>
-                      )}
-                      <button type="button" onClick={() => setKitItems(kitItems.filter((_,i)=>i!==idx))} className="text-red-400 hover:text-red-600 px-1 text-lg leading-none">×</button>
+                      {prod && <span className="text-xs text-saffron-600 font-medium whitespace-nowrap">₹{(unitPrice * item.quantity).toLocaleString('en-IN')}</span>}
+                      <button type="button" onClick={() => setKitItems(kitItems.filter((_,i)=>i!==idx))} className="text-red-400 hover:text-red-600 text-lg px-1">×</button>
                     </div>
                   );
                 })}
@@ -2481,23 +3248,20 @@ function MarketplaceTab() {
               <button type="button" onClick={() => setKitItems([...kitItems,{productId:'',quantity:1}])} className="text-sm text-saffron-600 mt-2 hover:underline">+ Add Item</button>
             </div>
 
-            {/* ── Auto-Pricing Panel ── */}
             {kitTotalCost > 0 && (
               <div className="bg-saffron-50 border border-saffron-200 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold text-gray-700">Product Total Cost</span>
                   <span className="text-lg font-bold text-gray-800">₹{kitTotalCost.toLocaleString('en-IN')}</span>
                 </div>
-
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label text-xs">Discount Type</label>
                     <div className="flex gap-2">
-                      {[['percentage','% Percent'],['fixed','₹ Fixed']].map(([val, lbl]) => (
-                        <button key={val} type="button"
-                          onClick={() => { setKitForm({...kitForm, discountType: val}); setKitPriceOverride(false); }}
-                          className={`flex-1 flex items-center justify-center gap-1 text-xs px-2 py-2 rounded-lg border font-medium transition-colors ${kitForm.discountType===val ? 'bg-saffron-500 text-white border-saffron-500' : 'bg-white text-gray-600 border-gray-300 hover:border-saffron-300'}`}>
-                          {val === 'percentage' ? <Percent size={11} /> : <Tag size={11} />} {lbl}
+                      {[['percentage','% Percent'],['fixed','₹ Fixed']].map(([val,lbl]) => (
+                        <button key={val} type="button" onClick={() => { setKitForm({...kitForm,discountType:val}); setKitPriceOverride(false); }}
+                          className={`flex-1 flex items-center justify-center gap-1 text-xs px-2 py-2 rounded-lg border font-medium transition-colors ${kitForm.discountType===val?'bg-saffron-500 text-white border-saffron-500':'bg-white text-gray-600 border-gray-300'}`}>
+                          {val==='percentage'?<Percent size={11}/>:<Tag size={11}/>} {lbl}
                         </button>
                       ))}
                     </div>
@@ -2505,44 +3269,41 @@ function MarketplaceTab() {
                   <div>
                     <label className="label text-xs">Discount Value</label>
                     <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                        {kitForm.discountType === 'percentage' ? '%' : '₹'}
-                      </span>
-                      <input type="number" min="0" max={kitForm.discountType==='percentage'?100:kitTotalCost}
-                        className="input pl-7"
-                        value={kitForm.discountValue}
-                        onChange={(e) => { setKitForm({...kitForm, discountValue: e.target.value}); setKitPriceOverride(false); }} />
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">{kitForm.discountType==='percentage'?'%':'₹'}</span>
+                      <input type="number" min="0" max={kitForm.discountType==='percentage'?100:kitTotalCost} className="input pl-7" value={kitForm.discountValue}
+                        onChange={(e)=>{ setKitForm({...kitForm,discountValue:e.target.value}); setKitPriceOverride(false); }} />
                     </div>
                   </div>
                 </div>
-
                 <div className="flex items-center justify-between border-t border-saffron-200 pt-3">
                   <span className="text-sm font-semibold text-gray-700">Selling Price</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">Manual override</span>
-                    <input type="number" min="0"
-                      className={`input w-32 text-right font-bold text-lg ${kitPriceOverride ? 'border-saffron-400 bg-yellow-50' : 'bg-green-50 border-green-300'}`}
-                      value={kitSellingPrice}
-                      onChange={(e) => { setKitSellingPrice(e.target.value); setKitPriceOverride(true); }}
-                      onFocus={() => setKitPriceOverride(true)}
-                    />
-                  </div>
+                  <input type="number" min="0"
+                    className={`input w-32 text-right font-bold text-lg ${kitPriceOverride?'border-saffron-400 bg-yellow-50':'bg-green-50 border-green-300'}`}
+                    value={kitSellingPrice}
+                    onChange={(e)=>{ setKitSellingPrice(e.target.value); setKitPriceOverride(true); }}
+                    onFocus={()=>setKitPriceOverride(true)} />
                 </div>
-                {kitPriceOverride && (
-                  <button type="button" onClick={() => setKitPriceOverride(false)}
-                    className="text-xs text-saffron-600 hover:underline">↺ Recalculate from discount</button>
-                )}
-                {kitTotalCost > 0 && +kitSellingPrice > kitTotalCost && (
-                  <p className="text-xs text-orange-600 bg-orange-50 rounded-lg p-2">⚠ Selling price exceeds product total cost. Please verify.</p>
-                )}
+                {kitPriceOverride && <button type="button" onClick={()=>setKitPriceOverride(false)} className="text-xs text-saffron-600 hover:underline">↺ Recalculate from discount</button>}
+                {+kitSellingPrice > kitTotalCost && <p className="text-xs text-orange-600 bg-orange-50 rounded-lg p-2">⚠ Selling price exceeds product total cost.</p>}
               </div>
             )}
+            {kitTotalCost === 0 && <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center text-sm text-gray-500">Select products above to see auto-calculated pricing</div>}
 
-            {kitTotalCost === 0 && (
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center text-sm text-gray-500">
-                Select products above to see auto-calculated pricing
+            <div>
+              <label className="label">Link to Poojas <span className="text-gray-400 font-normal text-xs">(kit will be offered during these bookings)</span></label>
+              <div className="border rounded-xl p-2 max-h-40 overflow-y-auto grid grid-cols-2 gap-1" style={{ borderColor: 'var(--t-border)' }}>
+                {availablePoojas.map((p) => (
+                  <label key={p._id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:bg-saffron-50 text-xs">
+                    <input type="checkbox" checked={kitLinkedPoojas.includes(p._id)}
+                      onChange={() => setKitLinkedPoojas((prev) => prev.includes(p._id) ? prev.filter((x) => x !== p._id) : [...prev, p._id])}
+                      className="accent-saffron-500" />
+                    <span className="text-gray-700 truncate">{p.name}</span>
+                  </label>
+                ))}
+                {availablePoojas.length === 0 && <p className="text-xs text-gray-400 col-span-2">No active poojas found</p>}
               </div>
-            )}
+              {kitLinkedPoojas.length > 0 && <p className="text-xs text-saffron-600 mt-1">{kitLinkedPoojas.length} pooja(s) linked</p>}
+            </div>
 
             <div className="grid grid-cols-2 gap-3 items-end">
               <div><label className="label">Kit Image</label><input type="file" accept="image/*" onChange={(e)=>setKitImage(e.target.files[0])} className="text-sm" /></div>
@@ -2553,8 +3314,7 @@ function MarketplaceTab() {
                 </label>
               </div>
             </div>
-
-            <button type="submit" className="btn-primary flex items-center gap-2 w-full justify-center"><Plus size={16} />Create Kit</button>
+            <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2 w-full justify-center"><Plus size={16}/>{saving?'Creating...':'Create Kit'}</button>
           </form>
         </div>
       )}
@@ -2572,21 +3332,54 @@ function TemplesTab() {
   const [images,  setImages]  = useState([]);
   const [view,    setView]    = useState('list');
   const [saving,  setSaving]  = useState(false);
+  const [geoStatus, setGeoStatus] = useState('idle'); // 'idle' | 'loading' | 'notfound'
+  const geocodeTimerRef   = useRef(null);
+  const userChangedFormRef = useRef(false);
 
   const load = () => API.get('/temples?limit=50').then(({ data }) => setTemples(data.temples));
   useEffect(() => { load(); }, []);
 
-  // When pincode auto-fills city/state, geocode to move the map
-  const handlePincodeFill = useCallback(async ({ state, city }) => {
-    if (!city && !state) return;
-    try {
-      const q = encodeURIComponent(`${city}, ${state}, India`);
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`);
-      const data = await res.json();
-      if (data.length > 0) {
-        setMapCoords({ lat: +data[0].lat, lng: +data[0].lon });
+  // Debounced forward geocoding when address/city/state fields change
+  useEffect(() => {
+    if (!userChangedFormRef.current) return;
+    const hasContent = form.address || form.city || form.state;
+    if (!hasContent) return;
+
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    setGeoStatus('loading');
+
+    geocodeTimerRef.current = setTimeout(async () => {
+      const result = await forwardGeocode(form.address, form.city, form.state, form.pincode);
+      if (result.found) {
+        setMapCoords({ lat: result.lat, lng: result.lng });
+        setGeoStatus('idle');
+      } else {
+        setGeoStatus('notfound');
+        setTimeout(() => setGeoStatus((prev) => prev === 'notfound' ? 'idle' : prev), 3000);
       }
-    } catch { /* best-effort */ }
+    }, 900);
+  }, [form.address, form.city, form.state]);
+
+  // When pincode auto-fills city/state, geocode immediately
+  const handlePincodeFill = useCallback(({ state, city }) => {
+    if (!city && !state) return;
+    userChangedFormRef.current = true;
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    setGeoStatus('loading');
+    forwardGeocode('', city, state, '').then((result) => {
+      if (result.found) {
+        setMapCoords({ lat: result.lat, lng: result.lng });
+        setGeoStatus('idle');
+      } else {
+        setGeoStatus('notfound');
+        setTimeout(() => setGeoStatus((prev) => prev === 'notfound' ? 'idle' : prev), 3000);
+      }
+    });
+  }, []);
+
+  const handleFormChange = useCallback((field) => (e) => {
+    userChangedFormRef.current = true;
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
   }, []);
 
   const handlePinMove = useCallback((lat, lng, address) => {
@@ -2647,7 +3440,7 @@ function TemplesTab() {
                 <label className="label">Pincode</label>
                 <PincodeInput
                   value={form.pincode}
-                  onChange={(v) => setForm({ ...form, pincode: v })}
+                  onChange={(v) => { userChangedFormRef.current = true; setForm((p) => ({ ...p, pincode: v })); }}
                   onFill={({ state, city, district }) => {
                     setForm((p) => ({ ...p, state, city }));
                     handlePincodeFill({ state, city });
@@ -2658,23 +3451,23 @@ function TemplesTab() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label">City</label>
-                    <input className="input bg-saffron-50" value={form.city} onChange={(e)=>setForm({...form,city:e.target.value})} />
+                    <input className="input bg-saffron-50" value={form.city} onChange={handleFormChange('city')} />
                   </div>
                   <div>
                     <label className="label">State</label>
-                    <input className="input bg-saffron-50" value={form.state} onChange={(e)=>setForm({...form,state:e.target.value})} />
+                    <input className="input bg-saffron-50" value={form.state} onChange={handleFormChange('state')} />
                   </div>
                 </div>
               )}
               {!form.state && !form.city && (
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="label">City *</label><input required className="input" value={form.city} onChange={(e)=>setForm({...form,city:e.target.value})} /></div>
-                  <div><label className="label">State *</label><input required className="input" value={form.state} onChange={(e)=>setForm({...form,state:e.target.value})} /></div>
+                  <div><label className="label">City *</label><input required className="input" value={form.city} onChange={handleFormChange('city')} /></div>
+                  <div><label className="label">State *</label><input required className="input" value={form.state} onChange={handleFormChange('state')} /></div>
                 </div>
               )}
               <div>
                 <label className="label">Address</label>
-                <input className="input" value={form.address} onChange={(e)=>setForm({...form,address:e.target.value})} placeholder="Auto-filled when pin is dragged" />
+                <input className="input" value={form.address} onChange={handleFormChange('address')} placeholder="Auto-filled when pin is dragged" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -2705,6 +3498,17 @@ function TemplesTab() {
             <p className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
               <MapPin size={14} className="text-saffron-500" /> Drag pin or click to set exact location
             </p>
+            {geoStatus === 'loading' && (
+              <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl">
+                <Loader size={12} className="animate-spin shrink-0" />
+                Updating map location...
+              </div>
+            )}
+            {geoStatus === 'notfound' && (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-xl">
+                Nearby location shown — enter more details for a precise pin.
+              </div>
+            )}
             <MapPicker
               lat={mapCoords.lat}
               lng={mapCoords.lng}
@@ -2902,7 +3706,8 @@ function ReferralStatsTab() {
 // ─── System Settings Tab ──────────────────────────────────────
 const SETTING_SECTIONS = [
   { key: 'general',   label: 'General',   icon: Settings },
-  { key: 'payment',   label: 'Payment',   icon: CreditCard },
+  { key: 'payment',    label: 'Payment',    icon: CreditCard },
+  { key: 'commission', label: 'Commission', icon: Percent },
   { key: 'whatsapp',  label: 'WhatsApp',  icon: MessageSquare },
   { key: 'email',     label: 'Email',     icon: Mail },
   { key: 'ai',        label: 'AI',        icon: Cpu },
@@ -2933,6 +3738,83 @@ function SecretInput({ label, name, value, onChange, placeholder }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// ─── General Settings Section (logo upload + contact) ─────────
+function GeneralSettingsSection({ form, setForm, saving, setSaving }) {
+  const [logoFile, setLogoFile] = useState(null);
+  const set = (e) => {
+    const { name, value } = e.target;
+    setForm((f) => ({ ...f, [name]: value }));
+  };
+
+  const saveText = async () => {
+    setSaving(true);
+    try {
+      await API.patch('/admin/settings', {
+        platformName:   form.platformName   || '',
+        contactEmail:   form.contactEmail   || '',
+        supportPhone:   form.supportPhone   || '',
+        supportAddress: form.supportAddress || '',
+      });
+      toast.success('Settings saved');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Save failed');
+    } finally { setSaving(false); }
+  };
+
+  const uploadLogo = async () => {
+    if (!logoFile) return;
+    setSaving(true);
+    const fd = new FormData();
+    fd.append('logo', logoFile);
+    try {
+      const { data } = await API.patch('/admin/settings', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Logo uploaded');
+      setLogoFile(null);
+      if (data.logo) setForm((f) => ({ ...f, logo: data.logo }));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Upload failed');
+    } finally { setSaving(false); }
+  };
+
+  const currentLogoUrl = form.logo
+    ? (form.logo.startsWith('http') ? form.logo : `http://localhost:5000/${form.logo}`)
+    : null;
+
+  return (
+    <SectionForm title="General Settings" onSave={saveText} saving={saving}>
+      <Field label="Platform Name" name="platformName" value={form.platformName || ''} onChange={set} />
+
+      {/* Logo upload */}
+      <div>
+        <label className="label">Platform Logo</label>
+        {currentLogoUrl && (
+          <div className="mb-3 flex items-center gap-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+            <img src={currentLogoUrl} alt="Current logo" className="h-10 max-w-[120px] object-contain" />
+            <p className="text-xs text-gray-400">Current logo</p>
+          </div>
+        )}
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+          onChange={(e) => setLogoFile(e.target.files[0])}
+          className="text-sm"
+        />
+        <p className="text-xs text-gray-400 mt-1">PNG, JPG, WEBP, or SVG · Max 5 MB</p>
+        {logoFile && (
+          <button type="button" onClick={uploadLogo} disabled={saving}
+            className="btn-primary text-xs px-3 py-1.5 mt-2 flex items-center gap-1">
+            <Upload size={12} /> {saving ? 'Uploading...' : 'Upload Logo'}
+          </button>
+        )}
+      </div>
+
+      <Field label="Contact Email" name="contactEmail" type="email" value={form.contactEmail || ''} onChange={set} />
+      <Field label="Support Phone" name="supportPhone" value={form.supportPhone || ''} onChange={set} placeholder="+91-XXXXXXXXXX" />
+      <Field label="Support Address" name="supportAddress" value={form.supportAddress || ''} onChange={set} placeholder="New Delhi, India" />
+    </SectionForm>
   );
 }
 
@@ -2972,12 +3854,7 @@ function SystemSettingsTab() {
 
   const sectionContent = {
     general: (
-      <SectionForm title="General Settings" onSave={() => save(['platformName','logo','contactEmail','supportPhone'])} saving={saving}>
-        <Field label="Platform Name" name="platformName" value={form.platformName || ''} onChange={set} />
-        <Field label="Logo URL" name="logo" value={form.logo || ''} onChange={set} placeholder="https://..." />
-        <Field label="Contact Email" name="contactEmail" type="email" value={form.contactEmail || ''} onChange={set} />
-        <Field label="Support Phone" name="supportPhone" value={form.supportPhone || ''} onChange={set} placeholder="+91-XXXXXXXXXX" />
-      </SectionForm>
+      <GeneralSettingsSection form={form} setForm={setForm} saving={saving} setSaving={setSaving} />
     ),
     payment: (
       <SectionForm title="Payment — PhonePe" onSave={() => save(['phonepeEnv','phonepeMerchantId','phonepeSaltKey','phonepeSaltIndex','phonepeWebhookUrl','phonepeRedirectUrl'])} saving={saving}>
@@ -3006,47 +3883,71 @@ function SystemSettingsTab() {
         <Field label="Redirect URL (after payment)" name="phonepeRedirectUrl" value={form.phonepeRedirectUrl || ''} onChange={set} placeholder="https://yourdomain.com/booking-status" />
       </SectionForm>
     ),
+    commission: (
+      <SectionForm title="Platform Commission & Tax" onSave={() => save(['platformCommissionPercent','platformGstPercent'])} saving={saving}>
+        <InfoBox>These percentages are applied on top of the base pooja price and shown transparently to users at checkout.</InfoBox>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="label">Platform Commission (%)</label>
+            <div className="relative">
+              <input type="number" name="platformCommissionPercent" min="0" max="100" step="0.5"
+                value={form.platformCommissionPercent ?? 0} onChange={set} className="input pr-8" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+            </div>
+          </div>
+          <div>
+            <label className="label">GST / Tax (%)</label>
+            <div className="relative">
+              <input type="number" name="platformGstPercent" min="0" max="100" step="0.5"
+                value={form.platformGstPercent ?? 0} onChange={set} className="input pr-8" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border p-4" style={{ background: '#f8f9fa', borderColor: 'var(--t-border)' }}>
+          <p className="text-xs font-semibold text-gray-600 mb-2">Preview (example ₹1000 pooja):</p>
+          <div className="space-y-1 text-xs text-gray-600">
+            <div className="flex justify-between"><span>Base Price</span><span>₹1,000</span></div>
+            <div className="flex justify-between"><span>Commission ({form.platformCommissionPercent || 0}%)</span><span>₹{Math.round(1000 * (form.platformCommissionPercent || 0) / 100)}</span></div>
+            <div className="flex justify-between"><span>GST ({form.platformGstPercent || 0}%)</span><span>₹{Math.round((1000 + Math.round(1000 * (form.platformCommissionPercent || 0) / 100)) * (form.platformGstPercent || 0) / 100)}</span></div>
+            <div className="flex justify-between font-bold border-t pt-1 mt-1" style={{ borderColor: 'var(--t-border)' }}>
+              <span>Total Charged</span>
+              <span style={{ color: '#1B1F3B' }}>
+                ₹{1000 + Math.round(1000 * (form.platformCommissionPercent || 0) / 100) + Math.round((1000 + Math.round(1000 * (form.platformCommissionPercent || 0) / 100)) * (form.platformGstPercent || 0) / 100)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </SectionForm>
+    ),
     whatsapp: (
-      <SectionForm title="WhatsApp (Meta Cloud API)" onSave={() => save(['whatsappAppId','whatsappPhoneNumberId','whatsappAccessToken','whatsappApiVersion'])} saving={saving}>
+      <SectionForm title="WhatsApp (Meta Cloud API)" onSave={() => save(['whatsappAppId','whatsappPhoneNumberId','whatsappBusinessAccountId','whatsappAccessToken','whatsappApiVersion'])} saving={saving}>
         <Field label="Meta App ID" name="whatsappAppId" value={form.whatsappAppId || ''} onChange={set} />
         <Field label="Phone Number ID" name="whatsappPhoneNumberId" value={form.whatsappPhoneNumberId || ''} onChange={set} />
+        <Field label="Business Account ID (WABA ID)" name="whatsappBusinessAccountId" value={form.whatsappBusinessAccountId || ''} onChange={set} placeholder="Needed for template sync" />
         <SecretInput label="Access Token" name="whatsappAccessToken" value={form.whatsappAccessToken || ''} onChange={set} />
         <Field label="API Version" name="whatsappApiVersion" value={form.whatsappApiVersion || 'v18.0'} onChange={set} placeholder="v18.0" />
-        <InfoBox>Enter the permanent System User token from your Meta Business Manager. Template messages require an approved WhatsApp Business Account.</InfoBox>
+        <InfoBox>Enter the permanent System User token from your Meta Business Manager. Business Account ID (WABA ID) is required to sync templates. Template messages require an approved WhatsApp Business Account.</InfoBox>
       </SectionForm>
     ),
     email: (
-      <SectionForm title="Email / SMTP" onSave={() => save(['emailService','emailSmtpHost','emailSmtpPort','emailSmtpUser','emailSmtpPassword'])} saving={saving}>
-        <div>
-          <label className="label">Transport Mode</label>
-          <div className="flex gap-3">
-            {[['service','Named Service (Gmail, Outlook…)'],['smtp','Custom SMTP Server']].map(([val, lbl]) => (
-              <label key={val} className="flex items-center gap-2 cursor-pointer text-sm">
-                <input type="radio" name="_emailMode" value={val}
-                  checked={(form.emailSmtpHost ? 'smtp' : 'service') === val}
-                  onChange={() => setForm(f => val === 'service' ? { ...f, emailSmtpHost: '', emailSmtpPort: 587 } : f)}
-                />
-                {lbl}
-              </label>
-            ))}
-          </div>
-        </div>
-        {!form.emailSmtpHost ? (
+      <SectionForm title="Email / SMTP" onSave={() => save(['emailService','emailSmtpHost','emailSmtpPort','emailSmtpUser','emailSmtpPassword','emailSenderName'])} saving={saving}>
+        <Field label="Sender Name" name="emailSenderName" value={form.emailSenderName || 'Zutsav'} onChange={set} placeholder="Zutsav" />
+        <Field label="SMTP Host" name="emailSmtpHost" value={form.emailSmtpHost || ''} onChange={set} placeholder="smtp.larksuite.com" />
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="label">Service</label>
-            <select name="emailService" value={form.emailService || 'gmail'} onChange={set} className="input">
-              {['gmail','outlook','yahoo','hotmail'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+            <label className="label">SMTP Port</label>
+            <select name="emailSmtpPort" value={form.emailSmtpPort || 587} onChange={set} className="input">
+              <option value={587}>587 (STARTTLS)</option>
+              <option value={465}>465 (SSL)</option>
+              <option value={25}>25 (Plain)</option>
             </select>
           </div>
-        ) : (
-          <>
-            <Field label="SMTP Host" name="emailSmtpHost" value={form.emailSmtpHost || ''} onChange={set} placeholder="smtp.example.com" />
-            <Field label="SMTP Port" name="emailSmtpPort" type="number" value={form.emailSmtpPort || 587} onChange={set} />
-          </>
-        )}
-        <Field label="SMTP / Auth Email" name="emailSmtpUser" type="email" value={form.emailSmtpUser || ''} onChange={set} />
-        <SecretInput label="Password / App Password" name="emailSmtpPassword" value={form.emailSmtpPassword || ''} onChange={set} />
-        <InfoBox>For Gmail, use an App Password (not your account password). Enable 2FA first, then generate at myaccount.google.com → Security → App Passwords.</InfoBox>
+          <Field label="SMTP Username" name="emailSmtpUser" type="email" value={form.emailSmtpUser || ''} onChange={set} />
+        </div>
+        <SecretInput label="SMTP Password" name="emailSmtpPassword" value={form.emailSmtpPassword || ''} onChange={set} />
+        <InfoBox>Recommended: smtp.larksuite.com port 587 (STARTTLS) or 465 (SSL). Credentials are stored encrypted.</InfoBox>
+        <TestEmailButton />
       </SectionForm>
     ),
     ai: (
@@ -3186,11 +4087,274 @@ function Field({ label, name, value, onChange, type = 'text', placeholder }) {
   );
 }
 
+// ─── Payout Management Tab ────────────────────────────────────
+const PAYMENT_METHODS = [
+  { value: 'bank_transfer', label: 'Bank Transfer' },
+  { value: 'upi',           label: 'UPI' },
+  { value: 'cash',          label: 'Cash' },
+  { value: 'other',         label: 'Other' },
+];
+
+function PayoutsTab() {
+  const [view,          setView]          = useState('pending');   // 'pending' | 'history'
+  const [pendingGroups, setPendingGroups] = useState([]);
+  const [history,       setHistory]       = useState([]);
+  const [historyStats,  setHistoryStats]  = useState(null);
+  const [loading,       setLoading]       = useState(true);
+  const [payModal,      setPayModal]      = useState(null); // { type: 'batch'|'single', panditId?, bookingId?, amount, label }
+  const [payMethod,     setPayMethod]     = useState('bank_transfer');
+  const [payNote,       setPayNote]       = useState('');
+  const [paying,        setPaying]        = useState(false);
+  const [batchDetail,   setBatchDetail]   = useState(null); // expanded batch in history
+
+  const loadPending = () => {
+    setLoading(true);
+    API.get('/admin/payouts/pending')
+      .then(({ data }) => setPendingGroups(data.groups || []))
+      .finally(() => setLoading(false));
+  };
+  const loadHistory = () => {
+    setLoading(true);
+    API.get('/admin/payouts/history?limit=50')
+      .then(({ data }) => { setHistory(data.batches || []); setHistoryStats(data.stats); })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (view === 'pending') loadPending();
+    else loadHistory();
+  }, [view]);
+
+  const openPayModal = (type, panditId, bookingId, amount, label) => {
+    setPayModal({ type, panditId, bookingId, amount, label });
+    setPayMethod('bank_transfer');
+    setPayNote('');
+  };
+
+  const confirmPay = async () => {
+    setPaying(true);
+    try {
+      if (payModal.type === 'batch') {
+        await API.post(`/admin/payouts/pay-batch/${payModal.panditId}`, { paymentMethod: payMethod, note: payNote });
+        toast.success('Bulk payout processed successfully');
+      } else {
+        await API.post(`/admin/payouts/pay-single/${payModal.bookingId}`, { paymentMethod: payMethod, note: payNote });
+        toast.success('Payout processed successfully');
+      }
+      setPayModal(null);
+      loadPending();
+    } catch (err) { toast.error(err.response?.data?.message || 'Payment failed'); }
+    finally { setPaying(false); }
+  };
+
+  const fmt = (n) => `₹${(n || 0).toLocaleString('en-IN')}`;
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+  return (
+    <div className="space-y-5">
+      {/* Pay modal */}
+      {payModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
+          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md">
+            <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center mb-4">
+              <IndianRupee size={22} className="text-green-600" />
+            </div>
+            <h3 className="font-bold text-gray-800 text-lg mb-1">Confirm Payout</h3>
+            <p className="text-sm text-gray-500 mb-1">{payModal.label}</p>
+            <p className="text-2xl font-bold text-green-700 mb-4">{fmt(payModal.amount)}</p>
+            <label className="label">Payment Method</label>
+            <select className="input mb-3 text-sm" value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+              {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+            <label className="label">Note (optional)</label>
+            <input className="input mb-5 text-sm" placeholder="Transaction ref, remarks..." value={payNote} onChange={(e) => setPayNote(e.target.value)} />
+            <div className="flex gap-3">
+              <button onClick={() => setPayModal(null)} disabled={paying} className="btn-outline flex-1">Cancel</button>
+              <button onClick={confirmPay} disabled={paying}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition-colors">
+                {paying ? 'Processing…' : 'Confirm Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl font-bold text-gray-800">Payout Management</h1>
+        <button onClick={() => view === 'pending' ? loadPending() : loadHistory()}
+          className="text-xs text-gray-400 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
+          <RotateCcw size={12} /> Refresh
+        </button>
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="flex gap-2">
+        {[{ key: 'pending', label: 'Pending Payouts' }, { key: 'history', label: 'Payout History' }].map(({ key, label }) => (
+          <button key={key} onClick={() => setView(key)}
+            className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${view === key ? 'bg-saffron-500 text-white' : 'bg-white text-gray-600 border hover:border-saffron-300'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? <LoadingSpinner /> : view === 'pending' ? (
+        // ── Pending payouts ──────────────────────────────────
+        <div className="space-y-5">
+          {pendingGroups.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
+              <CheckCircle size={40} className="text-green-300 mx-auto mb-3" />
+              <p className="text-gray-500 font-medium">All caught up!</p>
+              <p className="text-gray-400 text-sm mt-1">No pending payouts at this time.</p>
+            </div>
+          ) : pendingGroups.map((group) => {
+            const pandit = group.pandit;
+            return (
+              <div key={pandit?._id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+                {/* Pandit header */}
+                <div className="p-5 flex flex-col sm:flex-row items-start gap-4 bg-gray-50 border-b border-gray-100">
+                  <div className="w-12 h-12 bg-saffron-100 rounded-xl flex items-center justify-center shrink-0">
+                    <User size={20} className="text-saffron-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-gray-800">{pandit?.name || 'Unknown Pandit'}</h3>
+                    <p className="text-sm text-gray-500">{pandit?.phone} · {pandit?.email}</p>
+                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                      <span className="text-xs text-gray-400">{group.bookings.length} pending pooja{group.bookings.length > 1 ? 's' : ''}</span>
+                      {pandit?.bankDetails?.accountNumber && (
+                        <span className="text-xs text-gray-400">Bank: {pandit.bankDetails.bankName || 'on file'} ••{pandit.bankDetails.accountNumber.slice(-4)}</span>
+                      )}
+                      {pandit?.upiDetails?.upiId && !pandit?.bankDetails?.accountNumber && (
+                        <span className="text-xs text-gray-400">UPI: {pandit.upiDetails.upiId}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-2xl font-bold text-green-700">{fmt(group.totalAmount)}</p>
+                    <p className="text-xs text-gray-400 mb-3">Total Due</p>
+                    <button onClick={() => openPayModal('batch', pandit?._id, null, group.totalAmount, `Pay all ${group.bookings.length} poojas for ${pandit?.name}`)}
+                      className="flex items-center gap-2 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 px-4 py-2 rounded-xl transition-colors">
+                      <IndianRupee size={14} /> Pay All ({group.bookings.length})
+                    </button>
+                  </div>
+                </div>
+                {/* Individual bookings */}
+                <div className="divide-y divide-gray-50">
+                  {group.bookings.map((b) => (
+                    <div key={b._id} className="px-5 py-3.5 flex items-center gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{b.poojaId?.name || 'Pooja Service'}</p>
+                        <p className="text-xs text-gray-400">
+                          #{b.bookingNumber} · {b.userId?.name} · Verified: {fmtDate(b.verifiedAt)}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-base font-bold text-gray-800">{fmt(b.payout?.amount)}</p>
+                        <span className="text-[10px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Pending</span>
+                      </div>
+                      <button onClick={() => openPayModal('single', null, b._id, b.payout?.amount, `Pay for ${b.poojaId?.name} — #${b.bookingNumber}`)}
+                        className="shrink-0 text-xs text-green-700 border border-green-200 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg transition-colors">
+                        Pay Now
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        // ── Payout history ───────────────────────────────────
+        <div className="space-y-4">
+          {historyStats && (
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: 'Total Paid Out',   value: fmt(historyStats.totalPaidOut),   color: 'text-green-700 bg-green-50'  },
+                { label: 'Pending Payouts',  value: historyStats.pendingCount,          color: 'text-amber-700 bg-amber-50'  },
+                { label: 'Pending Amount',   value: fmt(historyStats.pendingAmount),   color: 'text-orange-700 bg-orange-50'},
+              ].map(({ label, value, color }) => (
+                <div key={label} className={`rounded-2xl p-4 ${color} border border-current/10`}>
+                  <p className="text-2xl font-bold">{value}</p>
+                  <p className="text-xs mt-1 opacity-70">{label}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          {history.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
+              <IndianRupee size={40} className="text-gray-200 mx-auto mb-3" />
+              <p className="text-gray-400">No payout batches yet</p>
+            </div>
+          ) : history.map((batch) => (
+            <div key={batch._id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+              <div className="p-5 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{batch.batchId}</span>
+                    <span className="text-xs text-gray-400">{PAYMENT_METHODS.find(m => m.value === batch.paymentMethod)?.label || batch.paymentMethod}</span>
+                  </div>
+                  <p className="font-semibold text-gray-800">{batch.panditId?.name || 'Pandit'}</p>
+                  <p className="text-xs text-gray-400">
+                    {batch.bookingIds?.length || 0} booking{(batch.bookingIds?.length || 0) > 1 ? 's' : ''} · Paid by {batch.paidByAdminName} · {fmtDate(batch.paidDate)}
+                  </p>
+                  {batch.note && <p className="text-xs text-gray-400 italic mt-0.5">"{batch.note}"</p>}
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-xl font-bold text-green-700">{fmt(batch.totalAmount)}</p>
+                  <span className="text-[10px] font-semibold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Paid</span>
+                </div>
+                <button onClick={() => setBatchDetail(batchDetail === batch._id ? null : batch._id)}
+                  className="shrink-0 text-xs text-gray-500 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
+                  {batchDetail === batch._id ? 'Hide' : 'Details'}
+                </button>
+              </div>
+              {batchDetail === batch._id && (
+                <div className="border-t border-gray-50 px-5 py-3 space-y-2 bg-gray-50">
+                  {(batch.bookingIds || []).map((id) => (
+                    <div key={id?.toString()} className="text-xs text-gray-500 font-mono">#{id?.toString().slice(-8)}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InfoBox({ children }) {
   return (
     <div className="flex gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-700">
       <span className="shrink-0 mt-0.5">ℹ</span>
       <span>{children}</span>
+    </div>
+  );
+}
+
+function TestEmailButton() {
+  const [email, setEmail] = useState('');
+  const [testing, setTesting] = useState(false);
+  const handleTest = async () => {
+    if (!email) { toast.error('Enter a test email address'); return; }
+    setTesting(true);
+    try {
+      await API.post('/admin/settings/test-email', { testEmail: email });
+      toast.success('Test email sent! Check your inbox.');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Test failed — check SMTP settings');
+    } finally { setTesting(false); }
+  };
+  return (
+    <div className="flex gap-2 items-end">
+      <div className="flex-1">
+        <label className="label">Test Connection</label>
+        <input type="email" className="input" placeholder="test@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+      </div>
+      <button type="button" onClick={handleTest} disabled={testing}
+        className="px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all"
+        style={{ background: testing ? '#f3f4f6' : '#1B1F3B', color: testing ? '#9ca3af' : '#fff', borderColor: '#1B1F3B' }}>
+        {testing ? 'Sending…' : 'Send Test'}
+      </button>
     </div>
   );
 }

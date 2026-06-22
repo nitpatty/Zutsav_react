@@ -74,6 +74,7 @@ app.use('/api/panchang',         require('./routes/panchang.routes'));
 app.use('/api/referral',         require('./routes/referral.routes'));
 app.use('/api/notifications',    require('./routes/notification.routes'));
 app.use('/api/comm',             require('./routes/comm.routes'));
+app.use('/api/settings',         require('./routes/settings.routes'));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));

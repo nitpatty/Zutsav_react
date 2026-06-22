@@ -75,20 +75,38 @@ exports.deleteEmailTemplate = async (req, res) => {
 
 exports.listWhatsAppTemplates = async (req, res) => {
   try {
-    const templates = await WhatsAppTemplate.find().sort({ createdAt: -1 }).lean();
+    const templates = await WhatsAppTemplate.find().sort({ name: 1 }).lean();
+    ok(res, { templates });
+  } catch (e) { err(res, e.message, 500); }
+};
+
+// Only enabled + approved templates — used by Test Send dropdown
+exports.listEnabledTemplates = async (req, res) => {
+  try {
+    const templates = await WhatsAppTemplate.find({
+      isActive: true,
+      status:   'APPROVED',
+    })
+      .select('name language category assignedTrigger status')
+      .sort({ name: 1 })
+      .lean();
     ok(res, { templates });
   } catch (e) { err(res, e.message, 500); }
 };
 
 exports.syncWhatsAppTemplates = async (req, res) => {
   try {
-    const { WHATSAPP_ACCESS_TOKEN, WHATSAPP_BUSINESS_ACCOUNT_ID, WHATSAPP_API_VERSION = 'v18.0' } = process.env;
-    if (!WHATSAPP_ACCESS_TOKEN || !WHATSAPP_BUSINESS_ACCOUNT_ID)
-      return err(res, 'WHATSAPP_ACCESS_TOKEN and WHATSAPP_BUSINESS_ACCOUNT_ID are required in env', 500);
+    const settings = require('../utils/settingsService');
+    const accessToken       = await settings.get('whatsappAccessToken',      process.env.WHATSAPP_ACCESS_TOKEN);
+    const businessAccountId = await settings.get('whatsappBusinessAccountId', process.env.WHATSAPP_BUSINESS_ACCOUNT_ID);
+    const apiVersion        = await settings.get('whatsappApiVersion',        process.env.WHATSAPP_API_VERSION || 'v18.0');
 
-    const url = `https://graph.facebook.com/${WHATSAPP_API_VERSION}/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
+    if (!accessToken || !businessAccountId)
+      return err(res, 'WhatsApp Access Token and Business Account ID are required. Set them in Admin → Settings → WhatsApp or in .env', 400);
+
+    const url = `https://graph.facebook.com/${apiVersion}/${businessAccountId}/message_templates`;
     const response = await axios.get(url, {
-      headers: { Authorization: `Bearer ${WHATSAPP_ACCESS_TOKEN}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
       params: { limit: 200 },
     });
 
@@ -121,12 +139,41 @@ exports.syncWhatsAppTemplates = async (req, res) => {
 exports.updateWhatsAppTemplate = async (req, res) => {
   try {
     const { assignedTrigger, isActive } = req.body;
+
+    // Build selective update — only touch fields that were actually sent
+    const update = {};
+    if (isActive        !== undefined) update.isActive        = isActive;
+    if (assignedTrigger !== undefined) update.assignedTrigger = assignedTrigger;
+    if (Object.keys(update).length === 0) return err(res, 'No fields to update');
+
+    const current = await WhatsAppTemplate.findById(req.params.id).lean();
+    if (!current) return err(res, 'Template not found', 404);
+
+    // Compute final state after applying the update
+    const finalIsActive        = update.isActive        ?? current.isActive;
+    const finalAssignedTrigger = update.assignedTrigger ?? current.assignedTrigger;
+
+    // Validate: only one active template per event
+    if (finalIsActive && finalAssignedTrigger && finalAssignedTrigger !== '') {
+      const conflict = await WhatsAppTemplate.findOne({
+        assignedTrigger: finalAssignedTrigger,
+        isActive:        true,
+        _id:             { $ne: req.params.id },
+      }).lean();
+      if (conflict) {
+        return err(
+          res,
+          `Event "${finalAssignedTrigger}" is already mapped to template "${conflict.name}". Disable that template first.`,
+          409
+        );
+      }
+    }
+
     const template = await WhatsAppTemplate.findByIdAndUpdate(
       req.params.id,
-      { assignedTrigger, isActive },
+      { $set: update },
       { new: true }
     );
-    if (!template) return err(res, 'Template not found', 404);
     ok(res, { template });
   } catch (e) { err(res, e.message, 500); }
 };
@@ -238,10 +285,17 @@ exports.retryLog = async (req, res) => {
       }
     } else if (log.type === 'whatsapp') {
       try {
-        const { sendWhatsAppText } = require('../utils/whatsapp');
-        await sendWhatsAppText(log.recipientPhone, `[Retry] ${log.templateName || 'Notification'}`);
-        log.status   = 'delivered';
-        log.response = { message: 'Retry successful' };
+        if (!log.templateName || log.templateName === 'freeform') {
+          log.status = 'failed';
+          log.error  = 'Cannot retry: original message was freeform text (not a template). WhatsApp only supports approved templates.';
+        } else {
+          const { sendWhatsApp } = require('../utils/whatsapp');
+          // Look up the template to get the correct language code
+          const tmpl = await WhatsAppTemplate.findOne({ name: log.templateName }).lean();
+          await sendWhatsApp(log.recipientPhone, log.templateName, [], tmpl?.language || 'en');
+          log.status   = 'delivered';
+          log.response = { message: 'Retry successful' };
+        }
       } catch (e2) {
         log.status = 'failed';
         log.error  = e2.message;
@@ -274,7 +328,7 @@ exports.clearFailedLogs = async (req, res) => {
 
 exports.testNotification = async (req, res) => {
   try {
-    const { type, to, templateSlug, templateName, variables = {}, message } = req.body;
+    const { type, to, templateSlug, templateId, variables = {} } = req.body;
     if (!type || !to) return err(res, 'type and to are required');
 
     if (type === 'email') {
@@ -297,24 +351,28 @@ exports.testNotification = async (req, res) => {
     }
 
     if (type === 'whatsapp') {
-      if (message) {
-        const log = await loggedSendWhatsAppText({
-          to,
-          text:          message,
-          event:         'test',
-          recipientName: 'Test User',
-        });
-        return ok(res, { message: 'Test WhatsApp text dispatched', logId: log._id, status: log.status });
-      }
-      if (!templateName) return err(res, 'templateName or message required for whatsapp test');
+      // Always require a template selected from the DB — no free-form text
+      if (!templateId) return err(res, 'templateId is required for WhatsApp test. Select an enabled template from the dropdown.');
+
+      const tmpl = await WhatsAppTemplate.findById(templateId).lean();
+      if (!tmpl)          return err(res, 'WhatsApp template not found', 404);
+      if (!tmpl.isActive) return err(res, 'This template is disabled. Enable it in the WhatsApp tab first.');
+      if (tmpl.status !== 'APPROVED') return err(res, `Template status is "${tmpl.status}" — only APPROVED templates can be sent.`);
+
       const log = await loggedSendWhatsApp({
         to,
-        templateName,
-        components:    [],
+        templateName:  tmpl.name,
+        languageCode:  tmpl.language || 'en',
+        components:    [],   // Test send with empty components — variables show as placeholders
         event:         'test',
-        recipientName: 'Test User',
+        recipientName: 'Test Admin',
       });
-      return ok(res, { message: 'Test WhatsApp template dispatched', logId: log._id, status: log.status });
+      return ok(res, {
+        message:      `Test WhatsApp dispatched using template "${tmpl.name}"`,
+        templateName: tmpl.name,
+        logId:        log._id,
+        status:       log.status,
+      });
     }
 
     return err(res, 'type must be "email" or "whatsapp"');

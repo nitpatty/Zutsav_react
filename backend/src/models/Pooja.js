@@ -1,14 +1,19 @@
 const mongoose = require('mongoose');
 
 const poojaSchema = new mongoose.Schema({
-  categoryId:  { type: mongoose.Schema.Types.ObjectId, ref: 'PoojaCategory', required: true },
+  // Legacy single-category (kept for backward compat; prefer categoryIds)
+  categoryId:  { type: mongoose.Schema.Types.ObjectId, ref: 'PoojaCategory' },
+  // Multi-category support
+  categoryIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PoojaCategory' }],
   name:        { type: String, required: true, trim: true },
   slug:        { type: String, required: true, unique: true, lowercase: true },
   description: { type: String },
   shortDesc:   { type: String },
-  price:       { type: Number, required: true, min: 0 },
-  duration:    { type: String },            // e.g. "2 hours"
-  image:       { type: String },
+  price:        { type: Number, required: true, min: 0 },
+  durationValue:{ type: Number, min: 1, max: 30 },
+  durationUnit: { type: String, enum: ['hours', 'days'] },
+  duration:     { type: String },           // legacy free-text, kept for backward compat
+  image:        { type: String },
   gallery:     [{ type: String }],
   requirements:[{ type: String }],          // samagri list
   benefits:    [{ type: String }],
@@ -26,7 +31,19 @@ const poojaSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected', 'inactive'],
     default: 'approved', // existing admin poojas remain visible
   },
-  adminNote: { type: String },
+  adminNote:  { type: String },
+  isDeleted:  { type: Boolean, default: false },
+  deletedAt:  { type: Date, default: null },
 }, { timestamps: true });
+
+// Keep categoryId in sync with first element of categoryIds for legacy callers
+poojaSchema.pre('save', function (next) {
+  if (this.categoryIds?.length > 0 && !this.categoryId) {
+    this.categoryId = this.categoryIds[0];
+  } else if (this.categoryId && (!this.categoryIds || this.categoryIds.length === 0)) {
+    this.categoryIds = [this.categoryId];
+  }
+  next();
+});
 
 module.exports = mongoose.model('Pooja', poojaSchema);

@@ -1,6 +1,7 @@
 const User                 = require('../models/User');
 const Pandit               = require('../models/Pandit');
 const Booking              = require('../models/Booking');
+const PayoutBatch          = require('../models/PayoutBatch');
 const Order                = require('../models/Order');
 const Product              = require('../models/Product');
 const Notification         = require('../models/Notification');
@@ -23,6 +24,7 @@ const {
   notifyKYCApproved,
   notifyKYCRejected,
   notifyKYCReuploadRequired,
+  notifyPayoutReleased,
 } = require('../utils/notificationService');
 
 // GET /api/admin/dashboard
@@ -224,6 +226,61 @@ exports.deletePandit = async (req, res, next) => {
     });
 
     res.json({ success: true, message: `Pandit "${name}" has been permanently deleted` });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/admin/pandits/:id — full pandit profile for admin drawer
+exports.getPanditProfile = async (req, res, next) => {
+  try {
+    const pandit = await Pandit.findById(req.params.id)
+      .populate('selectedPoojas', 'name categoryId duration image')
+      .populate('poojaCharges.poojaId', 'name categoryId duration');
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit not found' });
+    res.json({ success: true, pandit });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/admin/pandits/:id/pooja-price — bulk set approved prices
+// Body: { prices: [{ poojaId, approvedPrice }] }
+exports.setPoojaApprovedPrice = async (req, res, next) => {
+  try {
+    const { prices } = req.body;
+    if (!Array.isArray(prices) || prices.length === 0) {
+      return res.status(400).json({ success: false, message: 'prices array is required' });
+    }
+    const pandit = await Pandit.findById(req.params.id);
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit not found' });
+
+    const adminName = req.user?.name || 'Admin';
+    const now = new Date();
+
+    for (const { poojaId, approvedPrice } of prices) {
+      const idx = pandit.poojaCharges.findIndex(
+        (c) => c.poojaId && c.poojaId.toString() === poojaId.toString()
+      );
+      if (idx >= 0) {
+        pandit.poojaCharges[idx].approvedPrice       = approvedPrice;
+        pandit.poojaCharges[idx].priceApprovalStatus = 'approved';
+        pandit.poojaCharges[idx].approvedAt          = now;
+        pandit.poojaCharges[idx].approvedByName      = adminName;
+      } else {
+        pandit.poojaCharges.push({
+          poojaId,
+          expectedCharges:     0,
+          approvedPrice,
+          priceApprovalStatus: 'approved',
+          approvedAt:          now,
+          approvedByName:      adminName,
+        });
+      }
+    }
+
+    await pandit.save();
+    res.json({ success: true, message: 'Approved prices updated', poojaCharges: pandit.poojaCharges });
   } catch (err) {
     next(err);
   }
@@ -622,9 +679,9 @@ exports.approveCompletion = async (req, res, next) => {
     }
 
     const now = new Date();
-    booking.status        = 'completed';
-    booking.completedAt   = now;
-    booking.verifiedAt    = now;
+    booking.status         = 'completed';
+    booking.completedAt    = now;
+    booking.verifiedAt     = now;
     booking.verifiedByName = req.user.name || 'Admin';
     booking.auditLog.push({
       action:          'completion_approved',
@@ -632,6 +689,30 @@ exports.approveCompletion = async (req, res, next) => {
       performedByName: req.user.name || 'Admin',
       at:              now,
     });
+
+    // Auto-determine payout amount from pandit's admin-approved price
+    let payoutAmount = 0;
+    if (booking.panditId) {
+      const pandit = await Pandit.findById(booking.panditId).select('poojaCharges');
+      if (pandit) {
+        const charge = pandit.poojaCharges.find(
+          (c) => c.poojaId && c.poojaId.toString() === booking.poojaId.toString()
+        );
+        if (charge?.priceApprovalStatus === 'approved' && charge.approvedPrice != null) {
+          payoutAmount = charge.approvedPrice;
+        } else if (booking.panditFareAmount) {
+          payoutAmount = booking.panditFareAmount;
+        } else if (charge?.expectedCharges) {
+          payoutAmount = charge.expectedCharges;
+        }
+      }
+    }
+
+    if (payoutAmount > 0) {
+      booking.payout.amount = payoutAmount;
+      booking.payout.status = 'pending';
+    }
+
     await booking.save();
 
     // Prompt the user to rate their experience
@@ -922,5 +1003,266 @@ exports.deleteSpecializationMaster = async (req, res, next) => {
   try {
     await SpecializationMaster.findByIdAndUpdate(req.params.id, { isActive: false });
     res.json({ success: true });
+  } catch (err) { next(err); }
+};
+
+// ─── Payout Management ───────────────────────────────────────
+
+// GET /api/admin/payouts/pending — all verified completed bookings with payout pending, grouped by pandit
+exports.getPendingPayouts = async (req, res, next) => {
+  try {
+    const bookings = await Booking.find({
+      status: 'completed',
+      'payout.status': 'pending',
+    })
+      .populate('panditId', 'name phone email bankDetails upiDetails')
+      .populate('poojaId', 'name')
+      .populate('userId', 'name phone')
+      .sort({ verifiedAt: -1 });
+
+    // Group by pandit
+    const grouped = {};
+    for (const b of bookings) {
+      const pid = b.panditId?._id?.toString() || 'unknown';
+      if (!grouped[pid]) {
+        grouped[pid] = {
+          pandit:      b.panditId,
+          bookings:    [],
+          totalAmount: 0,
+        };
+      }
+      grouped[pid].bookings.push(b);
+      grouped[pid].totalAmount += b.payout?.amount || 0;
+    }
+
+    res.json({ success: true, groups: Object.values(grouped) });
+  } catch (err) { next(err); }
+};
+
+// POST /api/admin/payouts/pay-batch/:panditId — bulk pay all pending for a pandit
+exports.payBatch = async (req, res, next) => {
+  try {
+    const { paymentMethod = 'bank_transfer', note = '' } = req.body;
+
+    const pandit = await Pandit.findById(req.params.panditId).select('name userId phone');
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit not found' });
+
+    const pendingBookings = await Booking.find({
+      panditId:        pandit._id,
+      status:          'completed',
+      'payout.status': 'pending',
+    });
+
+    if (pendingBookings.length === 0) {
+      return res.status(400).json({ success: false, message: 'No pending payouts for this pandit' });
+    }
+
+    const totalAmount = pendingBookings.reduce((sum, b) => sum + (b.payout?.amount || 0), 0);
+    const bookingIds  = pendingBookings.map((b) => b._id);
+    const now         = new Date();
+
+    // Create payout batch
+    const batch = await PayoutBatch.create({
+      panditId:        pandit._id,
+      bookingIds,
+      totalAmount,
+      paidDate:        now,
+      paidByAdminId:   req.user._id,
+      paidByAdminName: req.user.name || 'Admin',
+      paymentMethod,
+      note,
+    });
+
+    // Mark all bookings as paid
+    await Booking.updateMany(
+      { _id: { $in: bookingIds } },
+      {
+        $set: {
+          'payout.status': 'completed',
+          'payout.paidAt': now,
+          'payout.assignedBy':     req.user._id,
+          'payout.assignedByName': req.user.name || 'Admin',
+          payoutBatchId: batch._id,
+        },
+      }
+    );
+
+    // Notify pandit in-app
+    notifyPayoutReleased(pandit.userId, totalAmount, batch.batchId, bookingIds.length).catch(() => {});
+
+    res.json({ success: true, batch, bookingCount: bookingIds.length, totalAmount });
+  } catch (err) { next(err); }
+};
+
+// POST /api/admin/payouts/pay-single/:bookingId — pay one booking individually
+exports.paySingle = async (req, res, next) => {
+  try {
+    const { paymentMethod = 'bank_transfer', note = '' } = req.body;
+
+    const booking = await Booking.findById(req.params.bookingId)
+      .populate('panditId', 'name userId phone');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (booking.status !== 'completed') {
+      return res.status(400).json({ success: false, message: 'Booking is not completed yet' });
+    }
+    if (booking.payout?.status === 'completed') {
+      return res.status(400).json({ success: false, message: 'Payout already processed for this booking' });
+    }
+    if (!booking.payout?.amount || booking.payout.amount <= 0) {
+      return res.status(400).json({ success: false, message: 'No payout amount set for this booking' });
+    }
+
+    const pandit = booking.panditId;
+    const amount = booking.payout.amount;
+    const now    = new Date();
+
+    // Create single-booking payout batch
+    const batch = await PayoutBatch.create({
+      panditId:        pandit._id,
+      bookingIds:      [booking._id],
+      totalAmount:     amount,
+      paidDate:        now,
+      paidByAdminId:   req.user._id,
+      paidByAdminName: req.user.name || 'Admin',
+      paymentMethod,
+      note,
+    });
+
+    booking.payout.status         = 'completed';
+    booking.payout.paidAt         = now;
+    booking.payout.assignedBy     = req.user._id;
+    booking.payout.assignedByName = req.user.name || 'Admin';
+    booking.payoutBatchId         = batch._id;
+    booking.auditLog.push({
+      action:          'payout_completed',
+      performedBy:     req.user._id,
+      performedByName: req.user.name || 'Admin',
+      note:            `₹${amount} via ${paymentMethod}. Batch: ${batch.batchId}`,
+      at:              now,
+    });
+    await booking.save();
+
+    notifyPayoutReleased(pandit.userId, amount, batch.batchId, 1).catch(() => {});
+
+    res.json({ success: true, batch, booking });
+  } catch (err) { next(err); }
+};
+
+// GET /api/admin/payouts/history — all payout batches
+exports.getPayoutHistory = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, panditId, from, to } = req.query;
+    const query = {};
+    if (panditId) query.panditId = panditId;
+    if (from || to) {
+      query.paidDate = {};
+      if (from) query.paidDate.$gte = new Date(from);
+      if (to)   query.paidDate.$lte = new Date(new Date(to).setHours(23, 59, 59));
+    }
+
+    const [batches, total] = await Promise.all([
+      PayoutBatch.find(query)
+        .populate('panditId', 'name phone email')
+        .sort({ paidDate: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit),
+      PayoutBatch.countDocuments(query),
+    ]);
+
+    const [totalPaid, pendingCount, pendingAmount] = await Promise.all([
+      PayoutBatch.aggregate([{ $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
+      Booking.countDocuments({ status: 'completed', 'payout.status': 'pending' }),
+      Booking.aggregate([
+        { $match: { status: 'completed', 'payout.status': 'pending' } },
+        { $group: { _id: null, total: { $sum: '$payout.amount' } } },
+      ]),
+    ]);
+
+    res.json({
+      success: true,
+      batches,
+      total,
+      stats: {
+        totalPaidOut:   totalPaid[0]?.total || 0,
+        pendingCount,
+        pendingAmount:  pendingAmount[0]?.total || 0,
+      },
+    });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/bookings/:id/reject-completion  — admin override: reject OTP completion
+exports.rejectCompletion = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (booking.status !== 'completion_requested') {
+      return res.status(400).json({ success: false, message: 'Booking is not awaiting completion approval' });
+    }
+
+    const note = reason ? `Rejected: ${reason}` : 'Admin rejected completion';
+    booking.status              = 'pandit_accepted';
+    booking.completionOtp       = null;
+    booking.completionOtpExpiry = null;
+    booking.auditLog.push({
+      action:          'completion_rejected',
+      performedBy:     req.user._id,
+      performedByName: req.user.name || 'Admin',
+      note,
+    });
+    await booking.save();
+
+    await AdminAuditLog.create({
+      action:          'completion_rejected',
+      performedBy:     req.user._id,
+      performedByName: req.user.name || 'Admin',
+      targetId:        booking._id,
+      targetType:      'booking',
+      targetName:      booking.bookingNumber,
+      note,
+    });
+
+    res.json({ success: true, booking });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/bookings/:id/kit-delivery  — manage kit delivery for a booking
+exports.updateKitDelivery = async (req, res, next) => {
+  try {
+    const { type, status, trackingId, courier, assignedPerson, assignedPhone, remarks } = req.body;
+
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (!booking.withKit) return res.status(400).json({ success: false, message: 'This booking does not have a kit' });
+
+    booking.kitDelivery = {
+      type:           type           || booking.kitDelivery?.type || 'manual',
+      status:         status         || booking.kitDelivery?.status || 'pending',
+      trackingId:     trackingId     || booking.kitDelivery?.trackingId,
+      courier:        courier        || booking.kitDelivery?.courier,
+      assignedPerson: assignedPerson || booking.kitDelivery?.assignedPerson,
+      assignedPhone:  assignedPhone  || booking.kitDelivery?.assignedPhone,
+      remarks:        remarks        || booking.kitDelivery?.remarks,
+      updatedAt:      new Date(),
+    };
+    booking.auditLog.push({
+      action:          'kit_delivery_updated',
+      performedBy:     req.user._id,
+      performedByName: req.user.name || 'Admin',
+      note:            `Kit delivery type: ${type}, status: ${status}`,
+    });
+    await booking.save();
+
+    await AdminAuditLog.create({
+      action:          'kit_delivery_updated',
+      performedBy:     req.user._id,
+      performedByName: req.user.name || 'Admin',
+      targetId:        booking._id,
+      targetType:      'booking',
+      targetName:      booking.bookingNumber,
+    });
+
+    res.json({ success: true, booking });
   } catch (err) { next(err); }
 };

@@ -5,6 +5,9 @@ const { protect } = require('../middleware/auth');
 // Webhook does not require auth (called by PhonePe server)
 router.post('/phonepe-webhook', ctrl.phonePeWebhook);
 
+// Pricing preview is public — shown before login on booking page
+router.get('/pricing-preview', ctrl.getPricingPreview);
+
 router.use(protect);
 
 router.post('/create-order',           ctrl.createBookingOrder);

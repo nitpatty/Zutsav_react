@@ -1,7 +1,27 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
+
+function getNotificationUrl(notification) {
+  const type = notification?.type || '';
+  if (
+    type === 'booking_created' || type === 'pandit_assigned' || type === 'pandit_accepted' ||
+    type === 'new_booking' || type === 'booking_completed' || type === 'booking_assignment_pending'
+  ) {
+    return '/my-bookings';
+  }
+  if (type.startsWith('order_')) return '/my-orders';
+  if (
+    type === 'kyc_submitted' || type === 'kyc_approved' || type === 'kyc_rejected' ||
+    type === 'kyc_reupload' || type === 'pandit_approved' || type === 'pandit_rejected' ||
+    type === 'pandit_registered'
+  ) {
+    return '/pandit/dashboard';
+  }
+  return '/notifications';
+}
 
 const NotificationContext = createContext(null);
 
@@ -9,7 +29,8 @@ export function NotificationProvider({ children, user }) {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [loading,       setLoading]       = useState(false);
-  const socketRef = useRef(null);
+  const socketRef  = useRef(null);
+  const navigate   = useNavigate();
 
   const fetchUnreadCount = useCallback(async () => {
     if (!user) return;
@@ -100,11 +121,66 @@ export function NotificationProvider({ children, user }) {
     socket.on('new_notification', (notification) => {
       setNotifications((prev) => [notification, ...prev]);
       setUnreadCount((c) => c + 1);
-      toast(notification.title, {
-        icon: '🔔',
-        duration: 4000,
-        style: { fontFamily: 'sans-serif', fontSize: '14px' },
-      });
+
+      const targetUrl = getNotificationUrl(notification);
+
+      toast.custom(
+        (t) => (
+          <div
+            onClick={() => { toast.dismiss(t.id); navigate(targetUrl); }}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '12px',
+              background: '#ffffff',
+              border: '1px solid #e5e7eb',
+              borderRadius: '16px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+              padding: '14px 16px',
+              maxWidth: '380px',
+              width: '100%',
+              cursor: 'pointer',
+              opacity: t.visible ? 1 : 0,
+              transition: 'opacity 0.25s ease',
+            }}
+          >
+            <span style={{ fontSize: '20px', flexShrink: 0, marginTop: '2px' }}>🔔</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontWeight: 700, fontSize: '14px', color: '#111827', lineHeight: 1.4 }}>
+                {notification.title}
+              </p>
+              {notification.message && (
+                <p style={{
+                  margin: '3px 0 0',
+                  fontSize: '12px',
+                  color: '#6B7280',
+                  lineHeight: 1.4,
+                  overflow: 'hidden',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                }}>
+                  {notification.message}
+                </p>
+              )}
+              <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#9CA3AF' }}>
+                Tap to view →
+              </p>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); toast.dismiss(t.id); }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: '#9CA3AF', fontSize: '18px', lineHeight: 1,
+                padding: '0 2px', flexShrink: 0, alignSelf: 'flex-start',
+              }}
+            >
+              ×
+            </button>
+          </div>
+        ),
+        { duration: 5000, id: notification._id }
+      );
     });
 
     socket.on('disconnect', () => console.log('[Socket.IO] Disconnected'));

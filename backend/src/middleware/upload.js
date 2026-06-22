@@ -24,6 +24,13 @@ const imageFilter = (req, file, cb) => {
   }
 };
 
+const logoFilter = (req, file, cb) => {
+  const extOk  = /\.(jpeg|jpg|png|webp|svg)$/i.test(file.originalname);
+  const mimeOk = /^image\/(jpeg|jpg|png|webp|svg\+xml)$/.test(file.mimetype);
+  if (extOk && mimeOk) { cb(null, true); }
+  else { cb(new Error('Only PNG, JPG, WEBP, or SVG images are allowed for logo')); }
+};
+
 const csvFilter = (req, file, cb) => {
   if (path.extname(file.originalname).toLowerCase() === '.csv') {
     cb(null, true);
@@ -32,6 +39,7 @@ const csvFilter = (req, file, cb) => {
   }
 };
 
+const uploadLogo     = multer({ storage: createStorage('logos'),     fileFilter: logoFilter,  limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadProfile  = multer({ storage: createStorage('profiles'),  fileFilter: imageFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadGovtId   = multer({ storage: createStorage('govtids'),    fileFilter: imageFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 const uploadProducts = multer({ storage: createStorage('products'),   fileFilter: imageFilter, limits: { fileSize: 5 * 1024 * 1024 } });
@@ -48,4 +56,4 @@ const uploadKYCDocs = multer({
   { name: 'addressProof', maxCount: 1 },
 ]);
 
-module.exports = { uploadProfile, uploadGovtId, uploadProducts, uploadCSV, uploadKYCDocs };
+module.exports = { uploadLogo, uploadProfile, uploadGovtId, uploadProducts, uploadCSV, uploadKYCDocs };

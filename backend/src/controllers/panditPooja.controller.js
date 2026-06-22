@@ -26,7 +26,7 @@ exports.createMyPooja = async (req, res, next) => {
     if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
     if (pandit.status !== 'approved') return res.status(403).json({ success: false, message: 'Only approved pandits can create poojas' });
 
-    const { name, categoryId, description, shortDesc, price, duration, requirements, benefits, languages } = req.body;
+    const { name, categoryId, description, shortDesc, price, durationValue, durationUnit, requirements, benefits, languages } = req.body;
     const baseSlug = makeSlug(name);
     let slug = baseSlug;
     let suffix = 1;
@@ -36,7 +36,10 @@ exports.createMyPooja = async (req, res, next) => {
 
     const pooja = await Pooja.create({
       name, categoryId, slug, description, shortDesc,
-      price: +price, duration, image,
+      price: +price,
+      durationValue: durationValue ? +durationValue : undefined,
+      durationUnit:  durationUnit  || undefined,
+      image,
       requirements: requirements ? JSON.parse(requirements) : [],
       benefits:     benefits     ? JSON.parse(benefits)     : [],
       languages:    languages    ? JSON.parse(languages)    : [],
@@ -65,6 +68,7 @@ exports.updateMyPooja = async (req, res, next) => {
     ['requirements', 'benefits', 'languages'].forEach((k) => {
       if (typeof updates[k] === 'string') updates[k] = JSON.parse(updates[k]);
     });
+    if (updates.durationValue) updates.durationValue = +updates.durationValue;
 
     // Any edit by pandit resets to pending so admin re-approves
     updates.approvalStatus = 'pending';

@@ -1,28 +1,23 @@
-const SystemSettings = require('../models/SystemSettings');
+const SystemSettings  = require('../models/SystemSettings');
 const settingsService = require('../utils/settingsService');
+const { sendTestConnectionEmail } = require('../utils/email');
 
-// Fields that are never returned in plain text on GET
 const SENSITIVE = [
   'phonepeSaltKey',
   'whatsappAccessToken',
   'emailSmtpPassword',
   'groqApiKey',
   'cloudinaryApiSecret',
+  'tekipostApiKey',
 ];
 
 const MASK = '••••••••';
 
-/** GET /api/admin/settings */
 exports.getSettings = async (req, res) => {
   try {
     let doc = await SystemSettings.findOne().lean();
     if (!doc) doc = {};
-
-    // Mask sensitive fields so they never leave the server as plaintext
-    SENSITIVE.forEach((f) => {
-      if (doc[f]) doc[f] = MASK;
-    });
-
+    SENSITIVE.forEach((f) => { if (doc[f]) doc[f] = MASK; });
     res.json({ success: true, settings: doc });
   } catch (err) {
     console.error('getSettings error:', err);
@@ -30,17 +25,18 @@ exports.getSettings = async (req, res) => {
   }
 };
 
-/** PATCH /api/admin/settings  — body can contain any subset of fields */
 exports.updateSettings = async (req, res) => {
   try {
     const update = { ...req.body };
+    if (req.file) update.logo = `uploads/logos/${req.file.filename}`;
 
-    // Ignore masked placeholder values so they don't overwrite real secrets
-    SENSITIVE.forEach((f) => {
-      if (update[f] === MASK || update[f] === '') delete update[f];
+    SENSITIVE.forEach((f) => { if (update[f] === MASK || update[f] === '') delete update[f]; });
+
+    // Coerce numeric fields
+    ['emailSmtpPort', 'platformCommissionPercent', 'platformGstPercent'].forEach((f) => {
+      if (update[f] !== undefined) update[f] = Number(update[f]);
     });
 
-    // Remove internal mongo fields if accidentally sent
     delete update._id;
     delete update.__v;
     delete update.createdAt;
@@ -52,12 +48,24 @@ exports.updateSettings = async (req, res) => {
       { new: true, upsert: true, runValidators: true }
     );
 
-    // Invalidate cache so next service call reads fresh values
     settingsService.invalidate();
-
-    res.json({ success: true, message: 'Settings saved successfully' });
+    res.json({ success: true, message: 'Settings saved successfully', logo: doc.logo });
   } catch (err) {
     console.error('updateSettings error:', err);
     res.status(500).json({ success: false, message: 'Failed to save settings' });
+  }
+};
+
+// POST /api/admin/settings/test-email — send a test email to verify SMTP config
+exports.testEmailConnection = async (req, res) => {
+  try {
+    const { testEmail } = req.body;
+    const to = testEmail || req.user?.email;
+    if (!to) return res.status(400).json({ success: false, message: 'testEmail is required' });
+
+    await sendTestConnectionEmail(to);
+    res.json({ success: true, message: `Test email sent to ${to}` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };

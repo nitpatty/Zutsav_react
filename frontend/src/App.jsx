@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { SettingsProvider } from './context/SettingsContext';
 
 import Navbar           from './components/layout/Navbar';
 import Footer           from './components/layout/Footer';
@@ -17,11 +18,13 @@ import PoojaList        from './pages/PoojaList';
 import BookingFlow      from './pages/BookingFlow';
 import PanditRegistration from './pages/PanditRegistration';
 import PanditDashboard  from './pages/PanditDashboard';
+import PanditMyProfile  from './pages/PanditMyProfile';
 import PanditStatus     from './pages/PanditStatus';
 import AdminDashboard   from './pages/AdminDashboard';
 import Profile          from './pages/Profile';
 import Festivals        from './pages/Festivals';
 import Marketplace      from './pages/Marketplace';
+import ProductDetail    from './pages/ProductDetail';
 import BookingSuccess   from './pages/BookingSuccess';
 import MyBookings       from './pages/MyBookings';
 import TempleDirectory  from './pages/TempleDirectory';
@@ -83,6 +86,7 @@ const AppRoutes = () => {
           <Route path="/poojas/:categorySlug" element={<PublicLayout><PoojaList /></PublicLayout>} />
           <Route path="/festivals"   element={<PublicLayout><Festivals /></PublicLayout>} />
           <Route path="/marketplace" element={<PublicLayout><Marketplace /></PublicLayout>} />
+          <Route path="/marketplace/product/:slug" element={<PublicLayout><ProductDetail /></PublicLayout>} />
           <Route path="/temples"     element={<PublicLayout><TempleDirectory /></PublicLayout>} />
           <Route path="/temples/livestreams" element={<PublicLayout><ComingSoon title="Temple Livestreams" /></PublicLayout>} />
           <Route path="/temples/details"     element={<PublicLayout><ComingSoon title="Temple Details" /></PublicLayout>} />
@@ -160,6 +164,11 @@ const AppRoutes = () => {
               <DashboardLayout><PanditDashboard /></DashboardLayout>
             </ProtectedRoute>
           } />
+          <Route path="/pandit/profile" element={
+            <ProtectedRoute roles={['pandit', 'admin']}>
+              <DashboardLayout><PanditMyProfile /></DashboardLayout>
+            </ProtectedRoute>
+          } />
           <Route path="/pandit/status" element={
             <ProtectedRoute roles={['pandit']}>
               <DashboardLayout><PanditStatus /></DashboardLayout>
@@ -184,6 +193,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <SettingsProvider>
         <Toaster
           position="top-right"
           toastOptions={{
@@ -199,6 +209,7 @@ export default function App() {
           }}
         />
         <AppRoutes />
+        </SettingsProvider>
       </AuthProvider>
     </BrowserRouter>
   );

@@ -288,10 +288,19 @@ function EmailTemplatesTab() {
 // ═══════════════════════════════════════════════════════════════
 function WhatsAppTab() {
   const [templates, setTemplates] = useState([]);
+  const [events,    setEvents]    = useState([]);
   const [syncing,   setSyncing]   = useState(false);
+  const [toggling,  setToggling]  = useState({});  // { [id]: boolean }
 
-  const load = useCallback(() => {
-    API.get('/comm/wa-templates').then(({ data }) => setTemplates(data.templates || []));
+  const load = useCallback(async () => {
+    const [waRes, trRes] = await Promise.allSettled([
+      API.get('/comm/wa-templates'),
+      API.get('/comm/trigger-rules'),
+    ]);
+    if (waRes.status === 'fulfilled') setTemplates(waRes.value.data.templates || []);
+    if (trRes.status === 'fulfilled') {
+      setEvents((trRes.value.data.rules || []).map((r) => ({ value: r.event, label: r.label })));
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -303,65 +312,107 @@ function WhatsAppTab() {
       toast.success(data.message);
       load();
     } catch (e) {
-      toast.error(e.response?.data?.message || 'Sync failed');
+      toast.error(e.response?.data?.message || 'Sync failed — check WHATSAPP_ACCESS_TOKEN and WHATSAPP_BUSINESS_ACCOUNT_ID in .env');
     } finally {
       setSyncing(false);
     }
   };
 
   const updateTrigger = async (id, assignedTrigger) => {
-    await API.patch(`/comm/wa-templates/${id}`, { assignedTrigger });
-    load();
+    try {
+      await API.patch(`/comm/wa-templates/${id}`, { assignedTrigger });
+      load();
+      if (assignedTrigger) toast.success(`Mapped to event: ${assignedTrigger}`);
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Event mapping failed');
+      load(); // reload to reset the select to the old value
+    }
   };
 
   const toggleActive = async (t) => {
-    await API.patch(`/comm/wa-templates/${t._id}`, { isActive: !t.isActive });
-    load();
+    setToggling((s) => ({ ...s, [t._id]: true }));
+    try {
+      await API.patch(`/comm/wa-templates/${t._id}`, { isActive: !t.isActive });
+      // Optimistic update
+      setTemplates((prev) => prev.map((tmpl) =>
+        tmpl._id === t._id ? { ...tmpl, isActive: !t.isActive } : tmpl
+      ));
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Toggle failed');
+      load(); // revert to server state
+    } finally {
+      setToggling((s) => ({ ...s, [t._id]: false }));
+    }
   };
+
+  const enabledCount = templates.filter((t) => t.isActive && t.status === 'APPROVED').length;
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <SectionTitle>WhatsApp Templates</SectionTitle>
+        <div>
+          <SectionTitle>WhatsApp Templates</SectionTitle>
+          {enabledCount > 0 && (
+            <p className="text-xs text-green-600 -mt-4 mb-4">{enabledCount} template{enabledCount !== 1 ? 's' : ''} active</p>
+          )}
+        </div>
         <button onClick={sync} disabled={syncing} className="btn-primary flex items-center gap-2">
           <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
           {syncing ? 'Syncing…' : 'Sync from Meta'}
         </button>
       </div>
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
-        Templates are managed in the <strong>Meta Business Manager</strong> and synced here.
-        Configure <code className="text-xs">WHATSAPP_ACCESS_TOKEN</code> and <code className="text-xs">WHATSAPP_BUSINESS_ACCOUNT_ID</code> in your .env to enable sync.
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-1.5">
+        <p>Templates are managed in <strong>Meta Business Manager</strong> and synced here. Only <strong>APPROVED</strong> templates can be sent.</p>
+        <p className="text-xs font-mono opacity-80">Required env vars: WHATSAPP_ACCESS_TOKEN · WHATSAPP_PHONE_NUMBER_ID · WHATSAPP_BUSINESS_ACCOUNT_ID</p>
       </div>
 
-      {templates.length === 0 && <EmptyState icon={MessageSquare} text="No templates yet — sync from Meta to populate." />}
+      {templates.length === 0 && <EmptyState icon={MessageSquare} text="No templates yet — click Sync from Meta to import your approved templates." />}
       <div className="space-y-3">
         {templates.map((t) => (
-          <div key={t._id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div key={t._id} className={`bg-white rounded-2xl border shadow-sm p-5 transition-colors ${t.isActive && t.status === 'APPROVED' ? 'border-green-200' : 'border-gray-100'}`}>
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-semibold text-gray-800">{t.name}</p>
+                  <p className="font-semibold text-gray-800 font-mono text-sm">{t.name}</p>
                   <Pill label={t.status} />
-                  <span className="text-xs text-gray-400 bg-gray-50 rounded px-2 py-0.5">{t.category}</span>
+                  <span className="text-xs text-gray-400 bg-gray-50 rounded px-2 py-0.5 capitalize">{t.category?.toLowerCase()}</span>
                   <span className="text-xs text-gray-400">{t.language}</span>
+                  {t.isActive && t.status === 'APPROVED' && (
+                    <span className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">Active</span>
+                  )}
                 </div>
                 {t.syncedAt && (
                   <p className="text-xs text-gray-400 mt-1">Synced {new Date(t.syncedAt).toLocaleString('en-IN')}</p>
                 )}
+                {t.assignedTrigger && (
+                  <p className="text-xs text-blue-600 mt-0.5">↳ Event: <code className="bg-blue-50 px-1 rounded">{t.assignedTrigger}</code></p>
+                )}
               </div>
-              <button onClick={() => toggleActive(t)} className="text-gray-400 hover:text-saffron-600 transition-colors shrink-0">
-                {t.isActive ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}
+              <button
+                onClick={() => toggleActive(t)}
+                disabled={toggling[t._id] || t.status !== 'APPROVED'}
+                title={t.status !== 'APPROVED' ? `Cannot enable — status is ${t.status}` : (t.isActive ? 'Disable' : 'Enable')}
+                className="transition-colors shrink-0 disabled:opacity-40">
+                {t.isActive
+                  ? <ToggleRight size={26} className="text-green-500" />
+                  : <ToggleLeft  size={26} className="text-gray-300"  />}
               </button>
             </div>
-            <div className="mt-3 flex items-center gap-3">
-              <label className="text-xs text-gray-500 font-medium whitespace-nowrap">Assign to event:</label>
-              <input
-                defaultValue={t.assignedTrigger}
-                onBlur={(e) => updateTrigger(t._id, e.target.value)}
-                placeholder="e.g. booking_confirmed"
-                className="input-std text-sm flex-1"
-              />
+
+            {/* Event mapping dropdown */}
+            <div className="mt-4 flex items-center gap-3">
+              <label className="text-xs text-gray-500 font-medium whitespace-nowrap shrink-0">Map to event:</label>
+              <select
+                key={`${t._id}-${t.assignedTrigger}`}
+                defaultValue={t.assignedTrigger || ''}
+                onChange={(e) => updateTrigger(t._id, e.target.value)}
+                className="input-std text-sm flex-1">
+                <option value="">— not mapped —</option>
+                {events.map((ev) => (
+                  <option key={ev.value} value={ev.value}>{ev.label} ({ev.value})</option>
+                ))}
+              </select>
             </div>
           </div>
         ))}
@@ -377,13 +428,15 @@ const CHANNEL_TYPES = ['email', 'whatsapp', 'in-app'];
 const RECIPIENTS    = ['user', 'pandit', 'admin', 'both'];
 
 function TriggerRulesTab() {
-  const [rules, setRules]     = useState([]);
-  const [email, setEmail]     = useState([]);
+  const [rules,      setRules]     = useState([]);
+  const [email,      setEmail]     = useState([]);
+  const [waAll,      setWaAll]     = useState([]);  // all WA templates for dropdown
   const [expanded, setExpanded] = useState(null);
 
   const load = useCallback(() => {
     API.get('/comm/trigger-rules').then(({ data }) => setRules(data.rules || []));
     API.get('/comm/email-templates').then(({ data }) => setEmail(data.templates || []));
+    API.get('/comm/wa-templates').then(({ data }) => setWaAll(data.templates?.filter((t) => t.status === 'APPROVED') || []));
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -437,7 +490,7 @@ function TriggerRulesTab() {
             </div>
 
             {expanded === rule._id && (
-              <RuleEditor rule={rule} emailTemplates={email} onSave={saveRule} />
+              <RuleEditor rule={rule} emailTemplates={email} waTemplates={waAll} onSave={saveRule} />
             )}
           </div>
         ))}
@@ -446,7 +499,7 @@ function TriggerRulesTab() {
   );
 }
 
-function RuleEditor({ rule, emailTemplates, onSave }) {
+function RuleEditor({ rule, emailTemplates, waTemplates = [], onSave }) {
   const [channels, setChannels] = useState(rule.channels || []);
 
   const addChannel = () => setChannels((c) => [...c, { type: 'email', recipient: 'user', emailTemplateId: '', whatsAppTemplateName: '', isActive: true }]);
@@ -481,8 +534,13 @@ function RuleEditor({ rule, emailTemplates, onSave }) {
                 </Field>
               )}
               {ch.type === 'whatsapp' && (
-                <Field label="WA Template Name">
-                  <input value={ch.whatsAppTemplateName} onChange={(e) => setField(i, 'whatsAppTemplateName', e.target.value)} placeholder="booking_confirmed" className="input-std" />
+                <Field label="WA Template">
+                  <select value={ch.whatsAppTemplateName} onChange={(e) => setField(i, 'whatsAppTemplateName', e.target.value)} className="input-std">
+                    <option value="">— select template —</option>
+                    {waTemplates.map((t) => (
+                      <option key={t._id} value={t.name}>{t.name} ({t.language})</option>
+                    ))}
+                  </select>
                 </Field>
               )}
               <div className="flex items-end gap-2">
@@ -635,30 +693,49 @@ function LogsTab({ failedOnly = false }) {
 // TEST SEND
 // ═══════════════════════════════════════════════════════════════
 function TestSendTab() {
-  const [type,     setType]    = useState('email');
-  const [to,       setTo]      = useState('');
-  const [slug,     setSlug]    = useState('');
-  const [waName,   setWaName]  = useState('');
-  const [message,  setMessage] = useState('');
-  const [vars,     setVars]    = useState('{}');
-  const [sending,  setSending] = useState(false);
-  const [result,   setResult]  = useState(null);
-  const [templates, setTemplates] = useState([]);
+  const [type,           setType]           = useState('email');
+  const [to,             setTo]             = useState('');
+  const [emailSlug,      setEmailSlug]      = useState('');
+  const [waTemplateId,   setWaTemplateId]   = useState('');
+  const [vars,           setVars]           = useState('{}');
+  const [sending,        setSending]        = useState(false);
+  const [result,         setResult]         = useState(null);
+  const [emailTemplates, setEmailTemplates] = useState([]);
+  const [waTemplates,    setWaTemplates]    = useState([]);
+  const [loadingWa,      setLoadingWa]      = useState(false);
 
   useEffect(() => {
-    API.get('/comm/email-templates').then(({ data }) => setTemplates(data.templates || []));
+    API.get('/comm/email-templates').then(({ data }) => setEmailTemplates(data.templates || []));
   }, []);
+
+  useEffect(() => {
+    if (type !== 'whatsapp') return;
+    setLoadingWa(true);
+    setWaTemplateId('');
+    API.get('/comm/wa-templates/enabled')
+      .then(({ data }) => setWaTemplates(data.templates || []))
+      .catch(() => setWaTemplates([]))
+      .finally(() => setLoadingWa(false));
+  }, [type]);
 
   const send = async () => {
     setSending(true);
     setResult(null);
     try {
-      let variables = {};
-      try { variables = JSON.parse(vars); } catch { toast.error('Variables must be valid JSON'); setSending(false); return; }
-      const payload = { type, to, variables };
-      if (type === 'email')     payload.templateSlug  = slug;
-      if (type === 'whatsapp' && waName)  payload.templateName  = waName;
-      if (type === 'whatsapp' && message) payload.message       = message;
+      const payload = { type, to };
+
+      if (type === 'email') {
+        if (!emailSlug) { toast.error('Please select an email template'); setSending(false); return; }
+        let variables = {};
+        try { variables = JSON.parse(vars); } catch { toast.error('Variables must be valid JSON'); setSending(false); return; }
+        payload.templateSlug = emailSlug;
+        payload.variables    = variables;
+      }
+
+      if (type === 'whatsapp') {
+        if (!waTemplateId) { toast.error('Please select an enabled WhatsApp template'); setSending(false); return; }
+        payload.templateId = waTemplateId;
+      }
 
       const { data } = await API.post('/comm/test', payload);
       setResult({ success: true, ...data });
@@ -679,7 +756,7 @@ function TestSendTab() {
         <Field label="Channel">
           <div className="flex gap-2">
             {['email', 'whatsapp'].map((t) => (
-              <button key={t} onClick={() => setType(t)}
+              <button key={t} onClick={() => { setType(t); setResult(null); }}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors capitalize ${type === t ? 'bg-saffron-500 text-white border-saffron-500' : 'bg-white text-gray-600 border-gray-200 hover:border-saffron-300'}`}>
                 {t}
               </button>
@@ -687,34 +764,54 @@ function TestSendTab() {
           </div>
         </Field>
 
-        <Field label={type === 'email' ? 'Recipient Email' : 'Phone (e.g. 9876543210)'}>
-          <input value={to} onChange={(e) => setTo(e.target.value)} placeholder={type === 'email' ? 'admin@example.com' : '9876543210'} className="input-std" />
+        <Field label={type === 'email' ? 'Recipient Email' : 'Phone number (e.g. 9876543210)'}>
+          <input value={to} onChange={(e) => setTo(e.target.value)}
+            placeholder={type === 'email' ? 'admin@example.com' : '9876543210'}
+            className="input-std" />
         </Field>
 
         {type === 'email' && (
-          <Field label="Email Template">
-            <select value={slug} onChange={(e) => setSlug(e.target.value)} className="input-std">
-              <option value="">— select template —</option>
-              {templates.map((t) => <option key={t._id} value={t.slug}>{t.name}</option>)}
-            </select>
-          </Field>
-        )}
-
-        {type === 'whatsapp' && (
           <>
-            <Field label="Template Name (leave blank to send text)">
-              <input value={waName} onChange={(e) => setWaName(e.target.value)} placeholder="booking_confirmed_v1" className="input-std" />
+            <Field label="Email Template">
+              <select value={emailSlug} onChange={(e) => setEmailSlug(e.target.value)} className="input-std">
+                <option value="">— select template —</option>
+                {emailTemplates.map((t) => <option key={t._id} value={t.slug}>{t.name}</option>)}
+              </select>
             </Field>
-            <Field label="Freeform Message (if no template)">
-              <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={3} placeholder="Hello! This is a test notification from Zutsav." className="input-std resize-none" />
+            <Field label="Template Variables (JSON)">
+              <textarea value={vars} onChange={(e) => setVars(e.target.value)} rows={3}
+                placeholder='{"user.name":"Ramesh","booking.number":"ZT-00123"}'
+                className="input-std font-mono text-xs resize-none" />
             </Field>
           </>
         )}
 
-        <Field label="Template Variables (JSON)">
-          <textarea value={vars} onChange={(e) => setVars(e.target.value)} rows={3}
-            placeholder='{"user.name":"Ramesh","booking.number":"ZT-00123"}' className="input-std font-mono text-xs resize-none" />
-        </Field>
+        {type === 'whatsapp' && (
+          <Field label="WhatsApp Template">
+            {loadingWa ? (
+              <p className="text-sm text-gray-400 py-2">Loading enabled templates…</p>
+            ) : waTemplates.length === 0 ? (
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 space-y-1">
+                <p className="font-medium">No enabled templates available</p>
+                <p className="text-xs">Go to the <strong>WhatsApp</strong> tab → Sync from Meta → toggle on an APPROVED template.</p>
+              </div>
+            ) : (
+              <>
+                <select value={waTemplateId} onChange={(e) => setWaTemplateId(e.target.value)} className="input-std">
+                  <option value="">— select template —</option>
+                  {waTemplates.map((t) => (
+                    <option key={t._id} value={t._id}>
+                      {t.name}{t.assignedTrigger ? ` → ${t.assignedTrigger}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1.5">
+                  Template variables will be sent empty for test — you will see placeholder markers in the message.
+                </p>
+              </>
+            )}
+          </Field>
+        )}
 
         <button onClick={send} disabled={sending || !to} className="btn-primary w-full flex items-center justify-center gap-2 py-3">
           <Send size={16} className={sending ? 'animate-bounce' : ''} />
@@ -724,7 +821,11 @@ function TestSendTab() {
         {result && (
           <div className={`rounded-xl p-4 text-sm ${result.success ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
             {result.success ? (
-              <p><strong>Delivered</strong> — Log ID: <code className="text-xs">{result.logId}</code></p>
+              <>
+                <p className="font-semibold">Delivered successfully</p>
+                {result.templateName && <p className="text-xs mt-0.5">Template: <code>{result.templateName}</code></p>}
+                <p className="text-xs mt-0.5">Log ID: <code>{result.logId}</code></p>
+              </>
             ) : (
               <p><strong>Failed:</strong> {result.message}</p>
             )}
@@ -732,18 +833,20 @@ function TestSendTab() {
         )}
       </div>
 
-      {/* Variables Reference */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <p className="font-semibold text-gray-700 mb-3 text-sm">Variable Reference</p>
-        <div className="flex flex-wrap gap-1.5">
-          {TEMPLATE_VARIABLES_REF.map((v) => (
-            <button key={v} onClick={() => { navigator.clipboard?.writeText(`{{${v}}}`); toast.success('Copied'); }}
-              className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-saffron-100 text-xs text-gray-600 hover:text-saffron-700 transition-colors font-mono">
-              {`{{${v}}}`}
-            </button>
-          ))}
+      {/* Email variable reference */}
+      {type === 'email' && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <p className="font-semibold text-gray-700 mb-3 text-sm">Email Variable Reference</p>
+          <div className="flex flex-wrap gap-1.5">
+            {TEMPLATE_VARIABLES_REF.map((v) => (
+              <button key={v} onClick={() => { navigator.clipboard?.writeText(`{{${v}}}`); toast.success('Copied'); }}
+                className="px-2 py-1 rounded-lg bg-gray-100 hover:bg-saffron-100 text-xs text-gray-600 hover:text-saffron-700 transition-colors font-mono">
+                {`{{${v}}}`}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Search, Clock, Star } from 'lucide-react';
 import API from '../api/axios';
+import { formatDuration } from '../utils/durationFormatter';
 
 export default function PoojaList() {
   const { categorySlug } = useParams();
@@ -85,8 +86,7 @@ export default function PoojaList() {
                   </div>
                   <p className="text-sm text-gray-500 line-clamp-2 mb-3">{p.shortDesc}</p>
                   <div className="flex items-center gap-4 text-xs text-gray-400 mb-4">
-                    {p.duration && <span className="flex items-center gap-1"><Clock size={12} /> {p.duration}</span>}
-                    <span>{p.totalBookings} bookings</span>
+                    {formatDuration(p) && <span className="flex items-center gap-1"><Clock size={12} /> {formatDuration(p)}</span>}
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xl font-bold text-saffron-600">₹{p.price.toLocaleString('en-IN')}</span>

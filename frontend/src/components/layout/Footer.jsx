@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Phone, Mail, MapPin, Instagram, Facebook, Youtube, ArrowUpRight } from 'lucide-react';
+import { useSettings } from '../../context/SettingsContext';
 
 const SERVICES = [
   { label: 'Book a Pooja',          to: '/poojas'      },
@@ -20,6 +21,8 @@ const COMPANY = [
 ];
 
 export default function Footer() {
+  const { platformName, logoUrl, contactEmail, supportPhone, supportAddress } = useSettings();
+
   return (
     <footer className="bg-charcoal text-white">
       {/* Main footer grid */}
@@ -29,8 +32,10 @@ export default function Footer() {
           {/* Brand column */}
           <div className="lg:col-span-1">
             <div className="flex items-center gap-2.5 mb-5">
-              <span className="text-2xl">🪔</span>
-              <span className="font-serif text-2xl font-bold text-gold-400">Zutsav</span>
+              {logoUrl
+                ? <img src={logoUrl} alt={platformName} className="h-8 w-auto object-contain" />
+                : <span className="text-2xl">🪔</span>}
+              <span className="font-serif text-2xl font-bold text-gold-400">{platformName}</span>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-6">
               India's most trusted spiritual platform — connecting devotees with verified pandits,
@@ -85,24 +90,33 @@ export default function Footer() {
           <div>
             <h4 className="font-semibold text-white text-sm mb-5 tracking-wide">Contact</h4>
             <ul className="space-y-4">
-              <li className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-white/8 rounded-lg flex items-center justify-center shrink-0">
-                  <Phone size={13} className="text-saffron-400" />
-                </div>
-                <span className="text-gray-400 text-sm">+91 98765 43210</span>
-              </li>
-              <li className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-white/8 rounded-lg flex items-center justify-center shrink-0">
-                  <Mail size={13} className="text-saffron-400" />
-                </div>
-                <span className="text-gray-400 text-sm">support@zutsav.com</span>
-              </li>
-              <li className="flex items-start gap-3">
-                <div className="w-8 h-8 bg-white/8 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
-                  <MapPin size={13} className="text-saffron-400" />
-                </div>
-                <span className="text-gray-400 text-sm">New Delhi, India</span>
-              </li>
+              {supportPhone && (
+                <li className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/8 rounded-lg flex items-center justify-center shrink-0">
+                    <Phone size={13} className="text-saffron-400" />
+                  </div>
+                  <span className="text-gray-400 text-sm">{supportPhone}</span>
+                </li>
+              )}
+              {contactEmail && (
+                <li className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/8 rounded-lg flex items-center justify-center shrink-0">
+                    <Mail size={13} className="text-saffron-400" />
+                  </div>
+                  <span className="text-gray-400 text-sm">{contactEmail}</span>
+                </li>
+              )}
+              {supportAddress && (
+                <li className="flex items-start gap-3">
+                  <div className="w-8 h-8 bg-white/8 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
+                    <MapPin size={13} className="text-saffron-400" />
+                  </div>
+                  <span className="text-gray-400 text-sm">{supportAddress}</span>
+                </li>
+              )}
+              {!supportPhone && !contactEmail && !supportAddress && (
+                <li className="text-gray-500 text-sm italic">Contact info not configured</li>
+              )}
             </ul>
 
             {/* Trust badge */}
@@ -120,7 +134,7 @@ export default function Footer() {
       <div className="border-t border-white/8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-gray-500">
-            © {new Date().getFullYear()} Zutsav. Made with 🙏 in India.
+            © {new Date().getFullYear()} {platformName}. Made with 🙏 in India.
           </p>
           <p className="text-xs text-gray-600">
             Proudly serving devotees since 2024

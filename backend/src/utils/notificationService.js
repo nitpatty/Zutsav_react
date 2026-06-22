@@ -247,6 +247,15 @@ const notifyKYCReuploadRequired = (panditUserId, reason) =>
     data:    { reason },
   });
 
+const notifyPayoutReleased = (panditUserId, amount, batchId, bookingCount) =>
+  createNotification({
+    userId:  panditUserId,
+    type:    'payout_released',
+    title:   'Payment Released',
+    message: `Payment of ₹${amount.toLocaleString('en-IN')} has been released by admin (Batch: ${batchId}, ${bookingCount} booking${bookingCount > 1 ? 's' : ''}).`,
+    data:    { batchId, amount, bookingCount },
+  });
+
 // ── Account deletion workflow ────────────────────────────────────
 
 const notifyDeletionRequested = (userId, scheduledDate) =>
@@ -304,4 +313,5 @@ module.exports = {
   notifyDeletionRequested,
   notifyDeletionCancelled,
   notifyAccountRestored,
+  notifyPayoutReleased,
 };

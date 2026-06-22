@@ -141,3 +141,26 @@ async function reverseGeocode(lat, lng) {
     return '';
   }
 }
+
+/**
+ * Forward geocode: convert address text into coordinates using Nominatim.
+ * Returns { lat, lng, found: true } on success or { found: false } on failure.
+ */
+export async function forwardGeocode(address, city, state, pincode) {
+  try {
+    const parts = [address, city, state, pincode, 'India'].filter(Boolean);
+    if (!parts.length) return { found: false };
+    const q = encodeURIComponent(parts.join(', '));
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=in`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    const data = await res.json();
+    if (data.length > 0) {
+      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), found: true };
+    }
+    return { found: false };
+  } catch {
+    return { found: false };
+  }
+}

@@ -124,8 +124,12 @@ const panditSchema = new mongoose.Schema({
 
   // Expected charges per pooja (separate from selectedPoojas for backward compat)
   poojaCharges: [{
-    poojaId:         { type: mongoose.Schema.Types.ObjectId, ref: 'Pooja' },
-    expectedCharges: { type: Number, default: 0, min: 0 },
+    poojaId:             { type: mongoose.Schema.Types.ObjectId, ref: 'Pooja' },
+    expectedCharges:     { type: Number, default: 0, min: 0 },
+    approvedPrice:       { type: Number, default: null },
+    priceApprovalStatus: { type: String, enum: ['pending', 'approved'], default: 'pending' },
+    approvedAt:          { type: Date, default: null },
+    approvedByName:      { type: String, default: '' },
   }],
 
   // Profile

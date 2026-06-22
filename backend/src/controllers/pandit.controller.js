@@ -1,7 +1,8 @@
-const Pandit  = require('../models/Pandit');
-const Pooja   = require('../models/Pooja');
-const User    = require('../models/User');
-const Booking = require('../models/Booking');
+const Pandit      = require('../models/Pandit');
+const Pooja       = require('../models/Pooja');
+const User        = require('../models/User');
+const Booking     = require('../models/Booking');
+const PayoutBatch = require('../models/PayoutBatch');
 const path    = require('path');
 const fs      = require('fs');
 const {
@@ -303,7 +304,7 @@ exports.updateSelectedPoojas = async (req, res, next) => {
       { userId: req.user._id },
       { selectedPoojas },
       { new: true }
-    ).populate('selectedPoojas', 'name categoryId price duration');
+    ).populate('selectedPoojas', 'name categoryId duration');
     res.json({ success: true, pandit });
   } catch (err) {
     next(err);
@@ -329,32 +330,46 @@ exports.updatePoojaCharges = async (req, res, next) => {
   }
 };
 
-// PATCH /api/pandits/me/bookings/:id/request-completion — pandit marks pooja as done
-exports.requestCompletion = async (req, res, next) => {
+// PATCH /api/pandits/me/pooja-services — atomically save selection + expected charges
+exports.updatePoojaServices = async (req, res, next) => {
   try {
-    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id name');
+    const { selectedPoojas, poojaCharges } = req.body;
+    if (!Array.isArray(selectedPoojas)) {
+      return res.status(400).json({ success: false, message: 'selectedPoojas must be an array' });
+    }
+    const pandit = await Pandit.findOne({ userId: req.user._id });
     if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
 
-    const booking = await Booking.findOne({ _id: req.params.id, panditId: pandit._id });
-    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found or not assigned to you' });
-    if (!['pandit_assigned', 'pandit_accepted'].includes(booking.status)) {
-      return res.status(400).json({ success: false, message: 'Only assigned or accepted bookings can be marked as completed' });
+    pandit.selectedPoojas = selectedPoojas;
+
+    if (Array.isArray(poojaCharges)) {
+      for (const { poojaId, expectedCharges } of poojaCharges) {
+        const idx = pandit.poojaCharges.findIndex(
+          (c) => c.poojaId && c.poojaId.toString() === poojaId.toString()
+        );
+        if (idx >= 0) {
+          pandit.poojaCharges[idx].expectedCharges = +expectedCharges || 0;
+        } else {
+          pandit.poojaCharges.push({ poojaId, expectedCharges: +expectedCharges || 0 });
+        }
+      }
+      // Remove charge entries for poojas no longer selected
+      pandit.poojaCharges = pandit.poojaCharges.filter((c) =>
+        c.poojaId && selectedPoojas.some((id) => id.toString() === c.poojaId.toString())
+      );
     }
 
-    booking.status = 'completion_requested';
-    booking.auditLog.push({
-      action:          'completion_requested',
-      performedBy:     req.user._id,
-      performedByName: pandit.name,
-      at:              new Date(),
-    });
-    await booking.save();
-
-    res.json({ success: true, booking });
+    await pandit.save();
+    res.json({ success: true, message: 'Pooja services updated', pandit });
   } catch (err) {
     next(err);
   }
 };
+
+// Delegate OTP-based completion to booking controller
+const { requestCompletion: _reqCompletion, verifyCompletionOtp: _verifyOtp } = require('./booking.controller');
+exports.requestCompletion    = _reqCompletion;
+exports.verifyCompletionOtp  = _verifyOtp;
 
 // PATCH /api/pandits/me/bookings/:id/accept — pandit confirms they will perform the pooja
 exports.acceptBooking = async (req, res, next) => {
@@ -451,7 +466,7 @@ exports.getCatalogPoojas = async (req, res, next) => {
     if (search)     query.name = { $regex: search, $options: 'i' };
     const poojas = await Pooja.find(query)
       .populate('categoryId', 'name')
-      .select('name description price duration categoryId image')
+      .select('name description duration categoryId image')
       .sort({ name: 1 });
     res.json({ success: true, poojas });
   } catch (err) {
@@ -756,4 +771,86 @@ exports.getMyBookings = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+// ─── Payout Endpoints (pandit's own view) ────────────────────
+
+// GET /api/pandits/me/payouts/stats
+exports.getPayoutStats = async (req, res, next) => {
+  try {
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id');
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    const [totalEarned, pendingAmt, paidAmt, pendingCount, paidCount] = await Promise.all([
+      Booking.aggregate([
+        { $match: { panditId: pandit._id, status: 'completed', 'payout.status': { $in: ['pending', 'completed'] } } },
+        { $group: { _id: null, total: { $sum: '$payout.amount' } } },
+      ]),
+      Booking.aggregate([
+        { $match: { panditId: pandit._id, status: 'completed', 'payout.status': 'pending' } },
+        { $group: { _id: null, total: { $sum: '$payout.amount' } } },
+      ]),
+      PayoutBatch.aggregate([
+        { $match: { panditId: pandit._id } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+      ]),
+      Booking.countDocuments({ panditId: pandit._id, status: 'completed', 'payout.status': 'pending' }),
+      PayoutBatch.countDocuments({ panditId: pandit._id }),
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        totalEarned:  totalEarned[0]?.total  || 0,
+        pendingAmount: pendingAmt[0]?.total  || 0,
+        paidAmount:   paidAmt[0]?.total      || 0,
+        pendingCount,
+        paidCount,
+      },
+    });
+  } catch (err) { next(err); }
+};
+
+// GET /api/pandits/me/payouts/pending
+exports.getPendingPayouts = async (req, res, next) => {
+  try {
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id');
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    const bookings = await Booking.find({
+      panditId:        pandit._id,
+      status:          'completed',
+      'payout.status': 'pending',
+    })
+      .populate('poojaId', 'name')
+      .populate('userId', 'name')
+      .select('bookingNumber poojaId userId scheduledDate verifiedAt payout')
+      .sort({ verifiedAt: -1 });
+
+    res.json({ success: true, bookings });
+  } catch (err) { next(err); }
+};
+
+// GET /api/pandits/me/payouts/history
+exports.getPayoutHistory = async (req, res, next) => {
+  try {
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id');
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    const batches = await PayoutBatch.find({ panditId: pandit._id })
+      .sort({ paidDate: -1 })
+      .lean();
+
+    // Populate booking details for each batch
+    const batchesWithBookings = await Promise.all(
+      batches.map(async (batch) => {
+        const bookings = await Booking.find({ _id: { $in: batch.bookingIds } })
+          .populate('poojaId', 'name')
+          .select('bookingNumber poojaId scheduledDate payout.amount');
+        return { ...batch, bookings };
+      })
+    );
+
+    res.json({ success: true, batches: batchesWithBookings });
+  } catch (err) { next(err); }
 };

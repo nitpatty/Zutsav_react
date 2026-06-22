@@ -26,7 +26,14 @@ const bookingSchema = new mongoose.Schema({
   language:      { type: String, default: 'Hindi' },
   specialNote:   { type: String },
 
-  // Payment
+  // Commission & pricing breakdown
+  baseAmount:        { type: Number, default: 0 },   // pooja base price
+  commissionPercent: { type: Number, default: 0 },
+  commissionAmount:  { type: Number, default: 0 },
+  gstPercent:        { type: Number, default: 0 },
+  gstAmount:         { type: Number, default: 0 },
+
+  // Payment (final amount charged to user)
   amount:              { type: Number, required: true },
   paymentProvider:     { type: String, enum: ['razorpay', 'phonepe'], default: 'phonepe' },
   // Razorpay (legacy)
@@ -48,6 +55,30 @@ const bookingSchema = new mongoose.Schema({
       'completion_requested', 'completed', 'cancelled',
     ],
     default: 'pending_payment',
+  },
+
+  // OTP-based completion (pandit requests, OTP sent to user)
+  completionOtp:              { type: String, default: null },   // bcrypt hash
+  completionOtpExpiry:        { type: Date,   default: null },
+  completionOtpRequestedAt:   { type: Date,   default: null },
+
+  // Urgent booking + kit selection
+  isUrgent:   { type: Boolean, default: false },
+  withKit:    { type: Boolean, default: false },
+  kitId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Kit', default: null },
+
+  // Kit delivery (created by admin after booking)
+  kitDelivery: {
+    type:           { type: String, enum: ['courier', 'manual', 'none'], default: 'none' },
+    status:         { type: String, enum: ['pending', 'packed', 'shipped', 'out_for_delivery', 'delivered'], default: 'pending' },
+    // Courier fields
+    trackingId:     { type: String },
+    courier:        { type: String },
+    // Manual fields
+    assignedPerson: { type: String },
+    assignedPhone:  { type: String },
+    remarks:        { type: String },
+    updatedAt:      { type: Date },
   },
 
   // Pandits who rejected this booking (excluded from reassignment list)
@@ -85,7 +116,7 @@ const bookingSchema = new mongoose.Schema({
     at:              { type: Date, default: Date.now },
   }],
 
-  // Pandit payout (filled only after booking is completed)
+  // Pandit payout (auto-populated when admin verifies completion)
   payout: {
     amount:         { type: Number, default: 0 },
     status:         { type: String, enum: ['none', 'pending', 'completed'], default: 'none' },
@@ -94,6 +125,8 @@ const bookingSchema = new mongoose.Schema({
     assignedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     assignedByName: { type: String },
   },
+  // Reference to the PayoutBatch this booking was settled in (null = unpaid / individual)
+  payoutBatchId: { type: mongoose.Schema.Types.ObjectId, ref: 'PayoutBatch', default: null },
 }, { timestamps: true });
 
 // Auto-generate booking number

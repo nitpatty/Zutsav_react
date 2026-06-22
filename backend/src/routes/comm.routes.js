@@ -15,9 +15,10 @@ router.put   ('/email-templates/:id',  ctrl.updateEmailTemplate);
 router.delete('/email-templates/:id',  ctrl.deleteEmailTemplate);
 
 // WhatsApp Templates
-router.get  ('/wa-templates',         ctrl.listWhatsAppTemplates);
-router.post ('/wa-templates/sync',    ctrl.syncWhatsAppTemplates);
-router.patch('/wa-templates/:id',     ctrl.updateWhatsAppTemplate);
+router.get  ('/wa-templates',          ctrl.listWhatsAppTemplates);
+router.get  ('/wa-templates/enabled',  ctrl.listEnabledTemplates);   // enabled + approved only
+router.post ('/wa-templates/sync',     ctrl.syncWhatsAppTemplates);
+router.patch('/wa-templates/:id',      ctrl.updateWhatsAppTemplate);
 
 // Trigger Rules
 router.get  ('/trigger-rules',        ctrl.listTriggerRules);
