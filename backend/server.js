@@ -6,7 +6,7 @@ const app        = require('./src/app');
 const connectDB  = require('./src/config/database');
 const seedAdmin  = require('./src/utils/seedAdmin');
 const { setIO }  = require('./src/utils/notificationService');
-const { startDeletionCleanupJob } = require('./src/utils/cleanupJobs');
+const { startDeletionCleanupJob, startBookingReminderJobs } = require('./src/utils/cleanupJobs');
 
 const PORT = process.env.PORT || 5000;
 
@@ -51,6 +51,7 @@ connectDB().then(async () => {
 
   // Start scheduled cleanup jobs
   startDeletionCleanupJob();
+  startBookingReminderJobs();
 
   server.listen(PORT, () => {
     console.log(`🚀 Zutsav server running on http://localhost:${PORT}`);

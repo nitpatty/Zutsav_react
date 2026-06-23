@@ -8,7 +8,7 @@ const Order         = require('../models/Order');
 const Notification  = require('../models/Notification');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { sendEmail }        = require('../utils/email');
-const { sendWhatsAppText }  = require('../utils/whatsapp');
+const { sendOtpWhatsApp }   = require('../utils/whatsapp');
 const {
   notifyUserRegistered,
   notifyDeletionRequested,
@@ -69,10 +69,7 @@ exports.sendOTP = async (req, res, next) => {
         </div>`
       );
     } else {
-      await sendWhatsAppText(
-        phone,
-        `🙏 *Zutsav — OTP Verification*\n\nNamaste ${name}!\n\nYour OTP code is: *${otp}*\n\nValid for 10 minutes. Do not share this code.\n\n🙏 Team Zutsav`
-      );
+      await sendOtpWhatsApp(phone, otp);
     }
 
     res.json({ success: true, message: `OTP sent to your ${channel === 'email' ? 'email' : 'WhatsApp'}` });
@@ -327,10 +324,7 @@ exports.sendDeletionOTP = async (req, res, next) => {
         </div>`
       );
     } else {
-      await sendWhatsAppText(
-        user.phone,
-        `🪔 *Zutsav — Account Deletion Verification*\n\nNamaste ${user.name},\n\nYour OTP for account deletion: *${otp}*\n\nValid for 10 minutes. If you did not request deletion, ignore this message.\n\n🙏 Team Zutsav`
-      );
+      await sendOtpWhatsApp(user.phone, otp);
     }
 
     res.json({ success: true, message: `Verification code sent to your ${channel === 'email' ? 'email' : 'WhatsApp'}` });

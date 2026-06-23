@@ -18,6 +18,7 @@ const kitSchema = new mongoose.Schema({
   discountValue: { type: Number, default: 0, min: 0 },
   discountPrice: { type: Number, required: true, min: 0 }, // final selling price
   isActive:      { type: Boolean, default: true },
+  taxRate:       { type: Number, default: 0, min: 0, max: 100 }, // GST % on the kit
   isFeatured:    { type: Boolean, default: false },
   // Poojas this kit is recommended for (admin-managed mapping)
   linkedPoojas:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'Pooja' }],

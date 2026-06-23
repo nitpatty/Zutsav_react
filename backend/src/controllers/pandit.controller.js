@@ -11,6 +11,7 @@ const {
   notifyAdminPanditRejected,
   notifyKYCSubmitted,
 } = require('../utils/notificationService');
+const { notifyPanditAssigned } = require('../utils/whatsapp');
 
 // Fields a pandit must never see (financial & payment internals)
 const PANDIT_BOOKING_EXCLUDE = '-amount -payout -razorpayOrderId -razorpayPaymentId -razorpaySignature -phonePeMerchantTransactionId -phonePeTransactionId -paymentProvider -panditRejections';
@@ -374,7 +375,7 @@ exports.verifyCompletionOtp  = _verifyOtp;
 // PATCH /api/pandits/me/bookings/:id/accept — pandit confirms they will perform the pooja
 exports.acceptBooking = async (req, res, next) => {
   try {
-    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id name');
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id name phone');
     if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
 
     const booking = await Booking.findOne({ _id: req.params.id, panditId: pandit._id, status: 'pandit_assigned' })
@@ -393,8 +394,9 @@ exports.acceptBooking = async (req, res, next) => {
     });
     await booking.save();
 
-    // Notify the user their pandit confirmed
+    // Notify the user their pandit confirmed (in-app + WhatsApp)
     notifyUserPanditAccepted(booking.userId, pandit.name, booking.bookingNumber).catch(() => {});
+    notifyPanditAssigned(booking, pandit).catch(() => {});
 
     // Notify all admins
     const admins = await User.find({ role: 'admin' }).select('_id');

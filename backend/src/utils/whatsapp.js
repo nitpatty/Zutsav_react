@@ -68,110 +68,85 @@ const _safe = async (label, fn) => {
 
 /**
  * Registration / login OTP
- * Template: zutsav_otp  (AUTHENTICATION — must match Meta exactly)
- * Body param 1: OTP code
+ * Template: whatsapp_verification (AUTHENTICATION, lang=en_US)
+ * Body {{1}} = OTP code
  */
 const sendOtpWhatsApp = (phone, otp) => _safe('sendOtpWhatsApp', () =>
-  sendWhatsApp(phone, 'zutsav_otp', [
+  sendWhatsApp(phone, 'whatsapp_verification', [
     { type: 'body', parameters: [{ type: 'text', text: String(otp) }] },
     { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(otp) }] },
-  ], 'en')
+  ], 'en_US')
 );
 
 /**
  * Booking confirmation after payment
- * Template: zutsav_booking_confirmed  (UTILITY)
- * Body params: 1=name, 2=poojaName, 3=bookingNumber, 4=date, 5=amount
+ * Template: payment_success (UTILITY, lang=en)
+ * Body {{1}}=customerName, {{2}}=amount, {{3}}=bookingNumber
  */
-const notifyBookingConfirmed = (booking, poojaName) => _safe('notifyBookingConfirmed', () => {
-  const date = new Date(booking.scheduledDate).toLocaleDateString('en-IN', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  });
-  return sendWhatsApp(booking.userDetails.phone, 'zutsav_booking_confirmed', [
+const notifyBookingConfirmed = (booking, poojaName) => _safe('notifyBookingConfirmed', () =>
+  sendWhatsApp(booking.userDetails.phone, 'payment_success', [
     { type: 'body', parameters: [
       { type: 'text', text: booking.userDetails.name },
-      { type: 'text', text: poojaName },
+      { type: 'text', text: String(booking.amount) },
       { type: 'text', text: booking.bookingNumber },
-      { type: 'text', text: date },
-      { type: 'text', text: `${booking.amount}` },
     ]},
-  ]);
-});
+  ], 'en')
+);
 
 /**
- * Pandit assigned to user
- * Template: zutsav_pandit_assigned  (UTILITY)
- * Body params: 1=userName, 2=panditName, 3=bookingNumber, 4=date, 5=time
+ * Pandit assigned — notify USER
+ * Template: puja_assigned (UTILITY, lang=en)
+ * Body {{1}}=customerName, {{2}}=panditName, {{3}}=panditContact, {{4}}=poojaName
  */
-const notifyPanditAssigned = (booking, pandit) => _safe('notifyPanditAssigned', () => {
-  const date = new Date(booking.scheduledDate).toLocaleDateString('en-IN', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  });
-  return sendWhatsApp(booking.userDetails.phone, 'zutsav_pandit_assigned', [
+const notifyPanditAssigned = (booking, pandit) => _safe('notifyPanditAssigned', () =>
+  sendWhatsApp(booking.userDetails.phone, 'puja_assigned', [
     { type: 'body', parameters: [
       { type: 'text', text: booking.userDetails.name },
       { type: 'text', text: pandit.name },
-      { type: 'text', text: booking.bookingNumber },
-      { type: 'text', text: date },
-      { type: 'text', text: booking.scheduledTime },
+      { type: 'text', text: pandit.phone || 'Contact via app' },
+      { type: 'text', text: booking.poojaId?.name || 'Pooja' },
     ]},
-  ]);
+  ], 'en')
+);
+
+/**
+ * New booking assigned — notify PANDIT
+ * Template: pandit_puja_assigned (UTILITY, lang=en)
+ * Body {{1}}=panditName, {{2}}=poojaName, {{3}}=date, {{4}}=time, {{5}}=address
+ */
+const notifyPanditOfNewBooking = (booking, pandit, poojaName) => _safe('notifyPanditOfNewBooking', () => {
+  if (!pandit.phone) return null;
+  const date = new Date(booking.scheduledDate).toLocaleDateString('en-IN', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  return sendWhatsApp(pandit.phone, 'pandit_puja_assigned', [
+    { type: 'body', parameters: [
+      { type: 'text', text: pandit.name },
+      { type: 'text', text: poojaName },
+      { type: 'text', text: date },
+      { type: 'text', text: booking.scheduledTime || 'As scheduled' },
+      { type: 'text', text: booking.userDetails.address || booking.userDetails.city || 'As per booking' },
+    ]},
+  ], 'en');
 });
 
 /**
- * Booking completion OTP
- * Template: zutsav_completion_otp  (UTILITY)
- * Body params: 1=userName, 2=poojaName, 3=OTP
+ * Completion OTP — sent to user when pandit marks service done
+ * puja_comfirmation_verification_code is REJECTED in Meta — using whatsapp_verification as fallback
+ * Template: whatsapp_verification (AUTHENTICATION, lang=en_US)
+ * Body {{1}} = OTP code
  */
 const sendCompletionOtpWhatsApp = (booking, poojaName, otp) => _safe('sendCompletionOtpWhatsApp', () =>
-  sendWhatsApp(booking.userDetails.phone, 'zutsav_completion_otp', [
-    { type: 'body', parameters: [
-      { type: 'text', text: booking.userDetails.name },
-      { type: 'text', text: poojaName },
-      { type: 'text', text: String(otp) },
-    ]},
-  ])
+  sendWhatsApp(booking.userDetails.phone, 'whatsapp_verification', [
+    { type: 'body', parameters: [{ type: 'text', text: String(otp) }] },
+    { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(otp) }] },
+  ], 'en_US')
 );
 
-/**
- * KYC approved — to pandit
- * Template: zutsav_kyc_approved  (UTILITY)
- * Body params: 1=panditName
- */
-const sendKycApprovedWhatsApp = (phone, panditName) => _safe('sendKycApprovedWhatsApp', () =>
-  sendWhatsApp(phone, 'zutsav_kyc_approved', [
-    { type: 'body', parameters: [{ type: 'text', text: panditName }] },
-  ])
-);
-
-/**
- * KYC rejected — to pandit
- * Template: zutsav_kyc_rejected  (UTILITY)
- * Body params: 1=panditName, 2=reason
- */
-const sendKycRejectedWhatsApp = (phone, panditName, reason) => _safe('sendKycRejectedWhatsApp', () =>
-  sendWhatsApp(phone, 'zutsav_kyc_rejected', [
-    { type: 'body', parameters: [
-      { type: 'text', text: panditName },
-      { type: 'text', text: reason },
-    ]},
-  ])
-);
-
-/**
- * Payment released — to pandit
- * Template: zutsav_payment_released  (UTILITY)
- * Body params: 1=panditName, 2=amount, 3=batchId
- */
-const sendPaymentReleasedWhatsApp = (phone, panditName, amount, batchId) => _safe('sendPaymentReleasedWhatsApp', () =>
-  sendWhatsApp(phone, 'zutsav_payment_released', [
-    { type: 'body', parameters: [
-      { type: 'text', text: panditName },
-      { type: 'text', text: `${amount}` },
-      { type: 'text', text: batchId },
-    ]},
-  ])
-);
+// KYC / Payment templates — no matching approved templates in Meta yet; fail silently
+const sendKycApprovedWhatsApp    = (phone, panditName)         => _safe('sendKycApprovedWhatsApp',    () => null);
+const sendKycRejectedWhatsApp    = (phone, panditName, reason) => _safe('sendKycRejectedWhatsApp',    () => null);
+const sendPaymentReleasedWhatsApp = (phone, panditName, amount, batchId) => _safe('sendPaymentReleasedWhatsApp', () => null);
 
 /**
  * Freeform text is NOT supported on WhatsApp Business API for business-initiated messages.
@@ -221,6 +196,7 @@ module.exports = {
   sendOtpWhatsApp,
   notifyBookingConfirmed,
   notifyPanditAssigned,
+  notifyPanditOfNewBooking,
   sendCompletionOtpWhatsApp,
   sendKycApprovedWhatsApp,
   sendKycRejectedWhatsApp,

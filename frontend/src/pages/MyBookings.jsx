@@ -190,6 +190,37 @@ function BookingCard({ b, onReload }) {
           </div>
         )}
 
+        {/* Kit delivery status */}
+        {b.withKit && (
+          <div className={`mt-3 rounded-xl p-3 border text-xs ${
+            b.kitDelivery?.status === 'delivered'       ? 'bg-green-50 border-green-200 text-green-700' :
+            b.kitDelivery?.status === 'shipped'         ? 'bg-amber-50 border-amber-200 text-amber-700' :
+            b.kitDelivery?.status === 'out_for_delivery'? 'bg-orange-50 border-orange-200 text-orange-700' :
+            b.kitDelivery?.status === 'packed'          ? 'bg-blue-50 border-blue-200 text-blue-700' :
+            'bg-gray-50 border-gray-200 text-gray-600'
+          }`}>
+            <div className="flex items-center gap-2 font-semibold mb-0.5">
+              <span>📦</span>
+              <span>Samagri Kit ·{' '}
+                {b.kitDelivery?.status === 'delivered'        ? 'Delivered' :
+                 b.kitDelivery?.status === 'shipped'          ? 'Shipped' :
+                 b.kitDelivery?.status === 'out_for_delivery' ? 'Out for Delivery' :
+                 b.kitDelivery?.status === 'packed'           ? 'Packed' :
+                 'Being prepared'}
+              </span>
+            </div>
+            {(b.kitDelivery?.status === 'shipped' || b.kitDelivery?.status === 'out_for_delivery') && b.kitDelivery.courier && (
+              <p>Courier: {b.kitDelivery.courier}{b.kitDelivery.trackingId ? ` · AWB: ${b.kitDelivery.trackingId}` : ''}</p>
+            )}
+            {b.kitDelivery?.status === 'out_for_delivery' && (
+              <p className="mt-0.5">Your kit is out for delivery today!</p>
+            )}
+            {!b.kitDelivery?.status || b.kitDelivery.status === 'pending' ? (
+              <p>Your samagri kit will be dispatched soon. It will arrive before your pooja date.</p>
+            ) : null}
+          </div>
+        )}
+
         {/* Journey tracker + pandit */}
         <div className="mt-5 pt-4 border-t border-gray-100 flex items-end justify-between flex-wrap gap-4">
           <JourneyTracker status={b.status} />

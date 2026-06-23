@@ -108,4 +108,114 @@ const sendTestConnectionEmail = async (to) => {
     </div>`);
 };
 
-module.exports = { sendEmail, sendBookingConfirmedEmail, sendPanditAssignedEmail, sendCompletionOtpEmail, sendTestConnectionEmail };
+const sendBookingCancelledEmail = (booking, poojaName, reason) => {
+  if (!booking.userDetails?.email) return;
+  const html = `
+    <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#fff">
+      <h2 style="color:#dc2626">&#127774; Booking Cancelled</h2>
+      <p>Namaste <strong>${booking.userDetails.name}</strong>,</p>
+      <p>Your booking <strong>#${booking.bookingNumber}</strong> for <strong>${poojaName}</strong> has been cancelled.</p>
+      ${reason ? `<p style="color:#6b7280">Reason: ${reason}</p>` : ''}
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:6px 0;color:#6b7280">Booking No</td><td><strong>#${booking.bookingNumber}</strong></td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Pooja</td><td>${poojaName}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Amount</td><td>&#8377;${booking.amount}</td></tr>
+      </table>
+      <p style="color:#6b7280;font-size:13px">If you paid for this booking and a refund is applicable, it will be processed within 5–7 business days. For queries, please contact support.</p>
+      <p style="color:#b91c1c">&#128591; Team Zutsav</p>
+    </div>`;
+  return sendEmail(booking.userDetails.email, `Booking Cancelled — #${booking.bookingNumber}`, html);
+};
+
+const sendBookingRefundedEmail = (booking, poojaName) => {
+  if (!booking.userDetails?.email) return;
+  const html = `
+    <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#fff">
+      <h2 style="color:#16a34a">&#127774; Refund Initiated</h2>
+      <p>Namaste <strong>${booking.userDetails.name}</strong>,</p>
+      <p>Your refund for booking <strong>#${booking.bookingNumber}</strong> (${poojaName}) has been initiated.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:6px 0;color:#6b7280">Booking No</td><td><strong>#${booking.bookingNumber}</strong></td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Refund Amount</td><td><strong>&#8377;${booking.amount}</strong></td></tr>
+      </table>
+      <p style="color:#6b7280;font-size:13px">The refund will reflect in your account within 5–7 business days depending on your payment method.</p>
+      <p style="color:#b91c1c">&#128591; Team Zutsav</p>
+    </div>`;
+  return sendEmail(booking.userDetails.email, `Refund Initiated — Booking #${booking.bookingNumber}`, html);
+};
+
+const sendInvoiceEmail = (booking, poojaName) => {
+  if (!booking.userDetails?.email) return;
+  const completedDate = booking.completedAt
+    ? new Date(booking.completedAt).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+    : new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const html = `
+    <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#fff">
+      <h2 style="color:#b91c1c">&#127774; Invoice — ${poojaName}</h2>
+      <p>Namaste <strong>${booking.userDetails.name}</strong>,</p>
+      <p>Thank you for choosing Zutsav. Your pooja service has been completed successfully. Here is your invoice.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0;border:1px solid #e5e7eb">
+        <tr style="background:#fef3c7"><td colspan="2" style="padding:8px;font-weight:700;color:#92400e">Invoice</td></tr>
+        <tr><td style="padding:8px;color:#6b7280">Booking No</td><td style="padding:8px"><strong>#${booking.bookingNumber}</strong></td></tr>
+        <tr><td style="padding:8px;color:#6b7280">Service</td><td style="padding:8px">${poojaName}</td></tr>
+        <tr><td style="padding:8px;color:#6b7280">Date of Service</td><td style="padding:8px">${completedDate}</td></tr>
+        <tr><td style="padding:8px;color:#6b7280">Base Amount</td><td style="padding:8px">&#8377;${booking.baseAmount || booking.amount}</td></tr>
+        ${booking.commissionPercent > 0 ? `<tr><td style="padding:8px;color:#6b7280">Platform Fee (${booking.commissionPercent}%)</td><td style="padding:8px">&#8377;${booking.commissionAmount || 0}</td></tr>` : ''}
+        ${booking.gstPercent > 0 ? `<tr><td style="padding:8px;color:#6b7280">GST (${booking.gstPercent}%)</td><td style="padding:8px">&#8377;${booking.gstAmount || 0}</td></tr>` : ''}
+        <tr style="border-top:2px solid #e5e7eb"><td style="padding:8px;font-weight:700">Total Paid</td><td style="padding:8px;font-weight:700">&#8377;${booking.amount}</td></tr>
+      </table>
+      <p style="color:#6b7280;font-size:13px">Please keep this email as your payment record. We look forward to serving you again.</p>
+      <p style="color:#b91c1c">&#128591; Team Zutsav</p>
+    </div>`;
+  return sendEmail(booking.userDetails.email, `Invoice — ${poojaName} (#${booking.bookingNumber})`, html);
+};
+
+const sendServiceReminderEmail = (booking, poojaName, label) => {
+  if (!booking.userDetails?.email) return;
+  const date = new Date(booking.scheduledDate).toLocaleDateString('en-IN', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const html = `
+    <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#fff">
+      <h2 style="color:#b91c1c">&#127774; Reminder — Your Pooja is ${label} Away</h2>
+      <p>Namaste <strong>${booking.userDetails.name}</strong>,</p>
+      <p>This is a friendly reminder that your <strong>${poojaName}</strong> is scheduled <strong>${label}</strong>.</p>
+      <table style="width:100%;border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:6px 0;color:#6b7280">Booking No</td><td><strong>#${booking.bookingNumber}</strong></td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Pooja</td><td>${poojaName}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Date</td><td>${date}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Time</td><td>${booking.scheduledTime}</td></tr>
+        <tr><td style="padding:6px 0;color:#6b7280">Address</td><td>${booking.userDetails.address}</td></tr>
+      </table>
+      <p style="color:#6b7280;font-size:13px">Please ensure the puja area is ready. For any changes contact us immediately.</p>
+      <p style="color:#b91c1c">&#128591; Team Zutsav</p>
+    </div>`;
+  return sendEmail(booking.userDetails.email, `Reminder: ${poojaName} is ${label} Away — #${booking.bookingNumber}`, html);
+};
+
+const sendFeedbackRequestEmail = (booking, poojaName) => {
+  if (!booking.userDetails?.email) return;
+  const html = `
+    <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#fff">
+      <h2 style="color:#b91c1c">&#127774; How Was Your Experience?</h2>
+      <p>Namaste <strong>${booking.userDetails.name}</strong>,</p>
+      <p>Your <strong>${poojaName}</strong> (Booking #${booking.bookingNumber}) has been completed. We hope it was a divine experience!</p>
+      <p>We would love to hear your feedback. Please log in to Zutsav and rate your experience from your bookings section.</p>
+      <p style="color:#6b7280;font-size:13px">Your feedback helps us serve you and others better.</p>
+      <p style="color:#b91c1c">&#128591; Team Zutsav — Namaste &#127774;</p>
+    </div>`;
+  return sendEmail(booking.userDetails.email, `Share Your Feedback — ${poojaName} (#${booking.bookingNumber})`, html);
+};
+
+module.exports = {
+  sendEmail,
+  sendBookingConfirmedEmail,
+  sendPanditAssignedEmail,
+  sendCompletionOtpEmail,
+  sendTestConnectionEmail,
+  sendBookingCancelledEmail,
+  sendBookingRefundedEmail,
+  sendInvoiceEmail,
+  sendServiceReminderEmail,
+  sendFeedbackRequestEmail,
+};

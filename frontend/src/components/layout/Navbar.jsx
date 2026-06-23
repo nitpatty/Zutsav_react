@@ -4,10 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Menu, X, User, LogOut, LayoutDashboard, BookOpen, ShoppingBag,
   Bell, Moon, Sparkles, Home, CalendarDays, MapPin, Tv,
-  ChevronDown, Package, Users, Settings, Star, Flame,
+  ChevronDown, Package, Users, Settings, Star, Flame, ShoppingCart,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { useCart } from '../../context/CartContext';
 import ThemeToggle from '../ui/ThemeSwitcher';
 
 const PUBLIC_NAV = [
@@ -56,6 +57,7 @@ function useClickOutside(ref, handler) {
 export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const { unreadCount } = useNotifications();
+  const { cartCount } = useCart();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -222,6 +224,27 @@ export default function Navbar() {
                         style={{ background: 'var(--t-primary)' }}
                       >
                         {unreadCount > 99 ? '99+' : unreadCount}
+                      </motion.span>
+                    )}
+                  </Link>
+
+                  {/* Cart */}
+                  <Link
+                    to="/cart"
+                    className="relative p-2 rounded-xl transition-all duration-200"
+                    style={{ color: 'var(--t-muted)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--t-nav-active-bg)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <ShoppingCart size={18} />
+                    {cartCount > 0 && (
+                      <motion.span
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1"
+                        style={{ background: '#D4AF37' }}
+                      >
+                        {cartCount > 99 ? '99+' : cartCount}
                       </motion.span>
                     )}
                   </Link>
@@ -485,6 +508,27 @@ export default function Navbar() {
                         <LayoutDashboard size={16} /> Admin Panel
                       </Link>
                     )}
+
+                    {/* Cart link in mobile */}
+                    <Link
+                      to="/cart"
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors duration-150"
+                      style={{
+                        color: isActive('/cart') ? 'var(--t-primary)' : 'var(--t-muted)',
+                        background: isActive('/cart') ? 'var(--t-nav-active-bg)' : 'transparent',
+                      }}
+                    >
+                      <ShoppingCart size={16} style={{ color: isActive('/cart') ? 'var(--t-primary)' : 'var(--t-muted)' }} />
+                      <span className="flex-1" style={{ color: 'var(--t-text)' }}>My Cart</span>
+                      {cartCount > 0 && (
+                        <span
+                          className="text-white text-[9px] font-bold min-w-[16px] h-4 rounded-full flex items-center justify-center px-1"
+                          style={{ background: '#D4AF37' }}
+                        >
+                          {cartCount > 99 ? '99+' : cartCount}
+                        </span>
+                      )}
+                    </Link>
 
                     <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest mt-2" style={{ color: 'var(--t-muted)', opacity: 0.6 }}>Account</p>
 

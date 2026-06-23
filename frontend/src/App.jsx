@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { SettingsProvider } from './context/SettingsContext';
+import { CartProvider } from './context/CartContext';
 
 import Navbar           from './components/layout/Navbar';
 import Footer           from './components/layout/Footer';
@@ -35,6 +36,7 @@ import PaymentCallback  from './pages/PaymentCallback';
 import Notifications    from './pages/Notifications';
 import UserDashboard    from './pages/UserDashboard';
 import MyOrders         from './pages/MyOrders';
+import CartPage         from './pages/CartPage';
 
 /* ── Auth guard ─────────────────────────────────────── */
 const ProtectedRoute = ({ children, roles }) => {
@@ -103,6 +105,11 @@ const AppRoutes = () => {
           } />
           <Route path="/payment-callback/:merchantTransactionId" element={
             <ProtectedRoute><PaymentCallback /></ProtectedRoute>
+          } />
+
+          {/* Cart */}
+          <Route path="/cart" element={
+            <ProtectedRoute><PublicLayout><CartPage /></PublicLayout></ProtectedRoute>
           } />
 
           {/* User dashboard pages (sidebar layout) */}
@@ -193,6 +200,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <CartProvider>
         <SettingsProvider>
         <Toaster
           position="top-right"
@@ -210,6 +218,7 @@ export default function App() {
         />
         <AppRoutes />
         </SettingsProvider>
+        </CartProvider>
       </AuthProvider>
     </BrowserRouter>
   );

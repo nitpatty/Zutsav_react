@@ -4,35 +4,57 @@ const bcrypt   = require('bcryptjs');
 const Booking = require('../models/Booking');
 const Pooja   = require('../models/Pooja');
 const Pandit  = require('../models/Pandit');
+const Kit     = require('../models/Kit');
 const User    = require('../models/User');
 const AdminAuditLog = require('../models/AdminAuditLog');
 
 const { createOrder, verifySignature }                         = require('../utils/razorpay');
 const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum } = require('../utils/phonepe');
 const settings                                                 = require('../utils/settingsService');
-const { notifyBookingCreated }                                 = require('../utils/notificationService');
-const { sendBookingConfirmedEmail, sendCompletionOtpEmail }    = require('../utils/email');
-const { notifyBookingConfirmed, sendCompletionOtpWhatsApp }    = require('../utils/whatsapp');
+const { notifyBookingCreated }                                              = require('../utils/notificationService');
+const { sendBookingConfirmedEmail, sendCompletionOtpEmail, sendInvoiceEmail, sendFeedbackRequestEmail } = require('../utils/email');
+const { notifyBookingConfirmed, sendCompletionOtpWhatsApp, sendWhatsAppForEvent } = require('../utils/whatsapp');
 
-// ── Commission helper ─────────────────────────────────────────
+// ── Pricing engine ────────────────────────────────────────────
+// Business rule: Tax (GST) applies ONLY on kit/product price.
+// Pooja service is tax-exempt. Platform fee is also tax-exempt.
+//
+//   grandTotal = poojaAmount + platformFee + kitAmount + taxAmount
+//   taxAmount  = kitAmount * gstPercent / 100
 
-async function calculatePricing(basePrice) {
+async function calculatePricing(poojaPrice, kitPrice = 0) {
   const commissionPct = await settings.get('platformCommissionPercent', 0);
   const gstPct        = await settings.get('platformGstPercent', 0);
 
-  const commissionAmt = Math.round((basePrice * commissionPct) / 100);
-  const subtotal      = basePrice + commissionAmt;
-  const gstAmt        = Math.round((subtotal * gstPct) / 100);
-  const finalAmount   = subtotal + gstAmt;
+  const poojaAmount = Math.round(poojaPrice);
+  const platformFee = Math.round((poojaPrice * commissionPct) / 100);
+  const kitAmount   = Math.round(kitPrice);
+  const taxAmount   = Math.round((kitPrice * gstPct) / 100); // ONLY on kit
+  const grandTotal  = poojaAmount + platformFee + kitAmount + taxAmount;
 
   return {
-    baseAmount:        basePrice,
+    // Primary accounting fields
+    poojaAmount,
+    kitAmount,
+    platformFee,
+    taxAmount,
+    grandTotal,
     commissionPercent: commissionPct,
-    commissionAmount:  commissionAmt,
     gstPercent:        gstPct,
-    gstAmount:         gstAmt,
-    finalAmount,
+    // Legacy aliases kept for backward compatibility
+    baseAmount:       poojaAmount,
+    commissionAmount: platformFee,
+    gstAmount:        taxAmount,
+    finalAmount:      grandTotal,
   };
+}
+
+// Resolve kit price from kitId; returns 0 if kitId is invalid or urgent
+async function resolveKitPrice(kitId, isUrgent) {
+  if (isUrgent || !kitId) return { kitPrice: 0, resolvedKitId: null };
+  const kit = await Kit.findById(kitId).select('discountPrice isActive');
+  if (!kit || !kit.isActive) return { kitPrice: 0, resolvedKitId: null };
+  return { kitPrice: kit.discountPrice || 0, resolvedKitId: kitId };
 }
 
 // ── Post-payment notifications ────────────────────────────────
@@ -110,10 +132,13 @@ exports.createPhonePeBooking = async (req, res, next) => {
   try {
     const { poojaId, scheduledDate, scheduledTime, language, specialNote, userDetails, isUrgent, withKit, kitId } = req.body;
 
+    const urgent = isUrgent === true || isUrgent === 'true';
+
     const pooja = await Pooja.findById(poojaId);
     if (!pooja || !pooja.isActive) return res.status(404).json({ success: false, message: 'Pooja not found' });
 
-    const pricing               = await calculatePricing(pooja.price);
+    const { kitPrice, resolvedKitId } = await resolveKitPrice(kitId, urgent);
+    const pricing               = await calculatePricing(pooja.price, kitPrice);
     const merchantTransactionId = `ZUT_${Date.now()}_${req.user._id.toString().slice(-6)}`;
     const clientUrl             = process.env.CLIENT_URL || 'http://localhost:3000';
 
@@ -125,19 +150,33 @@ exports.createPhonePeBooking = async (req, res, next) => {
       language:      language || 'Hindi',
       specialNote,
       userDetails,
-      ...pricing,
-      amount:                       pricing.finalAmount,
+      // New accounting fields
+      poojaAmount:      pricing.poojaAmount,
+      kitAmount:        pricing.kitAmount,
+      platformFee:      pricing.platformFee,
+      taxAmount:        pricing.taxAmount,
+      grandTotal:       pricing.grandTotal,
+      // Legacy fields (backward compat)
+      baseAmount:        pricing.baseAmount,
+      commissionPercent: pricing.commissionPercent,
+      commissionAmount:  pricing.commissionAmount,
+      gstPercent:        pricing.gstPercent,
+      gstAmount:         pricing.gstAmount,
+      amount:            pricing.grandTotal,
+      // Payment
       paymentProvider:              'phonepe',
       phonePeMerchantTransactionId: merchantTransactionId,
       status:                       'pending_payment',
-      isUrgent:                     isUrgent === true || isUrgent === 'true',
-      withKit:                      withKit  === true || withKit  === 'true',
-      kitId:                        kitId || null,
+      // Booking type + kit
+      bookingType: urgent ? 'urgent' : 'normal',
+      isUrgent:    urgent,
+      withKit:     !!resolvedKitId,
+      kitId:       resolvedKitId,
     });
 
     const { redirectUrl } = await createPhonePeOrder({
       merchantTransactionId,
-      amount:      pricing.finalAmount,
+      amount:      pricing.grandTotal,
       userId:      req.user._id,
       redirectUrl: `${clientUrl}/payment-callback/${merchantTransactionId}`,
       callbackUrl: `${process.env.SERVER_URL || 'http://localhost:5000'}/api/bookings/phonepe-webhook`,
@@ -202,13 +241,15 @@ exports.phonePeWebhook = async (req, res) => {
   } catch { res.json({ success: true }); }
 };
 
-// GET /api/bookings/pricing-preview?poojaId=xxx  — show breakdown before payment
+// GET /api/bookings/pricing-preview?poojaId=xxx[&kitId=yyy]
 exports.getPricingPreview = async (req, res, next) => {
   try {
-    const { poojaId } = req.query;
+    const { poojaId, kitId } = req.query;
     const pooja = await Pooja.findById(poojaId).select('price name');
     if (!pooja) return res.status(404).json({ success: false, message: 'Pooja not found' });
-    const pricing = await calculatePricing(pooja.price);
+
+    const { kitPrice } = await resolveKitPrice(kitId, false);
+    const pricing = await calculatePricing(pooja.price, kitPrice);
     res.json({ success: true, pricing, poojaName: pooja.name });
   } catch (err) { next(err); }
 };
@@ -372,6 +413,12 @@ exports.verifyCompletionOtp = async (req, res, next) => {
       targetType:      'booking',
       targetName:      booking.bookingNumber,
     }).catch(() => {});
+
+    // Invoice + feedback email; mark invoiceSent so cron doesn't double-send
+    const completedPoojaName = booking.poojaId?.name || 'Pooja';
+    sendInvoiceEmail(booking, completedPoojaName).catch(() => {});
+    sendFeedbackRequestEmail(booking, completedPoojaName).catch(() => {});
+    Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
 
     res.json({ success: true, message: 'Booking completed successfully', booking });
   } catch (err) { next(err); }

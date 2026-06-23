@@ -24,6 +24,7 @@ const productSchema = new mongoose.Schema({
   isActive:       { type: Boolean, default: true },
   isFeatured:     { type: Boolean, default: false },
   tags:           [{ type: String }],
+  taxRate:        { type: Number, default: 0, min: 0, max: 100 }, // GST % e.g. 5, 12, 18
   visibilityType: { type: String, enum: ['marketplace', 'kit_only', 'both'], default: 'marketplace' },
   isDeleted:      { type: Boolean, default: false },
   deletedAt:      { type: Date, default: null },

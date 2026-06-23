@@ -34,7 +34,8 @@ router.patch('/bookings/:id/assign',             ctrl.assignPandit);
 router.patch('/bookings/:id/status',             ctrl.updateBookingStatus);
 router.patch('/bookings/:id/approve-completion', ctrl.approveCompletion);
 router.patch('/bookings/:id/reject-completion',  ctrl.rejectCompletion);
-router.patch('/bookings/:id/kit-delivery',       ctrl.updateKitDelivery);
+router.patch('/bookings/:id/kit-delivery',          ctrl.updateKitDelivery);
+router.post('/bookings/:id/kit-delivery/tackipost', ctrl.createTackipostShipment);
 router.patch('/bookings/:id/assign-payout',      ctrl.assignPayout);
 router.patch('/bookings/:id/mark-payout-paid',   ctrl.markPayoutPaid);
 

@@ -93,6 +93,24 @@ const notifyBookingCompleted = (userId, bookingNumber) =>
     data:    { bookingNumber },
   });
 
+const notifyBookingCancelled = (userId, bookingNumber, reason) =>
+  createNotification({
+    userId,
+    type:    'booking_cancelled',
+    title:   'Booking Cancelled',
+    message: `Your booking #${bookingNumber} has been cancelled.${reason ? ` Reason: ${reason}` : ''}`,
+    data:    { bookingNumber, reason },
+  });
+
+const notifyBookingRefunded = (userId, bookingNumber) =>
+  createNotification({
+    userId,
+    type:    'booking_refunded',
+    title:   'Refund Initiated',
+    message: `A refund has been initiated for your booking #${bookingNumber}. It will reflect in 5–7 business days.`,
+    data:    { bookingNumber },
+  });
+
 const notifyOrderPlaced = (userId, orderNumber) =>
   createNotification({
     userId,
@@ -256,6 +274,26 @@ const notifyPayoutReleased = (panditUserId, amount, batchId, bookingCount) =>
     data:    { batchId, amount, bookingCount },
   });
 
+// ── Kit delivery notifications ───────────────────────────────────
+
+const notifyKitShipped = (userId, bookingNumber, courier, trackingId) =>
+  createNotification({
+    userId,
+    type:    'kit_shipped',
+    title:   'Your Samagri Kit Has Been Shipped!',
+    message: `Your pooja samagri kit for booking #${bookingNumber} has been dispatched via ${courier || 'courier'}${trackingId ? `. Tracking ID: ${trackingId}` : ''}. It will arrive before your scheduled pooja.`,
+    data:    { bookingNumber, courier, trackingId },
+  });
+
+const notifyKitDelivered = (userId, bookingNumber) =>
+  createNotification({
+    userId,
+    type:    'kit_delivered',
+    title:   'Samagri Kit Delivered!',
+    message: `Your pooja samagri kit for booking #${bookingNumber} has been delivered. You are all set for your pooja!`,
+    data:    { bookingNumber },
+  });
+
 // ── Account deletion workflow ────────────────────────────────────
 
 const notifyDeletionRequested = (userId, scheduledDate) =>
@@ -293,6 +331,8 @@ module.exports = {
   notifyPanditAssignedToUser,
   notifyPanditNewBooking,
   notifyBookingCompleted,
+  notifyBookingCancelled,
+  notifyBookingRefunded,
   notifyOrderPlaced,
   notifyOrderConfirmed,
   notifyOrderPacked,
@@ -310,6 +350,8 @@ module.exports = {
   notifyKYCApproved,
   notifyKYCRejected,
   notifyKYCReuploadRequired,
+  notifyKitShipped,
+  notifyKitDelivered,
   notifyDeletionRequested,
   notifyDeletionCancelled,
   notifyAccountRestored,

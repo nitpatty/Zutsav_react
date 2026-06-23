@@ -127,7 +127,7 @@ exports.getAdminProducts = async (req, res, next) => {
 // ─── Admin: POST /api/marketplace/products ───────────────────
 exports.createProduct = async (req, res, next) => {
   try {
-    const { name, category, description, price, salePrice, stock, tags, visibilityType, variants: rawVariants } = req.body;
+    const { name, category, description, price, salePrice, stock, tags, visibilityType, taxRate, variants: rawVariants } = req.body;
 
     const slug   = await getUniqueSlug(name);
     const images = req.files ? req.files.map((f) => `uploads/products/${f.filename}`) : [];
@@ -159,6 +159,7 @@ exports.createProduct = async (req, res, next) => {
       images,
       tags:           tags ? JSON.parse(tags) : [],
       visibilityType: visibilityType || 'marketplace',
+      taxRate:        taxRate !== undefined ? +taxRate : 0,
     });
     await auditLog(req, 'create_product', 'product', product);
     res.status(201).json({ success: true, product });

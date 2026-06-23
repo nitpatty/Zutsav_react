@@ -69,12 +69,18 @@ function QuickAction({ icon: Icon, label, sub, to, color }) {
 /* ── Booking card ───────────────────────────────────── */
 function BookingCard({ booking }) {
   const statusColors = {
-    pending:   { bg: '#FEF3C7', text: '#92400E' },
-    confirmed: { bg: '#D1FAE5', text: '#065F46' },
-    completed: { bg: '#EDE9FE', text: '#4C1D95' },
-    cancelled: { bg: '#FEE2E2', text: '#991B1B' },
+    pending_payment:      { bg: '#FEF3C7', text: '#92400E' },
+    paid:                 { bg: '#D1FAE5', text: '#065F46' },
+    pandit_assigned:      { bg: '#DBEAFE', text: '#1E40AF' },
+    pandit_accepted:      { bg: '#D1FAE5', text: '#065F46' },
+    pending_reassignment: { bg: '#FEF3C7', text: '#92400E' },
+    completion_requested: { bg: '#EDE9FE', text: '#4C1D95' },
+    completed:            { bg: '#EDE9FE', text: '#4C1D95' },
+    cancelled:            { bg: '#FEE2E2', text: '#991B1B' },
+    refunded:             { bg: '#F3F4F6', text: '#374151' },
+    closed:               { bg: '#F3F4F6', text: '#6B7280' },
   };
-  const sc = statusColors[booking.status] || statusColors.pending;
+  const sc = statusColors[booking.status] || { bg: '#FEF3C7', text: '#92400E' };
 
   return (
     <motion.div
@@ -90,10 +96,10 @@ function BookingCard({ booking }) {
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold truncate" style={{ color: 'var(--t-text)' }}>
-          {booking.pooja?.name || 'Pooja'}
+          {booking.poojaId?.name || booking.pooja?.name || 'Pooja'}
         </p>
         <p className="text-xs mt-0.5" style={{ color: 'var(--t-muted)' }}>
-          {booking.pandit?.name || 'Pandit TBD'}
+          {booking.panditId?.name || booking.pandit?.name || 'Pandit TBD'}
         </p>
       </div>
       <div className="text-right flex-shrink-0">
@@ -215,23 +221,27 @@ export default function UserDashboard() {
   const { unreadCount } = useNotifications();
   const { currentTheme } = useTheme();
 
-  const [bookings,  setBookings]  = useState([]);
-  const [orders,    setOrders]    = useState([]);
-  const [panchang,  setPanchang]  = useState(null);
-  const [festivals, setFestivals] = useState([]);
-  const [loading,   setLoading]   = useState(true);
+  const [bookings,      setBookings]      = useState([]);
+  const [totalBookings, setTotalBookings] = useState(0);
+  const [orders,        setOrders]        = useState([]);
+  const [panchang,      setPanchang]      = useState(null);
+  const [festivals,     setFestivals]     = useState([]);
+  const [loading,       setLoading]       = useState(true);
 
   useEffect(() => {
     const fetchAll = async () => {
       try {
         const [bRes, oRes, pRes, fRes] = await Promise.allSettled([
           API.get('/bookings/my?limit=3'),
-          API.get('/orders/my?limit=3'),
+          API.get('/marketplace/orders/my'),
           API.get('/panchang'),
           API.get('/festivals?limit=4&upcoming=true'),
         ]);
-        if (bRes.status === 'fulfilled') setBookings(bRes.value.data?.bookings || bRes.value.data || []);
-        if (oRes.status === 'fulfilled') setOrders(oRes.value.data?.orders   || oRes.value.data || []);
+        if (bRes.status === 'fulfilled') {
+          setBookings(bRes.value.data?.bookings || []);
+          setTotalBookings(bRes.value.data?.total ?? (bRes.value.data?.bookings?.length || 0));
+        }
+        if (oRes.status === 'fulfilled') setOrders(oRes.value.data?.orders || []);
         if (pRes.status === 'fulfilled') setPanchang(pRes.value.data?.panchang || null);
         if (fRes.status === 'fulfilled') setFestivals(fRes.value.data?.festivals || fRes.value.data || []);
       } finally {
@@ -297,10 +307,16 @@ export default function UserDashboard() {
         {/* Stats row */}
         <motion.div variants={stagger} className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'Total Bookings', value: bookings.length || '—', icon: CalendarDays },
-            { label: 'Orders Placed',  value: orders.length   || '—', icon: Package      },
-            { label: 'Notifications',  value: unreadCount,              icon: Bell         },
-            { label: 'Days Active',    value: '∞',                      icon: Star         },
+            { label: 'Total Bookings', value: loading ? '…' : (totalBookings || '0'), icon: CalendarDays },
+            { label: 'Orders Placed',  value: loading ? '…' : (orders.length || '0'), icon: Package      },
+            { label: 'Notifications',  value: unreadCount,                              icon: Bell         },
+            {
+              label: 'Days Active',
+              value: user?.createdAt
+                ? Math.max(1, Math.floor((Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24)))
+                : '—',
+              icon: Star,
+            },
           ].map((s) => (
             <motion.div key={s.label} variants={fadeUp()}>
               <StatChip {...s} />

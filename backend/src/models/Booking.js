@@ -26,8 +26,18 @@ const bookingSchema = new mongoose.Schema({
   language:      { type: String, default: 'Hindi' },
   specialNote:   { type: String },
 
-  // Commission & pricing breakdown
-  baseAmount:        { type: Number, default: 0 },   // pooja base price
+  // Booking type
+  bookingType: { type: String, enum: ['normal', 'urgent'], default: 'normal' },
+
+  // Accounting fields (required for GST reporting)
+  poojaAmount:  { type: Number, default: 0 },  // pooja service price (tax-exempt)
+  kitAmount:    { type: Number, default: 0 },  // samagri kit price (taxable)
+  platformFee:  { type: Number, default: 0 },  // convenience fee (tax-exempt)
+  taxAmount:    { type: Number, default: 0 },  // GST on kit ONLY
+  grandTotal:   { type: Number, default: 0 },  // total charged to user
+
+  // Legacy pricing fields (kept for backward compatibility)
+  baseAmount:        { type: Number, default: 0 },
   commissionPercent: { type: Number, default: 0 },
   commissionAmount:  { type: Number, default: 0 },
   gstPercent:        { type: Number, default: 0 },
@@ -46,13 +56,15 @@ const bookingSchema = new mongoose.Schema({
 
   // Status flow: pending_payment → paid → pandit_assigned → pandit_accepted → completion_requested → completed / cancelled
   //              pandit_assigned → pandit_rejected → pending_reassignment → pandit_assigned (reassigned)
+  //              completed / cancelled → refunded → closed
   status: {
     type: String,
     enum: [
       'pending_payment', 'paid',
       'pandit_assigned', 'pandit_accepted',
       'pending_reassignment',
-      'completion_requested', 'completed', 'cancelled',
+      'completion_requested', 'completed',
+      'cancelled', 'refunded', 'closed',
     ],
     default: 'pending_payment',
   },
@@ -74,6 +86,7 @@ const bookingSchema = new mongoose.Schema({
     // Courier fields
     trackingId:     { type: String },
     courier:        { type: String },
+    labelUrl:       { type: String },
     // Manual fields
     assignedPerson: { type: String },
     assignedPhone:  { type: String },
@@ -106,6 +119,12 @@ const bookingSchema = new mongoose.Schema({
   whatsappNotified: { type: Boolean, default: false },
   panditAssignedAt: { type: Date },
   cancelReason:     { type: String },
+
+  // Reminder tracking — set true by cron jobs to prevent duplicate sends
+  reminder24hSent:      { type: Boolean, default: false },
+  reminder1hSent:       { type: Boolean, default: false },
+  feedbackReminderSent: { type: Boolean, default: false },
+  invoiceSent:          { type: Boolean, default: false },
 
   // Audit trail for all status transitions and admin actions
   auditLog: [{

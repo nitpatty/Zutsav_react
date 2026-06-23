@@ -64,6 +64,7 @@ app.use('/api/pandit/my-poojas', require('./routes/panditPooja.routes'));
 app.use('/api/admin',            require('./routes/admin.routes'));
 app.use('/api/masters',          require('./routes/masters.routes'));
 app.use('/api/bookings',         require('./routes/booking.routes'));
+app.use('/api/checkout',         require('./routes/checkout.routes'));
 app.use('/api/poojas',           require('./routes/pooja.routes'));
 app.use('/api/festivals',        require('./routes/festival.routes'));
 app.use('/api/marketplace',      require('./routes/marketplace.routes'));

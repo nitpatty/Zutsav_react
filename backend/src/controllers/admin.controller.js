@@ -8,10 +8,9 @@ const Notification         = require('../models/Notification');
 const AdminAuditLog        = require('../models/AdminAuditLog');
 const EducationMaster      = require('../models/EducationMaster');
 const SpecializationMaster = require('../models/SpecializationMaster');
-const { notifyPanditAssigned } = require('../utils/whatsapp');
+const { notifyPanditOfNewBooking, sendWhatsAppForEvent } = require('../utils/whatsapp');
 const {
   notifyPanditApproved,
-  notifyPanditAssignedToUser,
   notifyPanditAssignmentPending,
   createNotification,
   notifyOrderConfirmed,
@@ -25,7 +24,12 @@ const {
   notifyKYCRejected,
   notifyKYCReuploadRequired,
   notifyPayoutReleased,
+  notifyBookingCancelled,
+  notifyBookingRefunded,
+  notifyKitShipped,
+  notifyKitDelivered,
 } = require('../utils/notificationService');
+const { sendBookingCancelledEmail, sendBookingRefundedEmail, sendInvoiceEmail, sendFeedbackRequestEmail } = require('../utils/email');
 
 // GET /api/admin/dashboard
 exports.getDashboard = async (req, res, next) => {
@@ -408,9 +412,10 @@ exports.adminDeleteUser = async (req, res, next) => {
 // GET /api/admin/bookings
 exports.getBookings = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, status } = req.query;
+    const { page = 1, limit = 20, status, withKit } = req.query;
     const query = {};
-    if (status) query.status = status;
+    if (status)  query.status = status;
+    if (withKit === 'true') query.withKit = true;
 
     const bookings = await Booking.find(query)
       .populate('userId',   'name phone email')
@@ -637,12 +642,8 @@ exports.assignPandit = async (req, res, next) => {
     // Update pandit total bookings
     await Pandit.findByIdAndUpdate(panditId, { $inc: { totalBookings: 1 } });
 
-    // Send WhatsApp notification to user
-    await notifyPanditAssigned(booking, pandit);
-    await Booking.findByIdAndUpdate(req.params.id, { whatsappNotified: true });
-
-    // In-app: tell user their pandit was assigned
-    notifyPanditAssignedToUser(booking.userId, pandit.name, booking.bookingNumber).catch(() => {});
+    // Send WhatsApp notification to pandit (pandit_puja_assigned template)
+    notifyPanditOfNewBooking(booking, pandit, booking.poojaId?.name || 'Pooja').catch(() => {});
 
     // In-app: ask pandit to accept or reject
     if (pandit.userId) {
@@ -655,14 +656,100 @@ exports.assignPandit = async (req, res, next) => {
   }
 };
 
+// Allowed status transitions — prevents invalid state jumps
+const BOOKING_TRANSITIONS = {
+  pending_payment:      ['paid', 'cancelled'],
+  paid:                 ['pandit_assigned', 'cancelled'],
+  pandit_assigned:      ['pandit_accepted', 'pending_reassignment', 'paid', 'cancelled'],
+  pandit_accepted:      ['completion_requested', 'pandit_assigned', 'cancelled'],
+  pending_reassignment: ['pandit_assigned', 'cancelled'],
+  completion_requested: ['completed', 'pandit_accepted', 'cancelled'],
+  completed:            ['refunded', 'closed'],
+  cancelled:            ['refunded', 'closed'],
+  refunded:             ['closed'],
+  closed:               [],
+};
+
 // PATCH /api/admin/bookings/:id/status
 exports.updateBookingStatus = async (req, res, next) => {
   try {
-    const booking = await Booking.findByIdAndUpdate(
-      req.params.id,
-      { status: req.body.status, cancelReason: req.body.cancelReason },
-      { new: true }
-    );
+    const { status, cancelReason, reason } = req.body;
+    if (!status) return res.status(400).json({ success: false, message: 'status is required' });
+
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    const allowed = BOOKING_TRANSITIONS[booking.status] || [];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot transition from "${booking.status}" to "${status}". Allowed next states: [${allowed.join(', ') || 'none — terminal state'}]`,
+      });
+    }
+
+    const prevStatus = booking.status;
+    const cancelNote = cancelReason || reason || '';
+    const poojaName  = booking.poojaId?.name || 'Pooja';
+
+    booking.status = status;
+    if (cancelNote) booking.cancelReason = cancelNote;
+
+    if (status === 'completed' && !booking.completedAt) {
+      booking.completedAt    = new Date();
+      booking.verifiedAt     = new Date();
+      booking.verifiedByName = req.user.name || 'Admin';
+    }
+
+    booking.auditLog.push({
+      action:          `status_changed_to_${status}`,
+      performedBy:     req.user._id,
+      performedByName: req.user.name || 'Admin',
+      note:            `Status changed from ${prevStatus} to ${status}${cancelNote ? ': ' + cancelNote : ''}`,
+      at:              new Date(),
+    });
+    await booking.save();
+
+    // ── Post-transition notifications ──────────────────────────
+    const uid   = booking.userId;
+    const phone = booking.userDetails?.phone;
+
+    if (status === 'cancelled') {
+      notifyBookingCancelled(uid, booking.bookingNumber, cancelNote).catch(() => {});
+      sendBookingCancelledEmail(booking, poojaName, cancelNote).catch(() => {});
+      if (phone) sendWhatsAppForEvent('booking_cancelled', phone, [
+        { type: 'body', parameters: [
+          { type: 'text', text: booking.userDetails?.name || 'Customer' },
+          { type: 'text', text: booking.bookingNumber },
+        ]},
+      ]).catch(() => {});
+    }
+
+    if (status === 'refunded') {
+      notifyBookingRefunded(uid, booking.bookingNumber).catch(() => {});
+      sendBookingRefundedEmail(booking, poojaName).catch(() => {});
+      if (phone) sendWhatsAppForEvent('booking_refunded', phone, [
+        { type: 'body', parameters: [
+          { type: 'text', text: String(booking.amount || 0) },
+          { type: 'text', text: booking.bookingNumber },
+        ]},
+      ]).catch(() => {});
+    }
+
+    if (status === 'completed') {
+      // Invoice + feedback prompt (admin-verified path)
+      sendInvoiceEmail(booking, poojaName).catch(() => {});
+      sendFeedbackRequestEmail(booking, poojaName).catch(() => {});
+      createNotification({
+        userId:  uid,
+        type:    'rate_experience',
+        title:   'How was your experience?',
+        message: `Your pooja (booking #${booking.bookingNumber}) is complete. Please take a moment to rate your experience.`,
+        data:    { bookingId: booking._id, bookingNumber: booking.bookingNumber },
+      }).catch(() => {});
+      // Mark invoice sent so cron doesn't double-send
+      Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
+    }
+
     res.json({ success: true, booking });
   } catch (err) {
     next(err);
@@ -708,9 +795,9 @@ exports.approveCompletion = async (req, res, next) => {
       }
     }
 
+    booking.payout.status = 'pending';
     if (payoutAmount > 0) {
       booking.payout.amount = payoutAmount;
-      booking.payout.status = 'pending';
     }
 
     await booking.save();
@@ -723,6 +810,12 @@ exports.approveCompletion = async (req, res, next) => {
       message: `Your pooja (booking #${booking.bookingNumber}) is complete. Please take a moment to rate your experience.`,
       data:    { bookingId: booking._id, bookingNumber: booking.bookingNumber },
     }).catch(() => {});
+
+    // Send invoice + feedback email; mark invoiceSent so cron doesn't double-send
+    const completedPoojaName = booking.poojaId?.name || 'Pooja';
+    sendInvoiceEmail(booking, completedPoojaName).catch(() => {});
+    sendFeedbackRequestEmail(booking, completedPoojaName).catch(() => {});
+    Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
 
     res.json({ success: true, booking });
   } catch (err) {
@@ -1012,13 +1105,34 @@ exports.deleteSpecializationMaster = async (req, res, next) => {
 exports.getPendingPayouts = async (req, res, next) => {
   try {
     const bookings = await Booking.find({
-      status: 'completed',
+      status:          'completed',
       'payout.status': 'pending',
     })
-      .populate('panditId', 'name phone email bankDetails upiDetails')
+      .populate('panditId', 'name phone email bankDetails upiDetails poojaCharges')
       .populate('poojaId', 'name')
       .populate('userId', 'name phone')
       .sort({ verifiedAt: -1 });
+
+    // Auto-heal bookings where amount is 0: look up the pandit's approved price
+    for (const b of bookings) {
+      if ((b.payout?.amount || 0) === 0 && b.panditId && b.poojaId) {
+        const charge = b.panditId.poojaCharges?.find(
+          (c) => c.poojaId && c.poojaId.toString() === b.poojaId._id.toString()
+        );
+        let healed = 0;
+        if (charge?.priceApprovalStatus === 'approved' && charge.approvedPrice > 0) {
+          healed = charge.approvedPrice;
+        } else if (charge?.expectedCharges > 0) {
+          healed = charge.expectedCharges;
+        } else if (b.panditFareAmount > 0) {
+          healed = b.panditFareAmount;
+        }
+        if (healed > 0) {
+          await Booking.findByIdAndUpdate(b._id, { 'payout.amount': healed });
+          b.payout.amount = healed;
+        }
+      }
+    }
 
     // Group by pandit
     const grouped = {};
@@ -1163,6 +1277,7 @@ exports.getPayoutHistory = async (req, res, next) => {
     const [batches, total] = await Promise.all([
       PayoutBatch.find(query)
         .populate('panditId', 'name phone email')
+        .populate({ path: 'bookingIds', select: 'bookingNumber poojaId payout', populate: { path: 'poojaId', select: 'name' } })
         .sort({ paidDate: -1 })
         .limit(limit * 1)
         .skip((page - 1) * limit),
@@ -1228,6 +1343,53 @@ exports.rejectCompletion = async (req, res, next) => {
 };
 
 // PATCH /api/admin/bookings/:id/kit-delivery  — manage kit delivery for a booking
+// POST /api/admin/bookings/:id/kit-delivery/tackipost — auto-create Tackipost shipment
+const { createShipment: tekipostCreateShipment } = require('../services/tackipost.service');
+
+exports.createTackipostShipment = async (req, res, next) => {
+  try {
+    const createShipment = tekipostCreateShipment;
+    const booking = await Booking.findById(req.params.id).populate('kitId', 'name totalCost items');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (!booking.withKit) return res.status(400).json({ success: false, message: 'Not a kit booking' });
+
+    const result = await createShipment({
+      bookingNumber:  booking.bookingNumber,
+      recipientName:  booking.userDetails?.name  || '',
+      recipientPhone: booking.userDetails?.phone || '',
+      recipientEmail: booking.userDetails?.email || '',
+      address:        booking.userDetails?.address || '',
+      city:           booking.userDetails?.city    || '',
+      state:          booking.userDetails?.state   || '',
+      pincode:        booking.userDetails?.pincode || '',
+      orderValue:     booking.totalAmount || 500,
+      weight:         0.5,
+      items:          [{ name: booking.kitId?.name || 'Pooja Samagri Kit', qty: 1, value: booking.kitId?.totalCost || 500 }],
+    });
+
+    if (!result.success) {
+      return res.status(503).json({ success: false, message: result.error });
+    }
+
+    booking.kitDelivery = {
+      type:       'courier',
+      status:     'shipped',
+      trackingId: result.trackingId,
+      courier:    result.courier,
+      labelUrl:   result.labelUrl,
+      updatedAt:  new Date(),
+    };
+    booking.auditLog.push({
+      action: 'kit_tackipost_shipped', performedBy: req.user._id, performedByName: req.user.name || 'Admin',
+      note: `Tackipost AWB: ${result.trackingId}`,
+    });
+    await booking.save();
+    notifyKitShipped(booking.userId, booking.bookingNumber, result.courier, result.trackingId).catch(() => {});
+
+    res.json({ success: true, trackingId: result.trackingId, courier: result.courier, booking });
+  } catch (err) { next(err); }
+};
+
 exports.updateKitDelivery = async (req, res, next) => {
   try {
     const { type, status, trackingId, courier, assignedPerson, assignedPhone, remarks } = req.body;
@@ -1236,23 +1398,35 @@ exports.updateKitDelivery = async (req, res, next) => {
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
     if (!booking.withKit) return res.status(400).json({ success: false, message: 'This booking does not have a kit' });
 
+    const prevStatus = booking.kitDelivery?.status;
+    const newStatus  = status || prevStatus || 'pending';
+
     booking.kitDelivery = {
       type:           type           || booking.kitDelivery?.type || 'manual',
-      status:         status         || booking.kitDelivery?.status || 'pending',
-      trackingId:     trackingId     || booking.kitDelivery?.trackingId,
-      courier:        courier        || booking.kitDelivery?.courier,
-      assignedPerson: assignedPerson || booking.kitDelivery?.assignedPerson,
-      assignedPhone:  assignedPhone  || booking.kitDelivery?.assignedPhone,
-      remarks:        remarks        || booking.kitDelivery?.remarks,
+      status:         newStatus,
+      trackingId:     trackingId     !== undefined ? trackingId     : booking.kitDelivery?.trackingId,
+      courier:        courier        !== undefined ? courier        : booking.kitDelivery?.courier,
+      assignedPerson: assignedPerson !== undefined ? assignedPerson : booking.kitDelivery?.assignedPerson,
+      assignedPhone:  assignedPhone  !== undefined ? assignedPhone  : booking.kitDelivery?.assignedPhone,
+      remarks:        remarks        !== undefined ? remarks        : booking.kitDelivery?.remarks,
       updatedAt:      new Date(),
     };
     booking.auditLog.push({
       action:          'kit_delivery_updated',
       performedBy:     req.user._id,
       performedByName: req.user.name || 'Admin',
-      note:            `Kit delivery type: ${type}, status: ${status}`,
+      note:            `Kit delivery status: ${newStatus}${trackingId ? `, tracking: ${trackingId}` : ''}`,
     });
     await booking.save();
+
+    // Notify user when kit is shipped or delivered
+    if (newStatus !== prevStatus) {
+      if (newStatus === 'shipped') {
+        notifyKitShipped(booking.userId, booking.bookingNumber, booking.kitDelivery.courier, booking.kitDelivery.trackingId).catch(() => {});
+      } else if (newStatus === 'delivered') {
+        notifyKitDelivered(booking.userId, booking.bookingNumber).catch(() => {});
+      }
+    }
 
     await AdminAuditLog.create({
       action:          'kit_delivery_updated',

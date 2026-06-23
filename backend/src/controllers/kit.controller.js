@@ -77,7 +77,7 @@ exports.createKit = async (req, res, next) => {
     const {
       name, description,
       discountType = 'percentage', discountValue = 0, discountPrice,
-      items: rawItems, isFeatured,
+      items: rawItems, isFeatured, taxRate,
       linkedPoojas: rawLinkedPoojas,
     } = req.body;
     const items        = typeof rawItems        === 'string' ? JSON.parse(rawItems)        : rawItems;
@@ -119,6 +119,7 @@ exports.createKit = async (req, res, next) => {
       discountPrice: sellingPrice,
       image,
       isFeatured:    isFeatured === 'true' || isFeatured === true,
+      taxRate:       taxRate !== undefined ? +taxRate : 0,
       linkedPoojas,
     });
     res.status(201).json({ success: true, kit });
