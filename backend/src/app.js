@@ -7,7 +7,7 @@ const rateLimit = require('express-rate-limit');
 
 const app = express();
 
-// ✅ Root route (required for CapRover health check)
+// ✅ Root route (CapRover health check)
 app.get('/', (req, res) => {
   res.send('Zutsav backend is running ✅');
 });
@@ -20,7 +20,7 @@ app.get('/api/health', (req, res) => {
 // ✅ Security
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-// ✅ ✅ CORS FIX (VERY IMPORTANT)
+// ✅ ✅ ✅ CORRECTED CORS CONFIG (FINAL FIX)
 const allowedOrigins = [
   'http://localhost:3000',
   'http://app.zutsav.com',
@@ -30,21 +30,30 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true); // allow server-to-server
+    if (!origin) return callback(null, true); // allow Postman / server calls
 
     if (allowedOrigins.includes(origin)) {
-      callback(null, true);
+      return callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      return callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+
+  // ✅ IMPORTANT FIX — include PATCH
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+
+  // ✅ IMPORTANT — allow headers used by frontend
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// ✅ IMPORTANT: handle preflight requests
-app.options('*', cors());
+// ✅ ✅ ✅ CRITICAL — proper preflight handling
+app.options('*', cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 // ✅ Rate limiting
 const authLimiter = rateLimit({
@@ -52,7 +61,10 @@ const authLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Too many attempts. Please try again after 15 minutes.' },
+  message: {
+    success: false,
+    message: 'Too many attempts. Please try again after 15 minutes.'
+  },
 });
 
 const apiLimiter = rateLimit({
@@ -60,7 +72,10 @@ const apiLimiter = rateLimit({
   max: 500,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Too many requests. Please slow down and try again shortly.' },
+  message: {
+    success: false,
+    message: 'Too many requests. Please slow down.'
+  },
 });
 
 app.use('/api/auth', authLimiter);
@@ -113,11 +128,10 @@ app.use('/api/notifications',    require('./routes/notification.routes'));
 app.use('/api/comm',             require('./routes/comm.routes'));
 app.use('/api/settings',         require('./routes/settings.routes'));
 
-// ✅ Error handler
+// ✅ ✅ Error handler (improved)
 app.use((err, req, res, next) => {
   console.error(err.stack);
 
-  // CORS error fix (very helpful)
   if (err.message === 'Not allowed by CORS') {
     return res.status(403).json({
       success: false,
