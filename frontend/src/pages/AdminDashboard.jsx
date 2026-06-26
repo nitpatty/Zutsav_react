@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight } from 'lucide-react';
+import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, Receipt, Ban, Archive } from 'lucide-react';
 import CommunicationCenter from '../components/admin/CommunicationCenter';
 import ZutsavLoader, { ZutsavLoaderInline } from '../components/shared/ZutsavLoader';
 import toast from 'react-hot-toast';
@@ -41,6 +41,8 @@ export default function AdminDashboard() {
       {tab === 'comm-center'           && <CommunicationCenter />}
       {tab === 'system-settings'       && <SystemSettingsTab />}
       {tab === 'payouts'               && <PayoutsTab />}
+      {tab === 'blog-management'       && <BlogManagementTab />}
+      {tab === 'invoices'              && <InvoicesTab />}
       {tab === 'profile'               && <AdminProfile user={user} refreshUser={refreshUser} />}
     </div>
   );
@@ -1048,13 +1050,40 @@ function BookingsTab() {
 
 // ─── Order Details Modal ──────────────────────────────────────
 function OrderDetailsModal({ booking: b, onClose }) {
-  const productItems  = b.linkedOrder?.items || [];
-  const hasProducts   = productItems.length > 0;
-  const hasKit        = b.withKit;
-  const productTotal  = b.linkedOrder?.totalAmount || 0;
-  const productGST    = productItems.reduce((s, i) => s + (i.taxAmount || 0), 0);
-  const bookingTotal  = b.grandTotal || b.amount || 0;
-  const orderTotal    = bookingTotal + productTotal;
+  const [payments,        setPayments]        = useState([]);
+  const [loadingPayments, setLoadingPayments] = useState(true);
+
+  useEffect(() => {
+    setLoadingPayments(true);
+    API.get(`/admin/bookings/${b._id}/payments`)
+      .then(({ data }) => setPayments(data.payments || []))
+      .catch(() => {})
+      .finally(() => setLoadingPayments(false));
+  }, [b._id]);
+
+  const productItems = b.linkedOrder?.items || [];
+  const hasProducts  = productItems.length > 0;
+  const hasKit       = b.withKit;
+  const productTotal = b.linkedOrder?.totalAmount || 0;
+  const productGST   = productItems.reduce((s, i) => s + (i.taxAmount || 0), 0);
+  const bookingTotal = b.grandTotal || b.amount || 0;
+  const orderTotal   = bookingTotal + productTotal;
+
+  // Payment-aware computed values — fall back gracefully for older bookings without paymentStatus
+  const paymentStatus   = b.paymentStatus   || (b.status !== 'pending_payment' ? 'FULLY_PAID' : 'PENDING');
+  const amountPaid      = b.amountPaid      != null ? b.amountPaid      : (b.status !== 'pending_payment' ? bookingTotal : 0);
+  const remainingAmount = b.remainingAmount != null ? b.remainingAmount : Math.max(0, bookingTotal - amountPaid);
+  const paymentMode     = b.paymentMode     || 'FULL';
+
+  const psConfig = ({
+    FULLY_PAID:     { bg: 'bg-green-50',  border: 'border-green-200',  badge: 'bg-green-100 text-green-700',   divider: 'border-green-200',  label: '✓ Fully Paid' },
+    PARTIALLY_PAID: { bg: 'bg-orange-50', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700', divider: 'border-orange-200', label: '◑ Partially Paid' },
+    PENDING:        { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700', divider: 'border-yellow-200', label: '⏳ Pending Payment' },
+    REFUNDED:       { bg: 'bg-blue-50',   border: 'border-blue-200',   badge: 'bg-blue-100 text-blue-700',     divider: 'border-blue-200',   label: '↩ Refunded' },
+    FAILED:         { bg: 'bg-red-50',    border: 'border-red-200',    badge: 'bg-red-100 text-red-700',       divider: 'border-red-200',    label: '✗ Failed' },
+  })[paymentStatus] || { bg: 'bg-gray-50', border: 'border-gray-200', badge: 'bg-gray-100 text-gray-600', divider: 'border-gray-200', label: paymentStatus || '—' };
+
+  const successPayments = payments.filter((p) => p.paymentStatus === 'SUCCESS');
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4 py-6" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -1080,9 +1109,9 @@ function OrderDetailsModal({ booking: b, onClose }) {
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">👤 Customer Information</p>
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 bg-gray-50 rounded-2xl p-4">
-              <OdItem label="Name"  value={b.userId?.name  || b.userDetails?.name  || b.userDetails?._deletedName  || '—'} />
-              <OdItem label="Phone" value={b.userId?.phone || b.userDetails?.phone || b.userDetails?._deletedPhone || '—'} />
-              <OdItem label="Email" value={b.userId?.email || b.userDetails?.email || '—'} />
+              <OdItem label="Name"    value={b.userId?.name  || b.userDetails?.name  || b.userDetails?._deletedName  || '—'} />
+              <OdItem label="Phone"   value={b.userId?.phone || b.userDetails?.phone || b.userDetails?._deletedPhone || '—'} />
+              <OdItem label="Email"   value={b.userId?.email || b.userDetails?.email || '—'} />
               <OdItem label="Address" value={[b.userDetails?.address, b.userDetails?.city, b.userDetails?.state, b.userDetails?.pincode].filter(Boolean).join(', ') || '—'} />
               {!b.userId && b.userDetails?._deletedAt && (
                 <div className="col-span-2">
@@ -1096,12 +1125,12 @@ function OrderDetailsModal({ booking: b, onClose }) {
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">📋 Booking Information</p>
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 bg-gray-50 rounded-2xl p-4">
-              <OdItem label="Pooja"          value={b.poojaId?.name || '—'} />
-              <OdItem label="Language"       value={b.language || '—'} />
-              <OdItem label="Ceremony Date"  value={b.scheduledDate?.split('T')[0] || '—'} />
-              <OdItem label="Ceremony Time"  value={b.scheduledTime || '—'} />
-              <OdItem label="Booking Type"   value={b.isUrgent ? '⚡ Urgent' : 'Normal'} />
-              <OdItem label="Booked On"      value={b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} />
+              <OdItem label="Pooja"         value={b.poojaId?.name || '—'} />
+              <OdItem label="Language"      value={b.language || '—'} />
+              <OdItem label="Ceremony Date" value={b.scheduledDate?.split('T')[0] || '—'} />
+              <OdItem label="Ceremony Time" value={b.scheduledTime || '—'} />
+              <OdItem label="Booking Type"  value={b.isUrgent ? '⚡ Urgent' : 'Normal'} />
+              <OdItem label="Booked On"     value={b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} />
               {b.specialNote && (
                 <div className="col-span-2">
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Special Note</p>
@@ -1113,12 +1142,12 @@ function OrderDetailsModal({ booking: b, onClose }) {
               <div className="mt-3 bg-indigo-50 rounded-2xl p-4">
                 <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">Assigned Pandit</p>
                 <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                  <OdItem label="Pandit"         value={b.panditId.name || '—'} />
-                  <OdItem label="Phone"          value={b.panditId.phone || '—'} />
-                  {b.payout?.amount > 0 && <OdItem label="Payout Assigned" value={`₹${Number(b.payout.amount).toLocaleString('en-IN')}`} />}
-                  {b.payout?.status  && <OdItem label="Payout Status"    value={b.payout.status} />}
-                  {b.payout?.paidAt  && <OdItem label="Payout Date"      value={new Date(b.payout.paidAt).toLocaleDateString('en-IN')} />}
-                  {b.payout?.transactionRef && <OdItem label="Payout Ref" value={b.payout.transactionRef} mono />}
+                  <OdItem label="Pandit"          value={b.panditId.name || '—'} />
+                  <OdItem label="Phone"           value={b.panditId.phone || '—'} />
+                  {b.payout?.amount > 0          && <OdItem label="Payout Assigned" value={`₹${Number(b.payout.amount).toLocaleString('en-IN')}`} />}
+                  {b.payout?.status              && <OdItem label="Payout Status"   value={b.payout.status} />}
+                  {b.payout?.paidAt              && <OdItem label="Payout Date"     value={new Date(b.payout.paidAt).toLocaleDateString('en-IN')} />}
+                  {b.payout?.transactionRef      && <OdItem label="Payout Ref"      value={b.payout.transactionRef} mono />}
                 </div>
               </div>
             )}
@@ -1133,16 +1162,16 @@ function OrderDetailsModal({ booking: b, onClose }) {
                   <OdItem label="Kit Name"        value={b.kitId?.name || '—'} />
                   <OdItem label="Kit Price"       value={b.kitAmount > 0 ? `₹${Number(b.kitAmount).toLocaleString('en-IN')}` : '—'} />
                   <OdItem label="Delivery Status" value={b.kitDelivery?.status || 'pending'} />
-                  {b.kitDelivery?.courier    && <OdItem label="Courier"      value={b.kitDelivery.courier} />}
-                  {b.kitDelivery?.trackingId && <OdItem label="Tracking ID"  value={b.kitDelivery.trackingId} mono />}
-                  {b.kitDelivery?.remarks    && <OdItem label="Remarks"      value={b.kitDelivery.remarks} />}
+                  {b.kitDelivery?.courier    && <OdItem label="Courier"     value={b.kitDelivery.courier} />}
+                  {b.kitDelivery?.trackingId && <OdItem label="Tracking ID" value={b.kitDelivery.trackingId} mono />}
+                  {b.kitDelivery?.remarks    && <OdItem label="Remarks"     value={b.kitDelivery.remarks} />}
                 </div>
                 {b.kitId?.items?.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-amber-200">
                     <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-2">Kit Contents</p>
                     <div className="space-y-1.5">
-                      {b.kitId.items.map((ki, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs text-gray-700">
+                      {b.kitId.items.map((ki, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-xs text-gray-700">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
                           <span className="font-medium">{ki.productId?.name || 'Item'}</span>
                           <span className="text-gray-400">×{ki.quantity || 1}</span>
@@ -1161,8 +1190,8 @@ function OrderDetailsModal({ booking: b, onClose }) {
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">🛍️ Products Ordered</p>
               <div className="border border-gray-100 rounded-2xl overflow-hidden">
-                {productItems.map((item, i) => (
-                  <div key={i} className={`flex items-center justify-between px-4 py-3 ${i < productItems.length - 1 ? 'border-b border-gray-50' : ''} ${i % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
+                {productItems.map((item, idx) => (
+                  <div key={idx} className={`flex items-center justify-between px-4 py-3 ${idx < productItems.length - 1 ? 'border-b border-gray-50' : ''} ${idx % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-800 truncate">{item.name || item.productId?.name || 'Product'}</p>
                       {item.variantLabel && <p className="text-xs text-gray-400">{item.variantLabel}</p>}
@@ -1184,33 +1213,136 @@ function OrderDetailsModal({ booking: b, onClose }) {
             </div>
           )}
 
-          {/* Section 5 — Price Breakdown */}
+          {/* Section 5 — Price Breakdown (pricing only, no implied payment completion) */}
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">💰 Price Breakdown</p>
             <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
-              <OdPriceLine label="Pooja Amount"   value={b.poojaAmount || 0} />
-              {(b.kitAmount || 0) > 0      && <OdPriceLine label="Kit Amount"          value={b.kitAmount} />}
-              {(b.platformFee || 0) > 0    && <OdPriceLine label="Platform Fee"        value={b.platformFee}  muted />}
-              {(b.platformGST || 0) > 0    && <OdPriceLine label="GST on Platform Fee" value={b.platformGST}  muted />}
-              {(b.kitGST || 0) > 0         && <OdPriceLine label="GST on Kit"          value={b.kitGST}       muted />}
-              {productTotal > 0            && <OdPriceLine label="Marketplace Products" value={productTotal} />}
-              {productGST > 0              && <OdPriceLine label="GST on Products"      value={productGST}     muted />}
+              <OdPriceLine label="Pooja Amount"         value={b.poojaAmount || 0} />
+              {(b.kitAmount   || 0) > 0 && <OdPriceLine label="Kit Amount"          value={b.kitAmount}   />}
+              {(b.platformFee || 0) > 0 && <OdPriceLine label="Platform Fee"        value={b.platformFee} muted />}
+              {(b.platformGST || 0) > 0 && <OdPriceLine label="GST on Platform Fee" value={b.platformGST} muted />}
+              {(b.kitGST      || 0) > 0 && <OdPriceLine label="GST on Kit"          value={b.kitGST}      muted />}
+              {productTotal > 0         && <OdPriceLine label="Marketplace Products" value={productTotal}  />}
+              {productGST   > 0         && <OdPriceLine label="GST on Products"      value={productGST}    muted />}
               <div className="border-t border-gray-200 pt-3 mt-1">
                 <OdPriceLine label="Grand Total" value={orderTotal} bold />
               </div>
             </div>
           </div>
 
-          {/* Section 6 — Payment */}
+          {/* Section 6 — Payment Summary (payment-aware: never implies Grand Total == Paid) */}
           <div>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">💳 Payment Information</p>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">💳 Payment Summary</p>
+
+            {/* Hero status card */}
+            <div className={`rounded-2xl p-5 mb-3 border ${psConfig.bg} ${psConfig.border}`}>
+              <div className="flex items-center justify-between mb-4">
+                <span className={`text-xs font-bold px-3 py-1 rounded-full ${psConfig.badge}`}>
+                  {psConfig.label}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {paymentMode === 'PARTIAL' ? 'Partial Payment Plan' : 'Full Payment'}
+                </span>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Grand Total</span>
+                  <span className="text-base font-bold text-gray-900" style={{ fontFamily: '"Cormorant Garamond"' }}>
+                    ₹{Number(bookingTotal).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600 flex items-center gap-1.5">
+                    {amountPaid > 0 && <span className="text-sm leading-none">✅</span>}
+                    Amount Paid
+                  </span>
+                  <span className={`text-base font-bold ${amountPaid > 0 ? 'text-green-700' : 'text-gray-400'}`} style={{ fontFamily: '"Cormorant Garamond"' }}>
+                    ₹{Number(amountPaid).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className={`flex justify-between items-center pt-3 border-t ${psConfig.divider}`}>
+                  <span className={`text-sm font-semibold ${remainingAmount > 0 ? 'text-red-600' : 'text-green-700'}`}>
+                    Pending Amount
+                  </span>
+                  <span className={`text-base font-bold ${remainingAmount > 0 ? 'text-red-600' : 'text-green-700'}`} style={{ fontFamily: '"Cormorant Garamond"' }}>
+                    ₹{Number(remainingAmount).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment details grid */}
             <div className="grid grid-cols-2 gap-x-8 gap-y-3 bg-gray-50 rounded-2xl p-4">
-              <OdItem label="Method"  value={b.paymentProvider ? b.paymentProvider.charAt(0).toUpperCase() + b.paymentProvider.slice(1) : 'PhonePe'} />
-              <OdItem label="Status"  value={b.status === 'pending_payment' ? 'Pending' : 'Paid'} />
-              {b.phonePeTransactionId         && <OdItem label="Transaction ID" value={b.phonePeTransactionId}          mono />}
-              {b.phonePeMerchantTransactionId && <OdItem label="Merchant Ref"   value={b.phonePeMerchantTransactionId}  mono />}
+              <OdItem label="Gateway"      value={b.paymentProvider ? b.paymentProvider.charAt(0).toUpperCase() + b.paymentProvider.slice(1) : 'PhonePe'} />
+              <OdItem label="Payment Type" value={paymentMode === 'PARTIAL' ? 'Partial Payment' : 'Full Payment'} />
+              {successPayments[0]?.paidAt && (
+                <OdItem label="Payment Date" value={new Date(successPayments[0].paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} />
+              )}
+              {b.phonePeTransactionId         && <OdItem label="Transaction ID" value={b.phonePeTransactionId}         mono />}
+              {b.phonePeMerchantTransactionId && <OdItem label="Merchant Ref"   value={b.phonePeMerchantTransactionId} mono />}
             </div>
           </div>
+
+          {/* Section 7 — Payment History (all ledger entries) */}
+          {!loadingPayments && payments.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">📋 Payment History</p>
+              <div className="space-y-3">
+                {payments.map((payment, idx) => {
+                  const isSuccess = payment.paymentStatus === 'SUCCESS';
+                  const isPending = payment.paymentStatus === 'PENDING';
+                  return (
+                    <div key={payment._id || idx} className={`rounded-2xl p-4 border ${
+                      isSuccess ? 'bg-green-50 border-green-200' :
+                      isPending ? 'bg-yellow-50 border-yellow-200' :
+                      'bg-red-50 border-red-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-gray-800">Payment #{idx + 1}</span>
+                          <span className="text-xs text-gray-400">
+                            {payment.paymentType === 'PARTIAL'   ? '· First Instalment' :
+                             payment.paymentType === 'REMAINING' ? '· Remaining Amount' : '· Full Payment'}
+                          </span>
+                        </div>
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                          isSuccess ? 'bg-green-100 text-green-700' :
+                          isPending ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {isSuccess ? '✓ Completed' : isPending ? '⏳ Pending' : '✗ Failed'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                        <div>
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Amount</p>
+                          <p className="font-bold text-gray-900" style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1.05rem' }}>₹{Number(payment.amount).toLocaleString('en-IN')}</p>
+                        </div>
+                        {payment.paidAt && (
+                          <div>
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Date</p>
+                            <p className="text-sm text-gray-700">{new Date(payment.paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                          </div>
+                        )}
+                        {payment.phonePeTransactionId && (
+                          <div className="col-span-2">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Transaction ID</p>
+                            <p className="text-sm text-gray-700 font-mono break-all">{payment.phonePeTransactionId}</p>
+                          </div>
+                        )}
+                        {payment.note && (
+                          <div className="col-span-2">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Note</p>
+                            <p className="text-sm text-gray-600 italic">{payment.note}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
         </div>
       </div>
@@ -5668,7 +5800,7 @@ const SETTING_SECTIONS = [
   { key: 'general',       label: 'General',       icon: Settings },
   { key: 'payment',       label: 'PhonePe',       icon: CreditCard },
   { key: 'payment_rules', label: 'Payment Rules', icon: IndianRupee },
-  { key: 'commission',    label: 'Commission',    icon: Percent },
+  { key: 'commission',    label: 'Platform Fees', icon: IndianRupee },
   { key: 'whatsapp',      label: 'WhatsApp',      icon: MessageSquare },
   { key: 'email',         label: 'Email',         icon: Mail },
   { key: 'ai',            label: 'AI',            icon: Cpu },
@@ -5972,12 +6104,12 @@ function SystemSettingsTab() {
         : Math.round(1000 * (form.platformCommissionPercent || 0) / 100);
       const previewGst = Math.round((1000 + previewFee) * (form.platformGstPercent || 0) / 100);
       return (
-        <SectionForm title="Platform Commission & Tax" onSave={() => save(['platformCommissionType','platformCommissionPercent','platformCommissionFixed','platformGstPercent'])} saving={saving}>
+        <SectionForm title="Platform Fees" onSave={() => save(['platformCommissionType','platformCommissionPercent','platformCommissionFixed','platformGstPercent'])} saving={saving}>
           <InfoBox>Commission is added on top of the base pooja price and shown transparently to users at checkout.</InfoBox>
 
           {/* Commission type toggle */}
           <div>
-            <label className="label">Commission Type</label>
+            <label className="label">Platform Fees Type</label>
             <div className="flex gap-2 mt-1">
               {[
                 { value: 'percent', label: '% Percentage', icon: '%' },
@@ -6005,7 +6137,7 @@ function SystemSettingsTab() {
             <div>
               {commType === 'percent' ? (
                 <>
-                  <label className="label">Platform Commission (%)</label>
+                  <label className="label">Platform Fees (%)</label>
                   <div className="relative">
                     <input type="number" name="platformCommissionPercent" min="0" max="100" step="0.5"
                       value={form.platformCommissionPercent ?? 0} onChange={set} className="input pr-8" />
@@ -6014,7 +6146,7 @@ function SystemSettingsTab() {
                 </>
               ) : (
                 <>
-                  <label className="label">Fixed Commission Amount (₹)</label>
+                  <label className="label">Fixed Platform Amount (₹)</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
                     <input type="number" name="platformCommissionFixed" min="0" step="1"
@@ -6582,4 +6714,873 @@ function TestEmailButton() {
 
 function LoadingSpinner() {
   return <ZutsavLoader />;
+}
+
+// ─── Blog Management Tab ──────────────────────────────────────
+function BlogManagementTab() {
+  const [subTab, setSubTab] = useState('blogs'); // 'blogs' | 'categories' | 'permissions'
+
+  return (
+    <div>
+      {/* Sub-tab bar */}
+      <div className="flex gap-2 mb-6 border-b" style={{ borderColor: 'var(--t-border)' }}>
+        {[
+          { id: 'blogs',       label: 'All Blogs' },
+          { id: 'categories',  label: 'Categories' },
+          { id: 'permissions', label: 'Permissions' },
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setSubTab(t.id)}
+            className="px-4 py-2.5 text-sm font-semibold border-b-2 transition-all -mb-px"
+            style={{
+              borderColor:  subTab === t.id ? 'var(--t-primary)' : 'transparent',
+              color:        subTab === t.id ? 'var(--t-primary)' : 'var(--t-muted)',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'blogs'       && <BlogListSubTab />}
+      {subTab === 'categories'  && <BlogCategoriesSubTab />}
+      {subTab === 'permissions' && <BlogPermissionsSubTab />}
+    </div>
+  );
+}
+
+// ─── Blog List Sub-tab ────────────────────────────────────────
+function BlogListSubTab() {
+  const [blogs,    setBlogs]    = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [search,   setSearch]   = useState('');
+  const [status,   setStatus]   = useState('');
+  const [role,     setRole]     = useState('');
+  const [acting,   setActing]   = useState(null); // blogId being actioned
+  const [rejectId, setRejectId] = useState(null);
+  const [rejectNote, setRejectNote] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (status) params.set('status', status);
+      if (role)   params.set('authorRole', role);
+      params.set('limit', '100');
+      const { data } = await API.get(`/admin/blogs?${params}`);
+      setBlogs(data.blogs || []);
+    } catch { toast.error('Failed to load blogs'); }
+    finally { setLoading(false); }
+  }, [search, status, role]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const action = async (id, endpoint, body = {}) => {
+    setActing(id);
+    try {
+      if (endpoint === 'delete') {
+        await API.delete(`/admin/blogs/${id}`);
+      } else {
+        await API.patch(`/admin/blogs/${id}/${endpoint}`, body);
+      }
+      toast.success('Done');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
+    finally { setActing(null); }
+  };
+
+  const STATUS_BADGE = {
+    draft:          { bg: 'bg-gray-100',   text: 'text-gray-700',   label: 'Draft'          },
+    pending_review: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pending Review' },
+    published:      { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Published'      },
+    rejected:       { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Rejected'       },
+    archived:       { bg: 'bg-slate-100',  text: 'text-slate-600',  label: 'Archived'       },
+    scheduled:      { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Scheduled'      },
+  };
+
+  const statusCounts = blogs.reduce((acc, b) => {
+    acc[b.status] = (acc[b.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      {/* Stats row */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
+        {Object.entries(STATUS_BADGE).map(([key, cfg]) => (
+          <button
+            key={key}
+            onClick={() => setStatus(s => s === key ? '' : key)}
+            className={`p-3 rounded-xl border text-center transition-all ${status === key ? 'ring-2' : ''}`}
+            style={{
+              background: 'var(--t-card)',
+              borderColor: status === key ? 'var(--t-primary)' : 'var(--t-border)',
+              ringColor: 'var(--t-primary)',
+            }}
+          >
+            <div className="text-xl font-bold" style={{ color: 'var(--t-text)' }}>{statusCounts[key] || 0}</div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--t-muted)' }}>{cfg.label}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--t-muted)' }} />
+          <input
+            className="input pl-8 w-full"
+            placeholder="Search title or author…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <select className="input w-36" value={status} onChange={e => setStatus(e.target.value)}>
+          <option value="">All Statuses</option>
+          {Object.entries(STATUS_BADGE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <select className="input w-32" value={role} onChange={e => setRole(e.target.value)}>
+          <option value="">All Roles</option>
+          <option value="admin">Admin</option>
+          <option value="pandit">Pandit</option>
+          <option value="user">User</option>
+        </select>
+      </div>
+
+      {/* Table */}
+      {loading ? <ZutsavLoaderInline /> : blogs.length === 0 ? (
+        <div className="text-center py-16 text-sm" style={{ color: 'var(--t-muted)' }}>No blogs found.</div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--t-border)' }}>
+          <table className="w-full text-sm">
+            <thead style={{ background: 'var(--t-input-bg)', borderBottom: '1px solid var(--t-border)' }}>
+              <tr>
+                {['Title', 'Author', 'Role', 'Status', 'Views', 'Likes', 'Date', 'Actions'].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--t-muted)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {blogs.map((b, i) => {
+                const sc = STATUS_BADGE[b.status] || STATUS_BADGE.draft;
+                const busy = acting === b._id;
+                return (
+                  <tr
+                    key={b._id}
+                    style={{
+                      background: i % 2 === 0 ? 'var(--t-card)' : 'var(--t-input-bg)',
+                      borderBottom: '1px solid var(--t-border)',
+                    }}
+                  >
+                    <td className="px-4 py-3 max-w-[200px]">
+                      <div className="font-medium truncate" style={{ color: 'var(--t-text)' }}>{b.title}</div>
+                      {b.isFeatured && <span className="text-[10px] text-amber-600 font-semibold">★ Featured</span>}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: 'var(--t-text)' }}>{b.authorName || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold capitalize ${
+                        b.authorRole === 'admin'  ? 'bg-indigo-100 text-indigo-700' :
+                        b.authorRole === 'pandit' ? 'bg-amber-100 text-amber-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>{b.authorRole}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${sc.bg} ${sc.text}`}>{sc.label}</span>
+                    </td>
+                    <td className="px-4 py-3 text-center" style={{ color: 'var(--t-muted)' }}>{b.views || 0}</td>
+                    <td className="px-4 py-3 text-center" style={{ color: 'var(--t-muted)' }}>{b.likesCount || 0}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-xs" style={{ color: 'var(--t-muted)' }}>
+                      {b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {/* View */}
+                        <a
+                          href={`/blog/${b.slug}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2 py-1 text-[11px] rounded-lg font-medium border transition-all"
+                          style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}
+                        >
+                          View
+                        </a>
+                        {/* Approve */}
+                        {b.status === 'pending_review' && (
+                          <button
+                            disabled={busy}
+                            onClick={() => action(b._id, 'approve')}
+                            className="px-2 py-1 text-[11px] rounded-lg font-medium bg-green-600 text-white transition-all disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                        )}
+                        {/* Reject */}
+                        {(b.status === 'pending_review' || b.status === 'published') && (
+                          <button
+                            disabled={busy}
+                            onClick={() => { setRejectId(b._id); setRejectNote(''); }}
+                            className="px-2 py-1 text-[11px] rounded-lg font-medium bg-red-100 text-red-700 transition-all disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        )}
+                        {/* Feature toggle */}
+                        {b.status === 'published' && (
+                          <button
+                            disabled={busy}
+                            onClick={() => action(b._id, 'feature')}
+                            className={`px-2 py-1 text-[11px] rounded-lg font-medium transition-all disabled:opacity-50 ${b.isFeatured ? 'bg-amber-200 text-amber-800' : 'bg-amber-50 text-amber-600'}`}
+                          >
+                            {b.isFeatured ? 'Unfeature' : 'Feature'}
+                          </button>
+                        )}
+                        {/* Archive */}
+                        {b.status !== 'archived' && (
+                          <button
+                            disabled={busy}
+                            onClick={() => action(b._id, 'archive')}
+                            className="px-2 py-1 text-[11px] rounded-lg font-medium bg-slate-100 text-slate-600 transition-all disabled:opacity-50"
+                          >
+                            Archive
+                          </button>
+                        )}
+                        {/* Delete */}
+                        <button
+                          disabled={busy}
+                          onClick={() => { if (window.confirm('Delete this blog permanently?')) action(b._id, 'delete'); }}
+                          className="px-2 py-1 text-[11px] rounded-lg font-medium bg-red-600 text-white transition-all disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Reject modal */}
+      {rejectId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl p-6 space-y-4" style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
+            <h3 className="font-bold text-lg" style={{ color: 'var(--t-text)' }}>Reject Blog</h3>
+            <textarea
+              className="input w-full h-28 resize-none"
+              placeholder="Reason for rejection (optional, shown to author)…"
+              value={rejectNote}
+              onChange={e => setRejectNote(e.target.value)}
+            />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setRejectId(null)} className="px-4 py-2 text-sm rounded-xl border" style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>Cancel</button>
+              <button
+                onClick={() => { action(rejectId, 'reject', { note: rejectNote }); setRejectId(null); }}
+                className="px-4 py-2 text-sm rounded-xl font-semibold bg-red-600 text-white"
+              >
+                Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Blog Categories Sub-tab ──────────────────────────────────
+function BlogCategoriesSubTab() {
+  const [cats,    setCats]    = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null); // null | {} | existing cat
+  const [saving,  setSaving]  = useState(false);
+  const empty = { name: '', slug: '', description: '', icon: '', color: '#1B1F3B', isActive: true, order: 0 };
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await API.get('/admin/blog-categories');
+      setCats(data.categories || []);
+    } catch { toast.error('Failed to load categories'); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    if (!editing?.name?.trim()) return toast.error('Name is required');
+    setSaving(true);
+    try {
+      if (editing._id) {
+        await API.patch(`/admin/blog-categories/${editing._id}`, editing);
+        toast.success('Category updated');
+      } else {
+        await API.post('/admin/blog-categories', editing);
+        toast.success('Category created');
+      }
+      setEditing(null);
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Save failed'); }
+    finally { setSaving(false); }
+  };
+
+  const del = async (id) => {
+    if (!window.confirm('Delete this category? Blogs in it will become uncategorized.')) return;
+    try {
+      await API.delete(`/admin/blog-categories/${id}`);
+      toast.success('Deleted');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Delete failed'); }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold text-lg" style={{ color: 'var(--t-text)' }}>Blog Categories</h3>
+        <button
+          onClick={() => setEditing({ ...empty })}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+          style={{ background: 'var(--t-primary)' }}
+        >
+          <Plus size={15} /> Add Category
+        </button>
+      </div>
+
+      {loading ? <ZutsavLoaderInline /> : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {cats.map(c => (
+            <div key={c._id} className="p-4 rounded-2xl border flex flex-col gap-2" style={{ background: 'var(--t-card)', borderColor: 'var(--t-border)' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg" style={{ background: c.color + '22' }}>
+                  {c.icon || '📝'}
+                </div>
+                <div>
+                  <div className="font-semibold text-sm" style={{ color: 'var(--t-text)' }}>{c.name}</div>
+                  <div className="text-xs" style={{ color: 'var(--t-muted)' }}>{c.slug}</div>
+                </div>
+                <div className="ml-auto flex gap-1.5">
+                  {!c.isActive && <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Inactive</span>}
+                  <button onClick={() => setEditing({ ...c })} className="p-1.5 rounded-lg" style={{ color: 'var(--t-muted)' }}>
+                    <Edit3 size={13} />
+                  </button>
+                  <button onClick={() => del(c._id)} className="p-1.5 rounded-lg text-red-500">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+              {c.description && <p className="text-xs" style={{ color: 'var(--t-muted)' }}>{c.description}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl p-6 space-y-4" style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
+            <h3 className="font-bold text-lg" style={{ color: 'var(--t-text)' }}>
+              {editing._id ? 'Edit Category' : 'New Category'}
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="label">Name *</label>
+                <input className="input w-full" value={editing.name} onChange={e => setEditing(v => ({ ...v, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Icon (emoji)</label>
+                <input className="input w-full" value={editing.icon} placeholder="📝" onChange={e => setEditing(v => ({ ...v, icon: e.target.value }))} />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="label">Color</label>
+                  <input type="color" className="input w-full h-10 cursor-pointer p-1" value={editing.color || '#1B1F3B'} onChange={e => setEditing(v => ({ ...v, color: e.target.value }))} />
+                </div>
+                <div className="flex-1">
+                  <label className="label">Order</label>
+                  <input type="number" className="input w-full" value={editing.order} min={0} onChange={e => setEditing(v => ({ ...v, order: +e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="label">Description</label>
+                <input className="input w-full" value={editing.description} onChange={e => setEditing(v => ({ ...v, description: e.target.value }))} />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={editing.isActive} onChange={e => setEditing(v => ({ ...v, isActive: e.target.checked }))} />
+                <span className="text-sm" style={{ color: 'var(--t-text)' }}>Active</span>
+              </label>
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm rounded-xl border" style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>Cancel</button>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="px-4 py-2 text-sm rounded-xl font-semibold text-white disabled:opacity-50"
+                style={{ background: 'var(--t-primary)' }}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Blog Permissions Sub-tab ─────────────────────────────────
+function BlogPermissionsSubTab() {
+  const [perms,   setPerms]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await API.get('/admin/blog-permissions');
+      setPerms(data.permissions);
+    } catch { toast.error('Failed to load permissions'); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await API.patch('/admin/blog-permissions', perms);
+      toast.success('Blog permissions saved');
+    } catch (err) { toast.error(err.response?.data?.message || 'Save failed'); }
+    finally { setSaving(false); }
+  };
+
+  const toggle = (key) => setPerms(p => ({ ...p, [key]: !p[key] }));
+
+  if (loading) return <ZutsavLoaderInline />;
+  if (!perms)  return null;
+
+  const roles = [
+    {
+      key:         'Admin',
+      publishKey:  'blogAdminPublish',
+      approvalKey: null,
+      label:       'Admin',
+      desc:        'Admins can always publish directly with no review step.',
+      color:       '#1B1F3B',
+    },
+    {
+      key:         'Pandit',
+      publishKey:  'blogPanditPublish',
+      approvalKey: 'blogPanditRequireApproval',
+      label:       'Pandit',
+      desc:        'Allow verified pandits to write and publish spiritual content.',
+      color:       '#D4AF37',
+    },
+    {
+      key:         'User',
+      publishKey:  'blogUserPublish',
+      approvalKey: 'blogUserRequireApproval',
+      label:       'User',
+      desc:        'Allow registered devotees to submit articles for review.',
+      color:       '#6366f1',
+    },
+  ];
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <p className="text-sm mb-6" style={{ color: 'var(--t-muted)' }}>
+        Control who can publish blogs. Disabling a role blocks both the UI and the API endpoints (403 returned regardless of frontend state).
+      </p>
+
+      {roles.map(r => (
+        <div key={r.key} className="p-5 rounded-2xl border" style={{ background: 'var(--t-card)', borderColor: 'var(--t-border)' }}>
+          <div className="flex items-start gap-4">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0"
+              style={{ background: r.color }}
+            >
+              {r.label[0]}
+            </div>
+            <div className="flex-1">
+              <div className="font-semibold text-sm mb-1" style={{ color: 'var(--t-text)' }}>{r.label}</div>
+              <div className="text-xs mb-3" style={{ color: 'var(--t-muted)' }}>{r.desc}</div>
+              <div className="flex flex-col gap-2.5">
+                {/* Publish toggle */}
+                <label className="flex items-center justify-between gap-4 cursor-pointer">
+                  <span className="text-sm" style={{ color: 'var(--t-text)' }}>Can publish blogs</span>
+                  <button
+                    onClick={() => toggle(r.publishKey)}
+                    className="relative w-11 h-6 rounded-full transition-all duration-200 shrink-0"
+                    style={{ background: perms[r.publishKey] ? 'var(--t-primary)' : 'var(--t-border)' }}
+                  >
+                    <span
+                      className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"
+                      style={{ transform: perms[r.publishKey] ? 'translateX(20px)' : 'translateX(0)' }}
+                    />
+                  </button>
+                </label>
+                {/* Approval toggle (not for admin) */}
+                {r.approvalKey && (
+                  <label className={`flex items-center justify-between gap-4 cursor-pointer ${!perms[r.publishKey] ? 'opacity-40 pointer-events-none' : ''}`}>
+                    <span className="text-sm" style={{ color: 'var(--t-text)' }}>Require admin approval before publish</span>
+                    <button
+                      onClick={() => toggle(r.approvalKey)}
+                      className="relative w-11 h-6 rounded-full transition-all duration-200 shrink-0"
+                      style={{ background: perms[r.approvalKey] ? 'var(--t-primary)' : 'var(--t-border)' }}
+                    >
+                      <span
+                        className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"
+                        style={{ transform: perms[r.approvalKey] ? 'translateX(20px)' : 'translateX(0)' }}
+                      />
+                    </button>
+                  </label>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <div className="pt-2">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all"
+          style={{ background: 'var(--t-primary)' }}
+        >
+          {saving ? 'Saving…' : 'Save Permissions'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Invoices Tab ─────────────────────────────────────────────
+const INR_FMT = (n) =>
+  `₹${(+(n ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const fmtDate = (d) =>
+  d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
+
+function InvoicesTab() {
+  const [invoices, setInvoices]     = useState([]);
+  const [total,    setTotal]        = useState(0);
+  const [pages,    setPages]        = useState(1);
+  const [page,     setPage]         = useState(1);
+  const [stats,    setStats]        = useState([]);
+  const [monthRev, setMonthRev]     = useState(0);
+  const [loading,  setLoading]      = useState(true);
+  const [search,   setSearch]       = useState('');
+  const [status,   setStatus]       = useState('');
+  const [payType,  setPayType]      = useState('');
+  const [dateFrom, setDateFrom]     = useState('');
+  const [dateTo,   setDateTo]       = useState('');
+  const [cancelModal, setCancelModal] = useState(null); // invoice object
+  const [cancelReason, setCancelReason] = useState('');
+  const [actioning, setActioning]   = useState(false);
+
+  const load = useCallback(async (p = 1) => {
+    setLoading(true);
+    try {
+      const params = { page: p, limit: 50 };
+      if (search)   params.search      = search;
+      if (status)   params.status      = status;
+      if (payType)  params.paymentType = payType;
+      if (dateFrom) params.dateFrom    = dateFrom;
+      if (dateTo)   params.dateTo      = dateTo;
+
+      const { data } = await API.get('/admin/invoices', { params });
+      setInvoices(data.invoices || []);
+      setTotal(data.total || 0);
+      setPages(data.pages || 1);
+      setPage(p);
+      setStats(data.stats || []);
+      setMonthRev(data.monthRevenue || 0);
+    } catch { toast.error('Failed to load invoices'); }
+    finally  { setLoading(false); }
+  }, [search, status, payType, dateFrom, dateTo]);
+
+  useEffect(() => { load(1); }, [load]);
+
+  const exportCSV = async () => {
+    try {
+      const params = {};
+      if (status)   params.status      = status;
+      if (payType)  params.paymentType = payType;
+      if (dateFrom) params.dateFrom    = dateFrom;
+      if (dateTo)   params.dateTo      = dateTo;
+      const { data } = await API.get('/admin/invoices/export', { params, responseType: 'blob' });
+      const url  = URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url; link.download = `zutsav_invoices_${Date.now()}.csv`;
+      link.click(); URL.revokeObjectURL(url);
+    } catch { toast.error('Export failed'); }
+  };
+
+  const cancelInvoice = async () => {
+    if (!cancelModal) return;
+    setActioning(true);
+    try {
+      await API.patch(`/admin/invoices/${cancelModal._id}/cancel`, { reason: cancelReason });
+      toast.success('Invoice cancelled');
+      setCancelModal(null); setCancelReason('');
+      load(page);
+    } catch { toast.error('Failed to cancel invoice'); }
+    finally { setActioning(false); }
+  };
+
+  const archiveInvoice = async (inv) => {
+    try {
+      await API.patch(`/admin/invoices/${inv._id}/archive`);
+      toast.success('Invoice archived');
+      load(page);
+    } catch { toast.error('Failed to archive invoice'); }
+  };
+
+  // Aggregate stats
+  const activeStats  = stats.find(s => s._id === 'active');
+  const totalRevenue = activeStats?.totalAmount || 0;
+  const totalCount   = activeStats?.count || 0;
+
+  const STAT_CARDS = [
+    { label: 'Total Revenue',    value: INR_FMT(totalRevenue), icon: IndianRupee, bg:'#f0fdf4', border:'#bbf7d0', color:'#15803d' },
+    { label: 'This Month',       value: INR_FMT(monthRev),     icon: Clock,       bg:'#f0f4ff', border:'#c7d2fe', color:'#4338ca' },
+    { label: 'Total Invoices',   value: totalCount,            icon: Receipt,     bg:'#fff7ed', border:'#fed7aa', color:'#c2410c' },
+    { label: 'Active Invoices',  value: total,                 icon: CheckCircle, bg:'#f8f9ff', border:'#e0e7ff', color:'#1B1F3B' },
+  ];
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold" style={{ color:'var(--t-text)' }}>Invoice Register</h2>
+          <p className="text-sm mt-0.5" style={{ color:'var(--t-muted)' }}>
+            Immutable accounting records — {total} result{total !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+          style={{ background:'var(--t-primary)' }}
+        >
+          <Download size={15} /> Export CSV
+        </button>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {STAT_CARDS.map(c => (
+          <div key={c.label} className="rounded-2xl p-4 border"
+            style={{ background:c.bg, borderColor:c.border }}>
+            <div className="flex items-center gap-2 mb-2">
+              <c.icon size={16} style={{ color:c.color }} />
+              <span className="text-xs font-semibold uppercase tracking-wider"
+                style={{ color:c.color }}>{c.label}</span>
+            </div>
+            <div className="text-xl font-black" style={{ color:c.color }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="rounded-2xl border p-4 mb-5 flex flex-wrap gap-3"
+        style={{ background:'var(--t-card)', borderColor:'var(--t-border)' }}>
+        <input
+          type="text" placeholder="Search invoice#, order#, name, phone, txn…"
+          value={search} onChange={e => setSearch(e.target.value)}
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }}
+        />
+        <select value={status} onChange={e => setStatus(e.target.value)}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }}>
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="archived">Archived</option>
+        </select>
+        <select value={payType} onChange={e => setPayType(e.target.value)}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }}>
+          <option value="">All Types</option>
+          <option value="FULL">Full</option>
+          <option value="PARTIAL">Advance</option>
+          <option value="REMAINING">Final</option>
+        </select>
+        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }} />
+        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }} />
+        <button onClick={() => load(1)}
+          className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
+          style={{ background:'var(--t-primary)' }}>
+          <Search size={14} />
+        </button>
+        <button onClick={() => { setSearch(''); setStatus(''); setPayType(''); setDateFrom(''); setDateTo(''); }}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-muted)' }}>
+          Clear
+        </button>
+      </div>
+
+      {/* Table */}
+      {loading ? (
+        <div className="flex justify-center py-16"><ZutsavLoaderInline size={40} /></div>
+      ) : invoices.length === 0 ? (
+        <div className="text-center py-16 text-sm" style={{ color:'var(--t-muted)' }}>
+          No invoices found matching your filters.
+        </div>
+      ) : (
+        <div className="rounded-2xl border overflow-hidden"
+          style={{ background:'var(--t-card)', borderColor:'var(--t-border)' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background:'var(--t-primary)', color:'white' }}>
+                  {['Invoice #','Order #','Customer','Type','Date','Amount Paid','Status',''].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((inv, idx) => (
+                  <tr key={inv._id}
+                    style={{ background: idx % 2 === 0 ? 'var(--t-card)' : 'var(--t-bg)',
+                      borderBottom:'1px solid var(--t-border)' }}>
+                    <td className="px-4 py-3 font-mono font-semibold text-xs"
+                      style={{ color:'var(--t-primary)' }}>{inv.invoiceNumber}</td>
+                    <td className="px-4 py-3 text-xs font-mono"
+                      style={{ color:'var(--t-muted)' }}>{inv.bookingNumber}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-sm" style={{ color:'var(--t-text)' }}>{inv.customerName}</div>
+                      <div className="text-xs" style={{ color:'var(--t-muted)' }}>{inv.customerPhone}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{
+                          background: inv.paymentType === 'PARTIAL' ? '#fef3c7' : inv.paymentType === 'REMAINING' ? '#f0fdf4' : '#f0f4ff',
+                          color:      inv.paymentType === 'PARTIAL' ? '#b45309' : inv.paymentType === 'REMAINING' ? '#15803d' : '#4338ca',
+                        }}>
+                        { inv.paymentType === 'PARTIAL' ? 'Advance' : inv.paymentType === 'REMAINING' ? 'Final' : 'Full' }
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color:'var(--t-muted)' }}>
+                      {fmtDate(inv.invoiceDate)}
+                    </td>
+                    <td className="px-4 py-3 font-bold text-sm" style={{ color:'#15803d' }}>
+                      {INR_FMT(inv.amountPaid)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{
+                          background: inv.status === 'active' ? '#dcfce7' : inv.status === 'cancelled' ? '#fee2e2' : '#f3f4f6',
+                          color:      inv.status === 'active' ? '#15803d' : inv.status === 'cancelled' ? '#b91c1c' : '#374151',
+                        }}>
+                        {inv.status.toUpperCase()}
+                        {inv.isLegacy && ' · Legacy'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <a href={`/invoice/view/${inv.invoiceNumber}`} target="_blank" rel="noreferrer"
+                          className="p-1.5 rounded-lg border transition-colors"
+                          style={{ borderColor:'var(--t-border)', color:'var(--t-muted)' }}
+                          title="View Invoice">
+                          <Eye size={14} />
+                        </a>
+                        {inv.status === 'active' && (
+                          <>
+                            <button
+                              onClick={() => { setCancelModal(inv); setCancelReason(''); }}
+                              className="p-1.5 rounded-lg border transition-colors"
+                              style={{ borderColor:'#fca5a5', color:'#b91c1c' }}
+                              title="Cancel Invoice">
+                              <Ban size={14} />
+                            </button>
+                            <button
+                              onClick={() => archiveInvoice(inv)}
+                              className="p-1.5 rounded-lg border transition-colors"
+                              style={{ borderColor:'var(--t-border)', color:'var(--t-muted)' }}
+                              title="Archive Invoice">
+                              <Archive size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Pagination */}
+          {pages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t"
+              style={{ borderColor:'var(--t-border)' }}>
+              <span className="text-xs" style={{ color:'var(--t-muted)' }}>
+                Page {page} of {pages} · {total} invoices
+              </span>
+              <div className="flex gap-2">
+                <button disabled={page <= 1} onClick={() => load(page - 1)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border disabled:opacity-40"
+                  style={{ borderColor:'var(--t-border)', color:'var(--t-text)' }}>
+                  Prev
+                </button>
+                <button disabled={page >= pages} onClick={() => load(page + 1)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border disabled:opacity-40"
+                  style={{ borderColor:'var(--t-border)', color:'var(--t-text)' }}>
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cancel Modal */}
+      {cancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background:'rgba(0,0,0,0.5)' }}>
+          <div className="rounded-2xl p-6 max-w-md w-full shadow-2xl"
+            style={{ background:'var(--t-card)' }}>
+            <h3 className="text-lg font-bold mb-1" style={{ color:'var(--t-text)' }}>
+              Cancel Invoice
+            </h3>
+            <p className="text-sm mb-4" style={{ color:'var(--t-muted)' }}>
+              {cancelModal.invoiceNumber} · {cancelModal.customerName}
+            </p>
+            <p className="text-xs mb-3 p-3 rounded-xl"
+              style={{ background:'#fef2f2', color:'#b91c1c' }}>
+              Invoices are never deleted — this marks the invoice as cancelled in the audit trail.
+            </p>
+            <textarea
+              value={cancelReason}
+              onChange={e => setCancelReason(e.target.value)}
+              placeholder="Reason for cancellation (required)…"
+              rows={3}
+              className="w-full px-3 py-2 rounded-xl text-sm border mb-4"
+              style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)', resize:'none' }}
+            />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setCancelModal(null)}
+                className="px-4 py-2 rounded-xl text-sm border font-semibold"
+                style={{ borderColor:'var(--t-border)', color:'var(--t-muted)' }}>
+                Back
+              </button>
+              <button onClick={cancelInvoice} disabled={actioning || !cancelReason.trim()}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background:'#b91c1c' }}>
+                {actioning ? 'Cancelling…' : 'Cancel Invoice'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Search, Star, Users, BarChart3,
   BookOpen, Menu, X, Shield, CreditCard, MessageSquare,
   Package, MapPin, Tv, Gift, Mail, ClipboardList,
-  GraduationCap, Briefcase, IndianRupee,
+  GraduationCap, Briefcase, IndianRupee, FileText, PenTool, Receipt,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -25,6 +25,8 @@ const USER_NAV = [
   { icon: Landmark,        label: 'Temples',       path: '/temples' },
   { icon: Calendar,        label: 'Festivals',     path: '/festivals' },
   { icon: Sun,             label: 'Panchang',      path: '/panchang' },
+  { icon: FileText,        label: 'Blog',          path: '/blog' },
+  { icon: PenTool,         label: 'Write Blog',    path: '/blog/write' },
   { icon: Bot,             label: 'AI Assistant',  path: '/ai-assistant' },
   { icon: Bell,            label: 'Notifications', path: '/notifications', badge: true },
 ];
@@ -36,6 +38,8 @@ const PANDIT_NAV = [
   { icon: Calendar,        label: 'Availability',      path: '/pandit/dashboard?tab=availability' },
   { icon: CalendarDays,    label: 'Festival Calendar', path: '/pandit/dashboard?tab=festivals' },
   { icon: BarChart3,       label: 'Earnings',          path: '/pandit/dashboard?tab=earnings' },
+  { icon: FileText,        label: 'Browse Blog',       path: '/blog' },
+  { icon: PenTool,         label: 'Write Blog',        path: '/blog/write' },
   { icon: Bell,            label: 'Notifications',     path: '/notifications', badge: true },
   { icon: Settings,        label: 'Settings',          path: '/settings' },
 ];
@@ -57,6 +61,8 @@ const ADMIN_NAV = [
   { icon: IndianRupee,     label: 'Payout Management', path: '/admin?tab=payouts' },
   { icon: Gift,            label: 'Referral Stats',    path: '/admin?tab=referrals' },
   { icon: Mail,            label: 'Communication',     path: '/admin?tab=comm-center' },
+  { icon: FileText,        label: 'Blog Management',   path: '/admin?tab=blog-management' },
+  { icon: Receipt,         label: 'Invoices',          path: '/admin?tab=invoices' },
   { icon: Settings,        label: 'System Settings',   path: '/admin?tab=system-settings' },
   { icon: Bell,            label: 'Notifications',     path: '/notifications', badge: true },
   { icon: User,            label: 'My Profile',        path: '/admin?tab=profile' },

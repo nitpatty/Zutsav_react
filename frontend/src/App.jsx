@@ -39,6 +39,9 @@ import UserDashboard    from './pages/UserDashboard';
 import MyOrders         from './pages/MyOrders';
 import CartPage         from './pages/CartPage';
 import InvoicePage      from './pages/InvoicePage';
+import BlogHomePage     from './pages/BlogHomePage';
+import BlogDetailPage   from './pages/BlogDetailPage';
+import BlogEditor       from './pages/BlogEditor';
 
 /* ── Auth guard ─────────────────────────────────────── */
 const ProtectedRoute = ({ children, roles }) => {
@@ -108,6 +111,9 @@ const AppRoutes = () => {
           } />
           <Route path="/payment-callback/:merchantTransactionId" element={
             <ProtectedRoute><PaymentCallback /></ProtectedRoute>
+          } />
+          <Route path="/invoice/view/:invoiceNumber" element={
+            <ProtectedRoute><InvoicePage /></ProtectedRoute>
           } />
           <Route path="/invoice/:bookingId" element={
             <ProtectedRoute><InvoicePage /></ProtectedRoute>
@@ -193,6 +199,16 @@ const AppRoutes = () => {
             <ProtectedRoute roles={['admin']}>
               <DashboardLayout><AdminDashboard /></DashboardLayout>
             </ProtectedRoute>
+          } />
+
+          {/* Blog routes — public listing and detail, authenticated editor */}
+          <Route path="/blog"          element={<PublicLayout><BlogHomePage /></PublicLayout>} />
+          <Route path="/blog/:slug"    element={<PublicLayout><BlogDetailPage /></PublicLayout>} />
+          <Route path="/blog/write"    element={
+            <ProtectedRoute><BlogEditor /></ProtectedRoute>
+          } />
+          <Route path="/blog/edit/:id" element={
+            <ProtectedRoute><BlogEditor /></ProtectedRoute>
           } />
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -2,6 +2,7 @@ const router      = require('express').Router();
 const ctrl        = require('../controllers/admin.controller');
 const panditPooja = require('../controllers/panditPooja.controller');
 const settingsCtrl = require('../controllers/systemSettings.controller');
+const invoiceCtrl  = require('../controllers/invoice.controller');
 const { protect, authorize } = require('../middleware/auth');
 const { uploadLogo } = require('../middleware/upload');
 
@@ -31,6 +32,7 @@ router.delete('/users/:id',                 ctrl.adminDeleteUser);
 // Bookings
 router.get('/bookings',                          ctrl.getBookings);
 router.get('/bookings/export',                   ctrl.exportBookings);
+router.get('/bookings/:id/payments',             ctrl.getBookingPayments);
 router.patch('/bookings/:id/assign',             ctrl.assignPandit);
 router.patch('/bookings/:id/status',             ctrl.updateBookingStatus);
 router.patch('/bookings/:id/approve-completion', ctrl.approveCompletion);
@@ -80,5 +82,29 @@ router.post('/payouts/pay-single/:bookingId',ctrl.paySingle);
 router.get('/settings',            settingsCtrl.getSettings);
 router.patch('/settings',          uploadLogo.single('logo'), settingsCtrl.updateSettings);
 router.post('/settings/test-email', settingsCtrl.testEmailConnection);
+
+// Blog Administration
+router.get('/blogs',                    ctrl.adminGetBlogs);
+router.patch('/blogs/:id/approve',      ctrl.adminApproveBlog);
+router.patch('/blogs/:id/reject',       ctrl.adminRejectBlog);
+router.patch('/blogs/:id/feature',      ctrl.adminFeatureBlog);
+router.patch('/blogs/:id/archive',      ctrl.adminArchiveBlog);
+router.delete('/blogs/:id',             ctrl.adminDeleteBlog);
+
+// Blog Categories
+router.get('/blog-categories',          ctrl.getBlogCategories);
+router.post('/blog-categories',         ctrl.createBlogCategory);
+router.patch('/blog-categories/:id',    ctrl.updateBlogCategory);
+router.delete('/blog-categories/:id',   ctrl.deleteBlogCategory);
+
+// Blog Permissions
+router.get('/blog-permissions',         ctrl.getBlogPermissions);
+router.patch('/blog-permissions',       ctrl.updateBlogPermissions);
+
+// Invoice Management — /export and static paths MUST precede /:id
+router.get('/invoices/export',          invoiceCtrl.exportInvoices);
+router.get('/invoices',                 invoiceCtrl.adminGetInvoices);
+router.patch('/invoices/:id/cancel',    invoiceCtrl.adminCancelInvoice);
+router.patch('/invoices/:id/archive',   invoiceCtrl.adminArchiveInvoice);
 
 module.exports = router;

@@ -63,6 +63,13 @@ const systemSettingsSchema = new mongoose.Schema({
   passwordMinLength:     { type: Number, default: 6 },
   passwordRequireUpper:  { type: Boolean, default: false },
   passwordRequireSymbol: { type: Boolean, default: false },
+
+  // Blog Permissions
+  blogAdminPublish:          { type: Boolean, default: true  },
+  blogPanditPublish:         { type: Boolean, default: true  },
+  blogUserPublish:           { type: Boolean, default: false },
+  blogPanditRequireApproval: { type: Boolean, default: true  },
+  blogUserRequireApproval:   { type: Boolean, default: true  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('SystemSettings', systemSettingsSchema);

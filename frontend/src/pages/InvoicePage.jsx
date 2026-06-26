@@ -222,22 +222,31 @@ function buildLineItems(b, pricing) {
   return items;
 }
 
+/* ── Payment type label ─────────────────────────────────── */
+const PMT_LABEL = { PARTIAL: 'Advance Payment', REMAINING: 'Final Payment', FULL: 'Full Payment' };
+
 /* ════════════════════════════════════════════════════════
-   INVOICE PAGE
+   INVOICE PAGE — supports both:
+     /invoice/:bookingId        (legacy — loads first invoice for booking)
+     /invoice/view/:invoiceNumber  (new — loads specific invoice)
 ═══════════════════════════════════════════════════════════ */
 export default function InvoicePage() {
-  const { bookingId } = useParams();
-  const navigate      = useNavigate();
+  const { bookingId, invoiceNumber } = useParams();
+  const navigate = useNavigate();
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
   const [err,     setErr]     = useState(null);
 
   useEffect(() => {
-    API.get(`/bookings/${bookingId}/invoice`)
+    const fetch = invoiceNumber
+      ? API.get(`/invoices/number/${invoiceNumber}`)
+      : API.get(`/invoices/booking/${bookingId}`);
+
+    fetch
       .then(r => setData(r.data))
       .catch(() => setErr('Invoice not found or you do not have access.'))
       .finally(() => setLoading(false));
-  }, [bookingId]);
+  }, [bookingId, invoiceNumber]);
 
   if (loading) return <ZutsavLoader fullscreen size={64} message="Loading invoice…" />;
 
@@ -253,22 +262,36 @@ export default function InvoicePage() {
     </div>
   );
 
-  const { booking: b, paymentLedger: ledger = [] } = data;
-  const pricing   = resolvePricing(b);
+  // /invoice/view/:invoiceNumber → { invoice, booking }
+  // /invoice/:bookingId          → { invoices: [...], booking }
+  const b       = data.booking;
+  const invoice = data.invoice || (data.invoices && data.invoices[0]) || null;
+  const invoices = data.invoices || (data.invoice ? [data.invoice] : []);
+
+  const pricing   = resolvePricing(invoice || b);
   const pmtStatus = resolvePaymentStatus(b);
   const lineItems = buildLineItems(b, pricing);
   const subtotal  = lineItems.reduce((s, i) => s + i.amt, 0);
 
-  const amtPaid    = b.amountPaid  || (pmtStatus === 'FULLY_PAID' ? pricing.grandTotal : 0);
-  const remaining  = b.remainingAmount || (pmtStatus === 'PARTIALLY_PAID' ? pricing.grandTotal - amtPaid : 0);
-  const isPartial  = pmtStatus === 'PARTIALLY_PAID';
+  // Prefer invoice fields; fall back to booking fields for legacy data
+  const amtPaid         = invoice?.amountPaid      ?? b.amountPaid  ?? (pmtStatus === 'FULLY_PAID' ? pricing.grandTotal : 0);
+  const previouslyPaid  = invoice?.previouslyPaid  ?? 0;
+  const outstandingAfter = invoice?.outstandingAfter ?? b.remainingAmount ?? 0;
+  const isPartial       = outstandingAfter > 0;
+  const paymentTypeLabel = PMT_LABEL[invoice?.paymentType] || 'Payment Receipt';
+  const displayInvNumber = invoice?.invoiceNumber || b.bookingNumber;
 
-  // GST type: IGST if inter-state, else CGST+SGST
-  const custState  = (b.userDetails?.state || '').toLowerCase().replace(/\s+/g,'');
-  const isInterState = !['uttarpradesh','up'].includes(custState);
+  // GST breakdown — prefer invoice snapshot, else compute from booking
+  const gst         = invoice?.gstBreakdown;
+  const isInterState = gst ? gst.isInterstate : !['uttarpradesh','up'].includes(
+    (b.userDetails?.state || '').toLowerCase().replace(/\s+/g, '')
+  );
+  const totalGST    = invoice?.totalGST ?? pricing.totalTax ?? 0;
+  const cgst        = gst?.cgst ?? (isInterState ? 0 : totalGST / 2);
+  const sgst        = gst?.sgst ?? (isInterState ? 0 : totalGST / 2);
+  const igst        = gst?.igst ?? (isInterState ? totalGST : 0);
 
   const genTime = new Date().toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' });
-
   const ud = b.userDetails || {};
 
   return (
@@ -286,7 +309,7 @@ export default function InvoicePage() {
           <ArrowLeft size={15} /> My Bookings
         </button>
         <div style={{ flex:1 }} />
-        <span style={{ fontSize:13, color:'#6b7280' }}>Invoice #{b.bookingNumber}</span>
+        <span style={{ fontSize:13, color:'#6b7280' }}>Invoice #{displayInvNumber}</span>
         <button onClick={() => window.print()} style={{
           display:'flex', alignItems:'center', gap:6, padding:'8px 22px',
           borderRadius:10, background:'#1B1F3B', color:'white',
@@ -344,12 +367,13 @@ export default function InvoicePage() {
             </div>
             <div style={{ color:'rgba(255,255,255,0.45)', fontSize:11,
               letterSpacing:1.5, textTransform:'uppercase', marginBottom:12 }}>
-              Bill of Supply
+              {paymentTypeLabel}
             </div>
             <div style={{ display:'grid', rowGap:5 }}>
               {[
-                ['Invoice No',     b.bookingNumber],
-                ['Issue Date',     fmtShort(b.createdAt)],
+                ['Invoice No',     displayInvNumber],
+                ['Order No',       b.bookingNumber],
+                ['Issue Date',     fmtShort(invoice?.invoiceDate || b.createdAt)],
                 ['Service Date',   fmtLong(b.scheduledDate)],
                 ['Place of Supply',(ud.state || ud.city || 'India').toUpperCase()],
               ].map(([k, v]) => (
@@ -484,18 +508,28 @@ export default function InvoicePage() {
 
           {/* Amount cards */}
           <div style={{ display:'grid',
-            gridTemplateColumns: isPartial ? '1fr 1fr 1fr' : '1fr 1fr',
+            gridTemplateColumns: previouslyPaid > 0
+              ? (isPartial ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr')
+              : (isPartial ? '1fr 1fr 1fr' : '1fr 1fr'),
             gap:16, marginBottom:20 }}>
             <div style={{ background:'#f0f4ff', borderRadius:14, padding:'16px 20px',
               border:'1.5px solid #c7d2fe' }}>
               <div style={{ fontSize:11, color:'#6b7280', marginBottom:6, textTransform:'uppercase',
-                letterSpacing:0.8 }}>Total Amount</div>
+                letterSpacing:0.8 }}>Order Total</div>
               <div style={{ fontSize:24, fontWeight:900, color:'#1B1F3B' }}>{INR(pricing.grandTotal)}</div>
             </div>
+            {previouslyPaid > 0 && (
+              <div style={{ background:'#f0f9ff', borderRadius:14, padding:'16px 20px',
+                border:'1.5px solid #bae6fd' }}>
+                <div style={{ fontSize:11, color:'#6b7280', marginBottom:6, textTransform:'uppercase',
+                  letterSpacing:0.8 }}>Previously Paid</div>
+                <div style={{ fontSize:24, fontWeight:900, color:'#0369a1' }}>{INR(previouslyPaid)}</div>
+              </div>
+            )}
             <div style={{ background:'#f0fdf4', borderRadius:14, padding:'16px 20px',
               border:'1.5px solid #bbf7d0' }}>
               <div style={{ fontSize:11, color:'#6b7280', marginBottom:6, textTransform:'uppercase',
-                letterSpacing:0.8 }}>Amount Paid</div>
+                letterSpacing:0.8 }}>This Invoice</div>
               <div style={{ fontSize:24, fontWeight:900, color:'#15803d' }}>{INR(amtPaid)}</div>
             </div>
             {isPartial && (
@@ -503,21 +537,24 @@ export default function InvoicePage() {
                 border:'1.5px solid #fed7aa' }}>
                 <div style={{ fontSize:11, color:'#6b7280', marginBottom:6, textTransform:'uppercase',
                   letterSpacing:0.8 }}>Balance Due</div>
-                <div style={{ fontSize:24, fontWeight:900, color:'#c2410c' }}>{INR(remaining)}</div>
+                <div style={{ fontSize:24, fontWeight:900, color:'#c2410c' }}>{INR(outstandingAfter)}</div>
               </div>
             )}
           </div>
 
-          {/* PhonePe details */}
-          {(b.phonePeMerchantTransactionId || b.phonePeTransactionId) && (
+          {/* Payment gateway details */}
+          {(invoice?.merchantTransactionId || b.phonePeMerchantTransactionId || b.phonePeTransactionId) && (
             <div style={{ padding:'16px 20px', background:'#f8f9ff', borderRadius:12,
               border:'1px solid #e0e7ff',
               display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))',
               gap:'10px 28px' }}>
               {[
-                { k:'Payment Gateway', v:'PhonePe' },
-                { k:'Merchant Txn ID', v: b.phonePeMerchantTransactionId },
-                b.phonePeTransactionId ? { k:'PhonePe Txn ID', v: b.phonePeTransactionId } : null,
+                { k:'Payment Type',    v: paymentTypeLabel },
+                { k:'Payment Gateway', v: (invoice?.paymentGateway || 'PhonePe').toUpperCase() },
+                { k:'Merchant Txn ID', v: invoice?.merchantTransactionId || b.phonePeMerchantTransactionId },
+                (invoice?.gatewayTransactionId || b.phonePeTransactionId)
+                  ? { k:'Gateway Txn ID', v: invoice?.gatewayTransactionId || b.phonePeTransactionId }
+                  : null,
                 { k:'Payment Method',  v:'UPI / PhonePe' },
               ].filter(Boolean).map(({ k, v }) => (
                 <div key={k}>
@@ -531,37 +568,39 @@ export default function InvoicePage() {
         </div>
 
         {/* ── 6. PAYMENT HISTORY ─────────────────────────── */}
-        {ledger.length > 0 && (
+        {invoices.length > 1 && (
           <div style={{ padding:'22px 44px', borderBottom:'1px solid #e5e7eb' }}>
-            <SecLabel>Payment History</SecLabel>
+            <SecLabel>Payment History for Order {b.bookingNumber}</SecLabel>
             <div style={{ position:'relative', paddingLeft:28 }}>
-              {/* timeline line */}
               <div style={{ position:'absolute', left:8, top:6, bottom:6,
                 width:2, background:'#e5e7eb' }} />
-              {ledger.map((e, i) => (
-                <div key={e._id} style={{ position:'relative',
-                  marginBottom: i < ledger.length - 1 ? 20 : 0 }}>
-                  {/* dot */}
+              {invoices.map((e, i) => (
+                <div key={e._id || i} style={{ position:'relative',
+                  marginBottom: i < invoices.length - 1 ? 20 : 0 }}>
                   <div style={{ position:'absolute', left:-28, top:4,
-                    width:16, height:16, borderRadius:'50%', background:'#15803d',
+                    width:16, height:16, borderRadius:'50%',
+                    background: e.status === 'cancelled' ? '#b91c1c' : '#15803d',
                     border:'2px solid white', boxShadow:'0 0 0 2px #bbf7d0' }} />
                   <div style={{ display:'flex', justifyContent:'space-between',
                     alignItems:'flex-start', flexWrap:'wrap', gap:8 }}>
                     <div>
                       <div style={{ fontWeight:700, fontSize:14, color:'#111827' }}>
-                        { e.paymentType === 'PARTIAL'   ? 'Partial Payment' :
-                          e.paymentType === 'REMAINING' ? 'Remaining Balance Cleared' :
-                          'Full Payment Received' }
+                        {PMT_LABEL[e.paymentType] || 'Payment'}
+                        {e.status !== 'active' && (
+                          <span style={{ marginLeft:8, fontSize:11, color:'#b91c1c',
+                            background:'#fee2e2', padding:'2px 8px', borderRadius:6 }}>
+                            {e.status.toUpperCase()}
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize:12, color:'#9ca3af', marginTop:2 }}>
-                        Txn: {e.merchantTransactionId}
-                        {e.phonePeTransactionId && ` · PhonePe: ${e.phonePeTransactionId}`}
+                        {e.invoiceNumber} · Txn: {e.merchantTransactionId}
                       </div>
-                      {e.paidAt && (
-                        <div style={{ fontSize:12, color:'#9ca3af' }}>{fmtShort(e.paidAt)}</div>
+                      {e.invoiceDate && (
+                        <div style={{ fontSize:12, color:'#9ca3af' }}>{fmtShort(e.invoiceDate)}</div>
                       )}
                     </div>
-                    <div style={{ fontWeight:900, fontSize:18, color:'#15803d' }}>{INR(e.amount)}</div>
+                    <div style={{ fontWeight:900, fontSize:18, color:'#15803d' }}>{INR(e.amountPaid)}</div>
                   </div>
                 </div>
               ))}
@@ -570,7 +609,7 @@ export default function InvoicePage() {
         )}
 
         {/* ── 7. TAX SUMMARY ─────────────────────────────── */}
-        {pricing.totalTax > 0 && (
+        {totalGST > 0 && (
           <div style={{ padding:'22px 44px', borderBottom:'1px solid #e5e7eb' }}>
             <SecLabel>Tax Summary</SecLabel>
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
@@ -653,21 +692,21 @@ export default function InvoicePage() {
                     fontWeight:700 }}>GST</td>
                   {isInterState ? (
                     <td style={{ padding:'11px 14px', textAlign:'right', color:'white', fontWeight:800 }}>
-                      {INR(pricing.totalTax)}
+                      {INR(igst)}
                     </td>
                   ) : (
                     <>
                       <td style={{ padding:'11px 14px', textAlign:'right', color:'white', fontWeight:800 }}>
-                        {INR(pricing.totalTax / 2)}
+                        {INR(cgst)}
                       </td>
                       <td style={{ padding:'11px 14px', textAlign:'right', color:'white', fontWeight:800 }}>
-                        {INR(pricing.totalTax / 2)}
+                        {INR(sgst)}
                       </td>
                     </>
                   )}
                   <td style={{ padding:'11px 14px', textAlign:'right', color:'#c4b5fd',
                     fontWeight:900, fontSize:16 }}>
-                    {INR(pricing.totalTax)}
+                    {INR(totalGST)}
                   </td>
                 </tr>
               </tfoot>
@@ -684,7 +723,7 @@ export default function InvoicePage() {
             <SecLabel>Amount in Words</SecLabel>
             <div style={{ fontStyle:'italic', color:'#374151', fontSize:14,
               fontWeight:600, maxWidth:520, lineHeight:1.5 }}>
-              {amtWords(pricing.grandTotal)}
+              {amtWords(amtPaid)}
             </div>
           </div>
           <div style={{ textAlign:'right' }}>

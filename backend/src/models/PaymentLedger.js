@@ -9,6 +9,7 @@ const paymentLedgerSchema = new mongoose.Schema({
   phonePeTransactionId:  { type: String, default: null },
   note:                  { type: String, default: '' },
   paidAt:                { type: Date, default: null },
+  invoiceId:             { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
 }, { timestamps: true });
 
 paymentLedgerSchema.index({ bookingId: 1 });

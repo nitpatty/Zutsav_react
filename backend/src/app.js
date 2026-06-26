@@ -127,6 +127,8 @@ app.use('/api/referral',         require('./routes/referral.routes'));
 app.use('/api/notifications',    require('./routes/notification.routes'));
 app.use('/api/comm',             require('./routes/comm.routes'));
 app.use('/api/settings',         require('./routes/settings.routes'));
+app.use('/api/blogs',            require('./routes/blog.routes'));
+app.use('/api/invoices',         require('./routes/invoice.routes'));
 
 // ✅ ✅ Error handler (improved)
 app.use((err, req, res, next) => {

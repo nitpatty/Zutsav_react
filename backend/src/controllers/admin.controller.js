@@ -496,6 +496,19 @@ exports.getBookings = async (req, res, next) => {
   }
 };
 
+// GET /api/admin/bookings/:id/payments — payment ledger entries for a booking
+exports.getBookingPayments = async (req, res, next) => {
+  try {
+    const PaymentLedger = require('../models/PaymentLedger');
+    const payments = await PaymentLedger.find({ bookingId: req.params.id })
+      .sort({ createdAt: 1 })
+      .lean();
+    res.json({ success: true, payments });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // GET /api/admin/bookings/export  — server-side Excel export
 exports.exportBookings = async (req, res, next) => {
   try {
@@ -2269,5 +2282,229 @@ exports.getAdminOrderInvoice = async (req, res, next) => {
     const Shipment = require('../models/Shipment');
     const shipment = await Shipment.findOne({ orderId: order._id }).lean();
     res.json({ success: true, order: order.toObject(), shipment: shipment || null });
+  } catch (err) { next(err); }
+};
+
+// ─── Blog Administration ─────────────────────────────────────────────────────
+
+const Blog         = require('../models/Blog');
+const BlogCategory = require('../models/BlogCategory');
+const BlogComment  = require('../models/BlogComment');
+const BlogLike     = require('../models/BlogLike');
+const BlogBookmark = require('../models/BlogBookmark');
+const SystemSettings = require('../models/SystemSettings');
+
+// GET /api/admin/blogs
+exports.adminGetBlogs = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, status, authorRole, category, search } = req.query;
+    const query = {};
+    if (status)     query.status     = status;
+    if (authorRole) query.authorRole = authorRole;
+    if (category)   query.category   = category;
+    if (search) query.$or = [
+      { title:      new RegExp(search, 'i') },
+      { authorName: new RegExp(search, 'i') },
+    ];
+
+    const [blogs, total] = await Promise.all([
+      Blog.find(query)
+        .populate('category', 'name slug icon color')
+        .select('-content')
+        .sort({ createdAt: -1 })
+        .limit(+limit)
+        .skip((+page - 1) * +limit)
+        .lean(),
+      Blog.countDocuments(query),
+    ]);
+
+    const stats = await Blog.aggregate([
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]);
+    const statusCounts = {};
+    stats.forEach((s) => { statusCounts[s._id] = s.count; });
+
+    res.json({ success: true, blogs, total, statusCounts });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blogs/:id/approve
+exports.adminApproveBlog = async (req, res, next) => {
+  try {
+    const blog = await Blog.findById(req.params.id);
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    blog.status       = 'published';
+    blog.publishedAt  = blog.publishedAt || new Date();
+    blog.publishedBy  = req.user._id;
+    blog.reviewedAt   = new Date();
+    blog.reviewerName = req.user.name || 'Admin';
+    blog.rejectionReason = '';
+    await blog.save();
+
+    // In-app notification
+    createNotification({
+      userId:  blog.authorId,
+      type:    'blog_approved',
+      title:   'Blog Published!',
+      message: `Your blog "${blog.title}" has been approved and published.`,
+      data:    { blogId: blog._id, slug: blog.slug },
+    }).catch(() => {});
+
+    res.json({ success: true, blog, message: 'Blog approved and published.' });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blogs/:id/reject
+exports.adminRejectBlog = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+    if (!reason || reason.trim().length < 5) {
+      return res.status(400).json({ success: false, message: 'Rejection reason is required (min 5 chars)' });
+    }
+
+    const blog = await Blog.findById(req.params.id);
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    blog.status          = 'rejected';
+    blog.rejectionReason = reason.trim();
+    blog.reviewedAt      = new Date();
+    blog.reviewerName    = req.user.name || 'Admin';
+    await blog.save();
+
+    createNotification({
+      userId:  blog.authorId,
+      type:    'blog_rejected',
+      title:   'Blog Needs Revision',
+      message: `Your blog "${blog.title}" was not approved. Reason: ${reason.trim()}`,
+      data:    { blogId: blog._id },
+    }).catch(() => {});
+
+    res.json({ success: true, blog, message: 'Blog rejected.' });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blogs/:id/feature
+exports.adminFeatureBlog = async (req, res, next) => {
+  try {
+    const { isFeatured, isTrending, isEditorsPick, isHomepageHero } = req.body;
+    const updates = {};
+    if (isFeatured     !== undefined) updates.isFeatured     = isFeatured;
+    if (isTrending     !== undefined) updates.isTrending     = isTrending;
+    if (isEditorsPick  !== undefined) updates.isEditorsPick  = isEditorsPick;
+    if (isHomepageHero !== undefined) updates.isHomepageHero = isHomepageHero;
+
+    const blog = await Blog.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    if (isFeatured === true || isEditorsPick === true) {
+      createNotification({
+        userId:  blog.authorId,
+        type:    'blog_featured',
+        title:   "You're Featured! 🌟",
+        message: `Your blog "${blog.title}" has been featured on Zutsav.`,
+        data:    { blogId: blog._id, slug: blog.slug },
+      }).catch(() => {});
+    }
+
+    res.json({ success: true, blog });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blogs/:id/archive
+exports.adminArchiveBlog = async (req, res, next) => {
+  try {
+    const blog = await Blog.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+    res.json({ success: true, blog });
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/admin/blogs/:id
+exports.adminDeleteBlog = async (req, res, next) => {
+  try {
+    const blog = await Blog.findById(req.params.id);
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    await Promise.all([
+      Blog.deleteOne({ _id: blog._id }),
+      BlogComment.deleteMany({ blogId: blog._id }),
+      BlogLike.deleteMany({ blogId: blog._id }),
+      BlogBookmark.deleteMany({ blogId: blog._id }),
+    ]);
+
+    res.json({ success: true, message: 'Blog permanently deleted.' });
+  } catch (err) { next(err); }
+};
+
+// ─── Blog Categories ─────────────────────────────────────────────────────────
+
+// GET /api/admin/blog-categories
+exports.getBlogCategories = async (req, res, next) => {
+  try {
+    const categories = await BlogCategory.find().sort({ order: 1, name: 1 }).lean();
+    res.json({ success: true, categories });
+  } catch (err) { next(err); }
+};
+
+// POST /api/admin/blog-categories
+exports.createBlogCategory = async (req, res, next) => {
+  try {
+    const { name, description, icon, color, order } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
+    const cat = await BlogCategory.create({ name, description, icon, color, order });
+    res.status(201).json({ success: true, category: cat });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blog-categories/:id
+exports.updateBlogCategory = async (req, res, next) => {
+  try {
+    const { name, description, icon, color, order, isActive } = req.body;
+    const cat = await BlogCategory.findByIdAndUpdate(
+      req.params.id, { name, description, icon, color, order, isActive }, { new: true }
+    );
+    if (!cat) return res.status(404).json({ success: false, message: 'Category not found' });
+    res.json({ success: true, category: cat });
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/admin/blog-categories/:id
+exports.deleteBlogCategory = async (req, res, next) => {
+  try {
+    await BlogCategory.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Category deleted' });
+  } catch (err) { next(err); }
+};
+
+// ─── Blog Permission Settings ─────────────────────────────────────────────────
+
+// GET /api/admin/blog-permissions
+exports.getBlogPermissions = async (req, res, next) => {
+  try {
+    const settings = await SystemSettings.findOne().select(
+      'blogAdminPublish blogPanditPublish blogUserPublish blogPanditRequireApproval blogUserRequireApproval'
+    ).lean();
+    res.json({ success: true, permissions: settings || {} });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blog-permissions
+exports.updateBlogPermissions = async (req, res, next) => {
+  try {
+    const {
+      blogAdminPublish, blogPanditPublish, blogUserPublish,
+      blogPanditRequireApproval, blogUserRequireApproval,
+    } = req.body;
+
+    const updates = {};
+    if (blogAdminPublish          !== undefined) updates.blogAdminPublish          = Boolean(blogAdminPublish);
+    if (blogPanditPublish         !== undefined) updates.blogPanditPublish         = Boolean(blogPanditPublish);
+    if (blogUserPublish           !== undefined) updates.blogUserPublish           = Boolean(blogUserPublish);
+    if (blogPanditRequireApproval !== undefined) updates.blogPanditRequireApproval = Boolean(blogPanditRequireApproval);
+    if (blogUserRequireApproval   !== undefined) updates.blogUserRequireApproval   = Boolean(blogUserRequireApproval);
+
+    const settings = await SystemSettings.findOneAndUpdate({}, updates, { new: true, upsert: true });
+    res.json({ success: true, message: 'Blog permissions updated', permissions: settings });
   } catch (err) { next(err); }
 };

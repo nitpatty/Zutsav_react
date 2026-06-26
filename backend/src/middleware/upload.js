@@ -56,4 +56,6 @@ const uploadKYCDocs = multer({
   { name: 'addressProof', maxCount: 1 },
 ]);
 
-module.exports = { uploadLogo, uploadProfile, uploadGovtId, uploadProducts, uploadCSV, uploadKYCDocs };
+const uploadBlog = multer({ storage: createStorage('blogs'), fileFilter: imageFilter, limits: { fileSize: 8 * 1024 * 1024 } });
+
+module.exports = { uploadLogo, uploadProfile, uploadGovtId, uploadProducts, uploadCSV, uploadKYCDocs, uploadBlog };

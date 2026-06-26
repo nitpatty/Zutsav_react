@@ -5,6 +5,7 @@ import {
   Menu, X, User, LogOut, LayoutDashboard, BookOpen, ShoppingBag,
   Bell, Moon, Sparkles, Home, CalendarDays, MapPin, Tv,
   ChevronDown, Package, Users, Settings, Star, Flame, ShoppingCart,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -18,6 +19,7 @@ const PUBLIC_NAV = [
   { to: '/marketplace', label: 'Marketplace' },
   { to: '/temples',     label: 'Temples'     },
   { to: '/panchang',    label: 'Panchang'    },
+  { to: '/blog',        label: 'Blog'        },
 ];
 
 const USER_NAV = [
@@ -26,6 +28,7 @@ const USER_NAV = [
   { to: '/festivals',    label: 'Festivals',  icon: CalendarDays },
   { to: '/panchang',     label: 'Panchang',   icon: Moon         },
   { to: '/marketplace',  label: 'Shop',       icon: ShoppingBag  },
+  { to: '/blog',         label: 'Blog',       icon: FileText     },
   { to: '/ai-assistant', label: 'AI Guide',   icon: Sparkles     },
 ];
 

@@ -24,6 +24,7 @@ const {
 } = require('../utils/email');
 const { notifyBookingConfirmed, sendCompletionOtpWhatsApp, sendWhatsAppForEvent } = require('../utils/whatsapp');
 const { dispatchTriggerEvent } = require('../utils/triggerDispatch');
+const { generateInvoiceForPayment } = require('../utils/invoiceGenerator');
 
 // ── Pricing engine ────────────────────────────────────────────────────────────
 async function calculatePricing(pooja, kitPrice = 0) {
@@ -321,6 +322,7 @@ exports.verifyPhonePePayment = async (req, res, next) => {
         ledger.phonePeTransactionId = result.transactionId;
         ledger.paidAt               = new Date();
         await ledger.save();
+        await generateInvoiceForPayment(booking, ledger, booking.poojaId?.name || '');
       }
 
       await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
@@ -434,6 +436,7 @@ exports.verifyRemainingPayment = async (req, res, next) => {
       ledger.phonePeTransactionId = result.transactionId;
       ledger.paidAt               = new Date();
       await ledger.save();
+      await generateInvoiceForPayment(booking, ledger, booking.poojaId?.name || '');
 
       await onFinalPaymentSuccess(booking, booking.poojaId?.name || '');
 
@@ -478,6 +481,7 @@ exports.phonePeWebhook = async (req, res) => {
             ledger.phonePeTransactionId = phonePeTransactionId;
             ledger.paidAt               = new Date();
             await ledger.save();
+            await generateInvoiceForPayment(booking, ledger, booking.poojaId?.name || '');
 
             await onFinalPaymentSuccess(booking, booking.poojaId?.name || '');
           }
@@ -506,6 +510,7 @@ exports.phonePeWebhook = async (req, res) => {
           ledger.phonePeTransactionId = phonePeTransactionId;
           ledger.paidAt               = new Date();
           await ledger.save();
+          await generateInvoiceForPayment(booking, ledger, booking.poojaId?.name || '');
         }
 
         await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
