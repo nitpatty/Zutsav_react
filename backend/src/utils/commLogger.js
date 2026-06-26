@@ -18,7 +18,7 @@ const loggedSendEmail = async ({ to, subject, html, event = 'manual', templateNa
   });
 
   try {
-    await sendEmail(to, subject, html);
+    await sendEmail(to, subject, html, { _noInternalLog: true });
     log.status   = 'delivered';
     log.response = { message: 'Sent via nodemailer' };
   } catch (err) {
@@ -48,7 +48,7 @@ const loggedSendWhatsApp = async ({ to, templateName, languageCode = 'en', compo
   });
 
   try {
-    const res = await sendWhatsApp(to, templateName, components, languageCode);
+    const res = await sendWhatsApp(to, templateName, components, languageCode, { _noInternalLog: true });
 
     if (res === null) {
       // sendWhatsApp returns null only when WhatsApp is not configured — treat as skipped

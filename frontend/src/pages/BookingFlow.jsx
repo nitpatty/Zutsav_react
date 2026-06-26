@@ -3,13 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Clock, CheckCircle, ArrowRight, ArrowLeft, Shield, Sparkles,
   Package, ChevronLeft, ChevronRight, Zap, Calendar, X, ShoppingCart,
-  Eye, Tag, Info,
+  Eye, Tag, Info, MapPin, Plus, Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
 import { useAuth }  from '../context/AuthContext';
 import { useCart }  from '../context/CartContext';
 import PincodeInput from '../components/shared/PincodeInput';
+import ZutsavLoader from '../components/shared/ZutsavLoader';
 import { formatDuration } from '../utils/durationFormatter';
 import { calculatePrice, kitSavingsPct, formatINR } from '../utils/priceEngine';
 
@@ -249,8 +250,10 @@ export default function BookingFlow() {
   const [loading, setLoading] = useState(true);
   const [paying,  setPaying]  = useState(false);
 
-  // Rates from backend (commission %, gst %)
-  const [rates, setRates] = useState({ commissionPercent: 0, gstPercent: 0 });
+  const [rates, setRates] = useState({ commissionPercent: 0, commissionFixed: 0, commissionType: 'percent', gstPercent: 0 });
+  const [partialConfig, setPartialConfig] = useState({ enabled: false, minAmount: 500, mode: 'fixed', options: [] });
+  const [paymentMode, setPaymentMode] = useState('FULL');
+  const [partialAmount, setPartialAmount] = useState(0);
 
   const [linkedKits,  setLinkedKits]  = useState([]);
   const [kitsLoading, setKitsLoading] = useState(false);
@@ -268,7 +271,7 @@ export default function BookingFlow() {
     name:        user?.name     || '',
     phone:       user?.phone    || '',
     email:       user?.email    || '',
-    address:     '',
+    address:     user?.address  || '',
     pincode:     user?.pincode  || '',
     state:       user?.state    || '',
     city:        user?.city     || '',
@@ -279,6 +282,43 @@ export default function BookingFlow() {
 
   // Kit view-items modal
   const [viewItemsKit, setViewItemsKit] = useState(null);
+
+  // Overview expand toggles
+  const [showFullDesc,         setShowFullDesc]         = useState(false);
+  const [showAllBenefits,      setShowAllBenefits]      = useState(false);
+  const [showAllRequirements,  setShowAllRequirements]  = useState(false);
+
+  // Saved addresses
+  const [savedAddresses,  setSavedAddresses]  = useState([]);
+  const [selectedAddrId,  setSelectedAddrId]  = useState('');   // '' = not chosen yet, 'new' = enter manually
+  const [saveAddrLabel,   setSaveAddrLabel]   = useState('Home');
+  const [wantSaveAddr,    setWantSaveAddr]    = useState(null);  // null | true | false
+  const [savingAddr,      setSavingAddr]      = useState(false);
+
+  // ── Load saved addresses ─────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    API.get('/users/addresses')
+      .then(({ data }) => {
+        const addrs = data.addresses || [];
+        setSavedAddresses(addrs);
+        if (addrs.length > 0) {
+          const def = addrs.find(a => a.isDefault) || addrs[0];
+          setSelectedAddrId(def._id);
+          setUserDetails(p => ({
+            ...p,
+            address:  def.address  || '',
+            pincode:  def.pincode  || '',
+            state:    def.state    || '',
+            city:     def.city     || '',
+            district: def.district || '',
+          }));
+        } else {
+          setSelectedAddrId('new');
+        }
+      })
+      .catch(() => setSelectedAddrId('new'));
+  }, [user]);
 
   // ── Load pooja ───────────────────────────────────────────────
   useEffect(() => {
@@ -300,8 +340,14 @@ export default function BookingFlow() {
         if (data.pricing) {
           setRates({
             commissionPercent: data.pricing.commissionPercent || 0,
+            commissionFixed:   data.pricing.commissionFixed   || 0,
+            commissionType:    data.pricing.commissionType    || 'percent',
             gstPercent:        data.pricing.gstPercent        || 0,
           });
+        }
+        if (data.partialPayment) {
+          setPartialConfig(data.partialPayment);
+          if (!data.partialPayment.enabled) setPaymentMode('FULL');
         }
       }).catch(() => {});
 
@@ -318,9 +364,11 @@ export default function BookingFlow() {
   // Derived pricing
   const kitPrice = withKit && !isUrgent && selectedKit ? (selectedKit.discountPrice || 0) : 0;
   const pricing  = calculatePrice({
-    poojaPrice:        pooja?.price || 0,
+    poojaPrice:        pooja?.salePrice || pooja?.price || 0,
     kitPrice,
     commissionPercent: rates.commissionPercent,
+    commissionFixed:   rates.commissionFixed,
+    commissionType:    rates.commissionType,
     gstPercent:        rates.gstPercent,
   });
 
@@ -376,8 +424,22 @@ export default function BookingFlow() {
     }
   };
 
+  // Resolved charge for current payment mode selection
+  const chargeNow = paymentMode === 'PARTIAL' ? partialAmount : pricing.grandTotal;
+  const chargeRemaining = paymentMode === 'PARTIAL' ? (pricing.grandTotal - partialAmount) : 0;
+
   // ── Pay now ──────────────────────────────────────────────────
   const handlePay = async () => {
+    if (paymentMode === 'PARTIAL') {
+      if (!partialAmount || partialAmount < partialConfig.minAmount) {
+        toast.error(`Minimum partial payment is ₹${partialConfig.minAmount}`);
+        return;
+      }
+      if (partialAmount >= pricing.grandTotal) {
+        toast.error('Partial amount must be less than the grand total');
+        return;
+      }
+    }
     setPaying(true);
     try {
       const { data } = await API.post('/bookings/create-phonepe-order', {
@@ -389,6 +451,8 @@ export default function BookingFlow() {
         withKit:       withKit && !isUrgent,
         kitId:         withKit && !isUrgent && kitId ? kitId : undefined,
         isUrgent,
+        paymentMode,
+        partialAmount: paymentMode === 'PARTIAL' ? partialAmount : undefined,
         userDetails: {
           name:     userDetails.name,
           phone:    userDetails.phone,
@@ -429,14 +493,7 @@ export default function BookingFlow() {
   };
 
   // ── Loading / not found ──────────────────────────────────────
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background:'#FAF6EE' }}>
-      <div className="text-center">
-        <div className="text-5xl mb-4" style={{ animation:'bounce 1s infinite' }}>🪔</div>
-        <p className="text-gray-400 text-sm">Loading ceremony details…</p>
-      </div>
-    </div>
-  );
+  if (loading) return <ZutsavLoader fullscreen size={68} message="Loading ceremony details…" />;
   if (!pooja) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background:'#FAF6EE' }}>
       <p className="text-gray-500">Pooja not found</p>
@@ -480,70 +537,137 @@ export default function BookingFlow() {
         {/* ────────────────────────────────────────────────────── */}
         {/* STEP: POOJA OVERVIEW                                   */}
         {/* ────────────────────────────────────────────────────── */}
-        {stepId === STEP_IDS.OVERVIEW && (
-          <div className="bg-white rounded-3xl shadow-lg overflow-hidden">
-            {pooja.image ? (
-              <div className="h-52 overflow-hidden relative">
-                <img src={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/${pooja.image}`} alt={pooja.name} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-                <div className="absolute bottom-4 left-5 right-5">
-                  <h2 className="font-bold text-white text-2xl" style={{ fontFamily:"'Cormorant Garamond',serif" }}>{pooja.name}</h2>
-                  {formatDuration(pooja) && (
-                    <div className="flex items-center gap-1.5 mt-1 text-white/70 text-sm">
-                      <Clock size={12} /><span>{formatDuration(pooja)}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="h-36 flex items-center justify-center relative overflow-hidden"
-                style={{ background:'linear-gradient(135deg,#FF6B00,#ff9020)' }}>
-                <span className="text-6xl relative z-10">🪔</span>
-              </div>
-            )}
+        {stepId === STEP_IDS.OVERVIEW && (() => {
+          const DESC_LIMIT        = 220;
+          const BENEFITS_LIMIT    = 5;
+          const REQUIREMENTS_LIMIT = 5;
+          const descLong      = (pooja.description || '').length > DESC_LIMIT;
+          const benefitsLong  = (pooja.benefits?.length || 0) > BENEFITS_LIMIT;
+          const reqLong       = (pooja.requirements?.length || 0) > REQUIREMENTS_LIMIT;
 
-            <div className="p-6">
-              {!pooja.image && (
-                <h2 className="font-bold text-gray-900 text-2xl mb-1" style={{ fontFamily:"'Cormorant Garamond',serif" }}>{pooja.name}</h2>
-              )}
-              {pooja.shortDesc && <p className="text-gray-500 text-sm leading-relaxed mt-2">{pooja.shortDesc}</p>}
-              {pooja.description && (
-                <div className="mt-4">
-                  <p className="text-sm text-gray-500 leading-relaxed">{pooja.description}</p>
-                </div>
-              )}
+          const visibleDesc   = descLong && !showFullDesc
+            ? pooja.description.slice(0, DESC_LIMIT).trimEnd() + '…'
+            : pooja.description;
+          const visibleBenefits     = benefitsLong && !showAllBenefits
+            ? pooja.benefits.slice(0, BENEFITS_LIMIT)
+            : pooja.benefits;
+          const visibleRequirements = reqLong && !showAllRequirements
+            ? pooja.requirements.slice(0, REQUIREMENTS_LIMIT)
+            : pooja.requirements;
 
-              {pooja.benefits?.length > 0 && (
-                <div className="mt-4 p-4 rounded-2xl bg-green-50 border border-green-100">
-                  <p className="text-xs font-bold text-green-700 uppercase tracking-wide mb-2">Spiritual Benefits</p>
-                  <ul className="space-y-1">
-                    {pooja.benefits.map((b, i) => (
-                      <li key={i} className="text-sm text-gray-600 flex items-center gap-2">
-                        <CheckCircle size={12} className="text-green-500 shrink-0" />{b}
-                      </li>
-                    ))}
-                  </ul>
+          return (
+            <div className="bg-white rounded-3xl shadow-lg overflow-hidden">
+              {pooja.image ? (
+                <div className="h-52 overflow-hidden relative">
+                  <img src={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/${pooja.image}`} alt={pooja.name} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                  <div className="absolute bottom-4 left-5 right-5">
+                    <h2 className="font-bold text-white text-2xl" style={{ fontFamily:"'Cormorant Garamond',serif" }}>{pooja.name}</h2>
+                    {formatDuration(pooja) && (
+                      <div className="flex items-center gap-1.5 mt-1 text-white/70 text-sm">
+                        <Clock size={12} /><span>{formatDuration(pooja)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="h-36 flex items-center justify-center relative overflow-hidden"
+                  style={{ background:'linear-gradient(135deg,#FF6B00,#ff9020)' }}>
+                  <span className="text-6xl relative z-10">🪔</span>
                 </div>
               )}
 
-              {/* Price + CTA */}
-              <div className="flex items-center justify-between mt-6 pt-5 border-t border-gray-100">
-                <div>
-                  <p className="text-xs text-gray-400">Starting from</p>
-                  <span className="text-3xl font-bold text-orange-600" style={{ fontFamily:"'Cormorant Garamond',serif" }}>
-                    {formatINR(pricing.poojaAmount + pricing.platformFee)}
-                  </span>
-                  {pricing.platformFee > 0 && (
-                    <p className="text-[11px] text-gray-400 mt-0.5">incl. platform fee · kit extra if selected</p>
-                  )}
+              <div className="p-6">
+                {!pooja.image && (
+                  <h2 className="font-bold text-gray-900 text-2xl mb-1" style={{ fontFamily:"'Cormorant Garamond',serif" }}>{pooja.name}</h2>
+                )}
+
+                {/* Short description */}
+                {pooja.shortDesc && (
+                  <p className="text-gray-500 text-sm leading-relaxed mt-2">{pooja.shortDesc}</p>
+                )}
+
+                {/* Full description with Show More */}
+                {pooja.description && (
+                  <div className="mt-3">
+                    <p className="text-sm text-gray-600 leading-relaxed">{visibleDesc}</p>
+                    {descLong && (
+                      <button
+                        onClick={() => setShowFullDesc(v => !v)}
+                        className="mt-1.5 text-xs font-semibold text-orange-500 hover:text-orange-600 transition-colors"
+                      >
+                        {showFullDesc ? '▲ Show less' : '▼ Show more'}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Requirements */}
+                {pooja.requirements?.length > 0 && (
+                  <div className="mt-4 p-4 rounded-2xl bg-amber-50 border border-amber-100">
+                    <p className="text-xs font-bold text-amber-700 uppercase tracking-wide mb-2">Requirements / Samagri</p>
+                    <ul className="space-y-1.5">
+                      {visibleRequirements.map((r, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-1.5" />
+                          {r}
+                        </li>
+                      ))}
+                    </ul>
+                    {reqLong && (
+                      <button
+                        onClick={() => setShowAllRequirements(v => !v)}
+                        className="mt-2.5 text-xs font-semibold text-amber-600 hover:text-amber-700 transition-colors"
+                      >
+                        {showAllRequirements
+                          ? '▲ Show less'
+                          : `▼ Show all ${pooja.requirements.length} items`}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Benefits */}
+                {pooja.benefits?.length > 0 && (
+                  <div className="mt-4 p-4 rounded-2xl bg-green-50 border border-green-100">
+                    <p className="text-xs font-bold text-green-700 uppercase tracking-wide mb-2">Spiritual Benefits</p>
+                    <ul className="space-y-1.5">
+                      {visibleBenefits.map((b, i) => (
+                        <li key={i} className="text-sm text-gray-600 flex items-center gap-2">
+                          <CheckCircle size={12} className="text-green-500 shrink-0" />{b}
+                        </li>
+                      ))}
+                    </ul>
+                    {benefitsLong && (
+                      <button
+                        onClick={() => setShowAllBenefits(v => !v)}
+                        className="mt-2.5 text-xs font-semibold text-green-600 hover:text-green-700 transition-colors"
+                      >
+                        {showAllBenefits
+                          ? '▲ Show less'
+                          : `▼ Show all ${pooja.benefits.length} benefits`}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Price + CTA */}
+                <div className="flex items-center justify-between mt-6 pt-5 border-t border-gray-100">
+                  <div>
+                    <p className="text-xs text-gray-400">Starting from</p>
+                    <span className="text-3xl font-bold text-orange-600" style={{ fontFamily:"'Cormorant Garamond',serif" }}>
+                      {formatINR(pricing.poojaAmount)}
+                    </span>
+                    <p className="text-[11px] text-gray-400 mt-0.5">Platform fee & taxes shown at checkout</p>
+                  </div>
+                  <button onClick={() => setStepId(STEP_IDS.TYPE)} className="btn-primary inline-flex items-center gap-2 px-6 py-3">
+                    Book Now <ArrowRight size={16} />
+                  </button>
                 </div>
-                <button onClick={() => setStepId(STEP_IDS.TYPE)} className="btn-primary inline-flex items-center gap-2 px-6 py-3">
-                  Book Now <ArrowRight size={16} />
-                </button>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ────────────────────────────────────────────────────── */}
         {/* STEP 1: BOOKING TYPE                                   */}
@@ -869,6 +993,7 @@ export default function BookingFlow() {
             <StepHeader icon="📋" title="Your Details" desc="Ceremony location and contact info" />
 
             <div className="space-y-4">
+              {/* Name + Phone */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">Full Name *</label>
@@ -886,35 +1011,212 @@ export default function BookingFlow() {
                 </div>
               </div>
 
+              {/* ── Address Picker ── */}
               <div>
-                <label className="label">Ceremony Address *</label>
-                <textarea rows={2} className={`input resize-none ${errors.address ? 'border-red-400' : ''}`} value={userDetails.address}
-                  onChange={e => { setUserDetails(p => ({...p, address: e.target.value})); setErrors(p => ({...p, address:''})); }}
-                  placeholder="House no., street, area, landmark…" />
-                {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address}</p>}
-              </div>
+                <label className="label flex items-center gap-1.5">
+                  <MapPin size={13} className="text-orange-500" /> Ceremony Address *
+                </label>
 
-              <div>
-                <label className="label">Pincode *</label>
-                <PincodeInput
-                  value={userDetails.pincode}
-                  onChange={v => setUserDetails(p => ({...p, pincode: v}))}
-                  onFill={({ state, city, district }) => setUserDetails(p => ({...p, state, city, district}))}
-                  error={errors.pincode}
-                />
-              </div>
+                {/* Saved address cards — show if any exist */}
+                {savedAddresses.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {savedAddresses.map(addr => (
+                      <button
+                        key={addr._id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAddrId(addr._id);
+                          setWantSaveAddr(null);
+                          setUserDetails(p => ({
+                            ...p,
+                            address:  addr.address  || '',
+                            pincode:  addr.pincode  || '',
+                            state:    addr.state    || '',
+                            city:     addr.city     || '',
+                            district: addr.district || '',
+                          }));
+                        }}
+                        className={`w-full text-left rounded-2xl border-2 p-3.5 transition-all ${
+                          selectedAddrId === addr._id
+                            ? 'border-orange-400 bg-orange-50'
+                            : 'border-gray-200 bg-white hover:border-orange-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2.5">
+                            <div className={`w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 flex items-center justify-center ${
+                              selectedAddrId === addr._id ? 'border-orange-500 bg-orange-500' : 'border-gray-300'
+                            }`}>
+                              {selectedAddrId === addr._id && <span className="w-1.5 h-1.5 rounded-full bg-white block" />}
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">{addr.label}</p>
+                              <p className="text-sm text-gray-600 mt-0.5 leading-snug">{addr.address}</p>
+                              {(addr.city || addr.pincode) && (
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                  {[addr.city, addr.state, addr.pincode].filter(Boolean).join(', ')}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              API.delete(`/users/addresses/${addr._id}`).then(({ data }) => {
+                                setSavedAddresses(data.addresses || []);
+                                if (selectedAddrId === addr._id) {
+                                  const remaining = data.addresses || [];
+                                  if (remaining.length > 0) {
+                                    const next = remaining[0];
+                                    setSelectedAddrId(next._id);
+                                    setUserDetails(p => ({ ...p, address: next.address, pincode: next.pincode || '', state: next.state || '', city: next.city || '', district: next.district || '' }));
+                                  } else {
+                                    setSelectedAddrId('new');
+                                    setUserDetails(p => ({ ...p, address: '', pincode: '', state: '', city: '', district: '' }));
+                                  }
+                                }
+                              }).catch(() => toast.error('Could not delete address'));
+                            }}
+                            className="text-gray-300 hover:text-red-400 transition-colors shrink-0 mt-0.5"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </button>
+                    ))}
 
-              {userDetails.state && (
-                <div className="grid grid-cols-3 gap-2">
-                  {[['state','State'],['city','City'],['district','District']].map(([f,l]) => (
-                    <div key={f}>
-                      <label className="label text-xs">{l}</label>
-                      <input className="input bg-gray-50 text-sm" value={userDetails[f]}
-                        onChange={e => setUserDetails(p => ({...p, [f]: e.target.value}))} />
+                    {/* Add new address option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAddrId('new');
+                        setWantSaveAddr(null);
+                        setUserDetails(p => ({ ...p, address: '', pincode: '', state: '', city: '', district: '' }));
+                      }}
+                      className={`w-full text-left rounded-2xl border-2 p-3.5 transition-all flex items-center gap-2.5 ${
+                        selectedAddrId === 'new'
+                          ? 'border-orange-400 bg-orange-50'
+                          : 'border-dashed border-gray-300 bg-white hover:border-orange-300'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
+                        selectedAddrId === 'new' ? 'border-orange-500 bg-orange-500' : 'border-gray-300'
+                      }`}>
+                        {selectedAddrId === 'new'
+                          ? <span className="w-1.5 h-1.5 rounded-full bg-white block" />
+                          : <Plus size={9} className="text-gray-400" />
+                        }
+                      </div>
+                      <span className="text-sm font-medium text-gray-600">Enter a new address</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Manual address form — shown when 'new' or no saved addresses */}
+                {selectedAddrId === 'new' && (
+                  <div className="space-y-3 mt-1">
+                    <div>
+                      <textarea rows={2} className={`input resize-none ${errors.address ? 'border-red-400' : ''}`} value={userDetails.address}
+                        onChange={e => { setUserDetails(p => ({...p, address: e.target.value})); setErrors(p => ({...p, address:''})); setWantSaveAddr(null); }}
+                        placeholder="House no., street, area, landmark…" />
+                      {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address}</p>}
                     </div>
-                  ))}
-                </div>
-              )}
+
+                    <div>
+                      <label className="label">Pincode *</label>
+                      <PincodeInput
+                        value={userDetails.pincode}
+                        onChange={v => { setUserDetails(p => ({...p, pincode: v})); setWantSaveAddr(null); }}
+                        onFill={({ state, city, district }) => setUserDetails(p => ({...p, state, city, district}))}
+                        error={errors.pincode}
+                      />
+                    </div>
+
+                    {userDetails.state && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {[['state','State'],['city','City'],['district','District']].map(([f,l]) => (
+                          <div key={f}>
+                            <label className="label text-xs">{l}</label>
+                            <input className="input bg-gray-50 text-sm" value={userDetails[f]}
+                              onChange={e => setUserDetails(p => ({...p, [f]: e.target.value}))} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Save for future prompt — show once address is filled */}
+                    {userDetails.address && userDetails.pincode && wantSaveAddr === null && (
+                      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3.5">
+                        <p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5">
+                          <MapPin size={13} /> Save this address for future bookings?
+                        </p>
+                        <div className="flex items-center gap-2 mt-2.5">
+                          <input
+                            className="input text-sm flex-1"
+                            value={saveAddrLabel}
+                            onChange={e => setSaveAddrLabel(e.target.value)}
+                            placeholder="Label (e.g. Home, Office)"
+                          />
+                          <button
+                            type="button"
+                            disabled={savingAddr}
+                            onClick={async () => {
+                              setSavingAddr(true);
+                              try {
+                                const { data } = await API.post('/users/addresses', {
+                                  label:    saveAddrLabel || 'Home',
+                                  address:  userDetails.address,
+                                  pincode:  userDetails.pincode,
+                                  state:    userDetails.state,
+                                  city:     userDetails.city,
+                                  district: userDetails.district,
+                                });
+                                setSavedAddresses(data.addresses || []);
+                                const saved = (data.addresses || []).at(-1);
+                                if (saved) setSelectedAddrId(saved._id);
+                                setWantSaveAddr(true);
+                                toast.success('Address saved!');
+                              } catch {
+                                toast.error('Could not save address');
+                              } finally {
+                                setSavingAddr(false);
+                              }
+                            }}
+                            className="btn-primary text-sm px-4 py-2 whitespace-nowrap"
+                          >
+                            {savingAddr ? 'Saving…' : 'Yes, Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWantSaveAddr(false)}
+                            className="text-sm text-gray-400 hover:text-gray-600 px-2 py-2 whitespace-nowrap"
+                          >
+                            Skip
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Confirmation banners */}
+                    {wantSaveAddr === true && (
+                      <p className="text-xs text-green-600 flex items-center gap-1.5">
+                        <CheckCircle size={12} /> Address saved to your profile.
+                      </p>
+                    )}
+                    {wantSaveAddr === false && (
+                      <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                        <Info size={12} /> Address will only be used for this booking.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* If saved address is selected, show it readonly */}
+                {selectedAddrId !== 'new' && selectedAddrId && (
+                  <div className="text-xs text-gray-400 mt-1">Address auto-filled from your saved address above.</div>
+                )}
+              </div>
 
               <div>
                 <label className="label">Special Note <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
@@ -986,14 +1288,21 @@ export default function BookingFlow() {
                 <PriceLine
                   label="Pooja Service"
                   amount={pricing.poojaAmount}
-                  sub="Religious services are tax-exempt"
+                  sub="Religious services are GST-exempt"
                 />
                 {pricing.platformFee > 0 && (
                   <PriceLine
-                    label={`Platform Fee (${rates.commissionPercent}%)`}
+                    label={rates.commissionType === 'fixed' ? `Platform Fee (₹${rates.commissionFixed} fixed)` : `Platform Fee (${rates.commissionPercent}%)`}
                     amount={pricing.platformFee}
                     muted
                     sub="Convenience fee"
+                  />
+                )}
+                {pricing.platformGST > 0 && (
+                  <PriceLine
+                    label={`GST on Platform Fee (${rates.gstPercent}%)`}
+                    amount={pricing.platformGST}
+                    muted
                   />
                 )}
                 {pricing.kitAmount > 0 && (
@@ -1004,12 +1313,11 @@ export default function BookingFlow() {
                     sub="Delivered to ceremony address"
                   />
                 )}
-                {pricing.taxAmount > 0 && (
+                {pricing.kitGST > 0 && (
                   <PriceLine
-                    label={`Product Tax (${rates.gstPercent}% GST on kit)`}
-                    amount={pricing.taxAmount}
+                    label={`GST on Kit (${rates.gstPercent}%)`}
+                    amount={pricing.kitGST}
                     muted
-                    sub="Tax on kit only · pooja is tax-exempt"
                   />
                 )}
 
@@ -1021,6 +1329,120 @@ export default function BookingFlow() {
                 </div>
               </div>
             </div>
+
+            {/* ── Payment Mode Selection ─────────────────────────── */}
+            {partialConfig.enabled && (
+              <div className="rounded-2xl border border-indigo-200 overflow-hidden mb-4">
+                <div className="bg-indigo-50 px-4 py-2.5 border-b border-indigo-200">
+                  <p className="text-xs font-bold text-indigo-700 uppercase tracking-wide">Payment Option</p>
+                </div>
+                <div className="p-4 space-y-3">
+                  {/* Full payment */}
+                  <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                    paymentMode === 'FULL' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-200'
+                  }`}>
+                    <input type="radio" name="paymentMode" value="FULL" checked={paymentMode === 'FULL'}
+                      onChange={() => setPaymentMode('FULL')} className="accent-indigo-600" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-sm text-gray-800">Pay Full Amount</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Pay {formatINR(pricing.grandTotal)} now · No pending balance</p>
+                    </div>
+                    <span className="font-bold text-indigo-700 text-sm">{formatINR(pricing.grandTotal)}</span>
+                  </label>
+
+                  {/* Partial payment */}
+                  <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                    paymentMode === 'PARTIAL' ? 'border-orange-400 bg-orange-50' : 'border-gray-200 hover:border-orange-200'
+                  }`}>
+                    <input type="radio" name="paymentMode" value="PARTIAL" checked={paymentMode === 'PARTIAL'}
+                      onChange={() => {
+                        setPaymentMode('PARTIAL');
+                        // Default to first option if available
+                        const opts = partialConfig.mode === 'percentage'
+                          ? partialConfig.options.map(p => Math.round(pricing.grandTotal * p / 100))
+                          : partialConfig.options;
+                        if (opts.length > 0 && !partialAmount) setPartialAmount(opts[0]);
+                      }} className="accent-orange-500" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-sm text-gray-800">Pay Partial Amount</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Minimum ₹{partialConfig.minAmount} · Pay rest later</p>
+                    </div>
+                  </label>
+
+                  {/* Partial amount options */}
+                  {paymentMode === 'PARTIAL' && (
+                    <div className="pt-1 pl-2 space-y-3">
+                      {/* Quick options */}
+                      {partialConfig.options.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {partialConfig.options.map((opt) => {
+                            const resolvedAmt = partialConfig.mode === 'percentage'
+                              ? Math.round(pricing.grandTotal * opt / 100)
+                              : opt;
+                            const label = partialConfig.mode === 'percentage' ? `${opt}%` : formatINR(resolvedAmt);
+                            const isDisabled = resolvedAmt < partialConfig.minAmount || resolvedAmt >= pricing.grandTotal;
+                            return (
+                              <button
+                                key={opt}
+                                type="button"
+                                disabled={isDisabled}
+                                onClick={() => setPartialAmount(resolvedAmt)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                                  partialAmount === resolvedAmt
+                                    ? 'border-orange-500 bg-orange-500 text-white'
+                                    : 'border-orange-200 text-orange-700 hover:border-orange-400'
+                                }`}
+                              >
+                                {label}
+                                {partialConfig.mode === 'percentage' && <span className="ml-1 text-[10px] opacity-80">({formatINR(resolvedAmt)})</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Custom amount input */}
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">Or enter custom amount</label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-500">₹</span>
+                          <input
+                            type="number"
+                            min={partialConfig.minAmount}
+                            max={pricing.grandTotal - 1}
+                            value={partialAmount || ''}
+                            onChange={(e) => setPartialAmount(Math.max(0, parseInt(e.target.value) || 0))}
+                            className="input flex-1 text-sm"
+                            placeholder={`Min ₹${partialConfig.minAmount}`}
+                          />
+                        </div>
+                        {partialAmount > 0 && partialAmount < partialConfig.minAmount && (
+                          <p className="text-red-500 text-xs mt-1">Minimum partial payment is ₹{partialConfig.minAmount}</p>
+                        )}
+                      </div>
+
+                      {/* Summary row */}
+                      {partialAmount >= partialConfig.minAmount && partialAmount < pricing.grandTotal && (
+                        <div className="rounded-xl border border-orange-200 bg-amber-50 px-4 py-3 space-y-1.5">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Pay Now</span>
+                            <span className="font-bold text-orange-600">{formatINR(partialAmount)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Pay Later</span>
+                            <span className="font-semibold text-red-600">{formatINR(pricing.grandTotal - partialAmount)}</span>
+                          </div>
+                          <div className="border-t border-orange-200 pt-1.5 flex justify-between text-xs text-gray-500">
+                            <span>Total Booking Amount</span>
+                            <span>{formatINR(pricing.grandTotal)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Trust bar */}
             <div className="flex items-center gap-2.5 py-2.5 px-3.5 rounded-xl border border-blue-100 bg-blue-50 mb-4">
@@ -1035,7 +1457,9 @@ export default function BookingFlow() {
                   <ArrowLeft size={14} /> Edit
                 </button>
                 <button onClick={handlePay} disabled={paying} className="btn-primary flex-1 py-3.5 text-base">
-                  {paying ? 'Processing…' : `Pay ${formatINR(pricing.grandTotal)} 🙏`}
+                  {paying ? 'Processing…' : paymentMode === 'PARTIAL' && partialAmount >= partialConfig.minAmount
+                    ? `Pay ${formatINR(partialAmount)} Now 🙏`
+                    : `Pay ${formatINR(pricing.grandTotal)} 🙏`}
                 </button>
               </div>
 

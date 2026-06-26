@@ -4,6 +4,7 @@ const Order        = require('../models/Order');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum } = require('../utils/phonepe');
 const { notifyOrderPlaced } = require('../utils/notificationService');
+const { deductStock } = require('../utils/inventoryUtils');
 
 const auditLog = (req, action, targetType, target, note = '') =>
   AdminAuditLog.create({
@@ -117,7 +118,18 @@ exports.getAdminProducts = async (req, res, next) => {
     if (status === 'deleted')  { query.isDeleted = true; }
     if (search) query.name = new RegExp(search, 'i');
 
-    const products = await Product.find(query).sort({ createdAt: -1 }).limit(200);
+    const raw = await Product.find(query).sort({ createdAt: -1 }).limit(200).lean();
+
+    // Attach totalStock: sum of active-variant stocks for variant products,
+    // or the flat stock field for non-variant products.
+    const products = raw.map((p) => {
+      const activeVariants = (p.variants || []).filter((v) => v.isActive !== false);
+      const totalStock = activeVariants.length > 0
+        ? activeVariants.reduce((sum, v) => sum + (v.stock || 0), 0)
+        : (p.stock || 0);
+      return { ...p, totalStock };
+    });
+
     res.json({ success: true, products });
   } catch (err) {
     next(err);
@@ -272,7 +284,7 @@ exports.createOrder = async (req, res, next) => {
         if (!variant)
           return res.status(400).json({ success: false, message: `Variant not found for ${product.name}` });
         if (variant.stock < item.quantity)
-          return res.status(400).json({ success: false, message: `Insufficient stock for ${product.name} (${variant.quantity})` });
+          return res.status(400).json({ success: false, message: `Only ${variant.stock} unit${variant.stock !== 1 ? 's' : ''} of ${product.name} (${variant.quantity}) in stock` });
         price        = variant.price;
         variantId    = variant.variantId;
         variantLabel = variant.quantity;
@@ -324,20 +336,6 @@ exports.createOrder = async (req, res, next) => {
   }
 };
 
-// ── Shared stock deduction (used by webhook + verify) ─────────
-async function deductStock(orderItems) {
-  for (const item of orderItems) {
-    if (item.variantId) {
-      await Product.updateOne(
-        { _id: item.productId, 'variants.variantId': item.variantId },
-        { $inc: { 'variants.$.stock': -item.quantity } }
-      );
-    } else {
-      await Product.findByIdAndUpdate(item.productId, { $inc: { stock: -item.quantity } });
-    }
-  }
-}
-
 // ─── User: GET /api/marketplace/orders/verify-phonepe/:id ────
 exports.verifyPhonePeOrder = async (req, res, next) => {
   try {
@@ -353,7 +351,7 @@ exports.verifyPhonePeOrder = async (req, res, next) => {
       order.statusTimeline = order.statusTimeline || [];
       order.statusTimeline.push({ status: 'paid', timestamp: new Date(), note: 'Payment confirmed via PhonePe' });
       await order.save();
-      await deductStock(order.items);
+      await deductStock(order.items, order._id);
     }
 
     res.json({ success: result.success, state: result.state, order: result.success ? order : undefined });
@@ -383,7 +381,7 @@ exports.phonePeWebhook = async (req, res, next) => {
         order.statusTimeline = order.statusTimeline || [];
         order.statusTimeline.push({ status: 'paid', timestamp: new Date(), note: 'Payment confirmed via PhonePe webhook' });
         await order.save();
-        await deductStock(order.items);
+        await deductStock(order.items, order._id);
       }
     }
     res.json({ success: true });
@@ -400,8 +398,37 @@ exports.verifyOrder = async (req, res) => {
 // ─── User: GET /api/marketplace/orders/my ────────────────────
 exports.getMyOrders = async (req, res, next) => {
   try {
+    const Shipment = require('../models/Shipment');
     const orders = await Order.find({ userId: req.user._id }).sort({ createdAt: -1 });
-    res.json({ success: true, orders });
+    const orderIds = orders.map((o) => o._id);
+    const shipments = await Shipment.find({ orderId: { $in: orderIds } }).lean();
+    const shipmentMap = {};
+    shipments.forEach((s) => { shipmentMap[String(s.orderId)] = s; });
+    const ordersWithShipment = orders.map((o) => ({
+      ...o.toObject(),
+      shipment: shipmentMap[String(o._id)] || null,
+    }));
+    res.json({ success: true, orders: ordersWithShipment });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── User: GET /api/marketplace/orders/:id/invoice ────────────
+exports.getOrderInvoice = async (req, res, next) => {
+  try {
+    const order = await Order.findOne({ _id: req.params.id, userId: req.user._id })
+      .populate('userId', 'name email phone');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    if (!['paid', 'confirmed', 'packed', 'shipped', 'out_for_delivery', 'delivered'].includes(order.status)) {
+      return res.status(400).json({ success: false, message: 'Invoice is only available for paid orders.' });
+    }
+
+    const Shipment = require('../models/Shipment');
+    const shipment = await Shipment.findOne({ orderId: order._id }).lean();
+
+    res.json({ success: true, order: order.toObject(), shipment: shipment || null });
   } catch (err) {
     next(err);
   }

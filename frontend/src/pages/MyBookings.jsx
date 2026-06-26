@@ -1,7 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Clock, Hash, User, BookOpen, CheckCircle, Sparkles, Star } from 'lucide-react';
+import { Calendar, Clock, Hash, User, BookOpen, CheckCircle, Sparkles, Star, X, AlertTriangle, CreditCard, IndianRupee, FileText } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 import API from '../api/axios';
 import toast from 'react-hot-toast';
+
+const USER_CANCELLABLE = ['pending_payment', 'paid', 'pandit_assigned', 'pandit_accepted', 'pending_reassignment'];
+
+const PAYMENT_STATUS_META = {
+  PENDING:          { label: 'Payment Pending',  color: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-200'  },
+  PARTIALLY_PAID:   { label: 'Partially Paid',   color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200' },
+  FULLY_PAID:       { label: 'Fully Paid',       color: 'text-green-700',  bg: 'bg-green-50',  border: 'border-green-200'  },
+  REFUNDED:         { label: 'Refunded',         color: 'text-gray-700',   bg: 'bg-gray-50',   border: 'border-gray-200'   },
+  FAILED:           { label: 'Payment Failed',   color: 'text-red-700',    bg: 'bg-red-50',    border: 'border-red-200'    },
+};
 
 const STATUS_META = {
   pending_payment:      { label: 'Pending Payment',   color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200',   bar: 'bg-amber-400',   step: 0 },
@@ -136,8 +147,35 @@ function StarRating({ bookingId, onRated }) {
   );
 }
 
-function BookingCard({ b, onReload }) {
+function PayRemainingButton({ booking, onDone }) {
+  const [loading, setLoading] = useState(false);
+  const handlePay = async () => {
+    setLoading(true);
+    try {
+      const { data } = await API.post(`/bookings/${booking._id}/pay-remaining`);
+      window.location.href = data.redirectUrl;
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not initiate payment');
+      setLoading(false);
+    }
+  };
+  return (
+    <button
+      onClick={handlePay}
+      disabled={loading}
+      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60"
+      style={{ background: 'linear-gradient(135deg,#FF6B00,#ff9020)' }}
+    >
+      <CreditCard size={14} />
+      {loading ? 'Processing…' : `Pay Remaining ₹${booking.remainingAmount?.toLocaleString('en-IN')}`}
+    </button>
+  );
+}
+
+function BookingCard({ b, onReload, onCancel }) {
   const meta = STATUS_META[b.status] || STATUS_META.pending_payment;
+  const hasPartialPayment = b.paymentMode === 'PARTIAL' || b.paymentStatus === 'PARTIALLY_PAID';
+  const paymentMeta = PAYMENT_STATUS_META[b.paymentStatus] || null;
   return (
     <div className="bg-white rounded-2xl overflow-hidden transition-all duration-300 border border-gray-100"
          style={{ boxShadow: '0 2px 20px rgba(0,0,0,0.06)' }}>
@@ -168,11 +206,16 @@ function BookingCard({ b, onReload }) {
 
           <div className="flex flex-col items-end gap-2 shrink-0">
             <span style={{ fontFamily: '"Cormorant Garamond"' }} className="text-2xl font-bold text-gray-900">
-              ₹{b.amount?.toLocaleString('en-IN')}
+              ₹{(b.grandTotal || b.amount)?.toLocaleString('en-IN')}
             </span>
             <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${meta.bg} ${meta.color} ${meta.border}`}>
               {meta.label}
             </span>
+            {paymentMeta && (
+              <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${paymentMeta.bg} ${paymentMeta.color} ${paymentMeta.border}`}>
+                {paymentMeta.label}
+              </span>
+            )}
           </div>
         </div>
 
@@ -221,6 +264,44 @@ function BookingCard({ b, onReload }) {
           </div>
         )}
 
+        {/* ── Partial payment breakdown ── */}
+        {hasPartialPayment && b.status !== 'pending_payment' && (
+          <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-orange-200 flex items-center gap-2">
+              <IndianRupee size={13} className="text-orange-600" />
+              <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">Payment Breakdown</p>
+            </div>
+            <div className="px-4 py-3 space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Booking Total</span>
+                <span className="font-semibold text-gray-800">₹{(b.grandTotal || b.amount)?.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-green-700 font-medium">Amount Paid</span>
+                <span className="font-bold text-green-700">₹{(b.amountPaid || 0).toLocaleString('en-IN')}</span>
+              </div>
+              {(b.remainingAmount || 0) > 0 && (
+                <div className="flex justify-between text-sm border-t border-orange-200 pt-1.5">
+                  <span className="text-red-600 font-semibold">Remaining Balance</span>
+                  <span className="font-bold text-red-600">₹{b.remainingAmount.toLocaleString('en-IN')}</span>
+                </div>
+              )}
+              {(b.remainingAmount || 0) === 0 && b.paymentStatus === 'FULLY_PAID' && (
+                <div className="flex items-center gap-1.5 text-xs text-green-600 pt-1 border-t border-orange-200">
+                  <CheckCircle size={11} /> Fully paid — no balance due
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Pay Remaining button ── */}
+        {b.paymentStatus === 'PARTIALLY_PAID' && b.remainingAmount > 0 && b.status !== 'cancelled' && (
+          <div className="mt-3">
+            <PayRemainingButton booking={b} onDone={onReload} />
+          </div>
+        )}
+
         {/* Journey tracker + pandit */}
         <div className="mt-5 pt-4 border-t border-gray-100 flex items-end justify-between flex-wrap gap-4">
           <JourneyTracker status={b.status} />
@@ -258,6 +339,30 @@ function BookingCard({ b, onReload }) {
             )}
           </div>
         )}
+
+        {/* Action bar: Invoice + Cancel */}
+        {(USER_CANCELLABLE.includes(b.status) || !['pending_payment', 'cancelled'].includes(b.status)) && (
+          <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center gap-2 flex-wrap">
+            {!['pending_payment', 'cancelled'].includes(b.status) ? (
+              <Link
+                to={`/invoice/${b._id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
+              >
+                <FileText size={12} /> View Invoice
+              </Link>
+            ) : <span />}
+            {USER_CANCELLABLE.includes(b.status) && (
+              <button
+                onClick={() => onCancel(b)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-red-500 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+              >
+                <X size={12} /> Cancel Booking
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -281,9 +386,13 @@ function LoadingSkeleton() {
 }
 
 export default function MyBookings() {
-  const [bookings, setBookings] = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [filter,   setFilter]   = useState('');
+  const navigate = useNavigate();
+  const [bookings,        setBookings]        = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [filter,          setFilter]          = useState('');
+  const [cancelTarget,    setCancelTarget]    = useState(null);
+  const [cancelReason,    setCancelReason]    = useState('');
+  const [cancelling,      setCancelling]      = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -293,6 +402,22 @@ export default function MyBookings() {
   };
 
   useEffect(() => { load(); }, [filter]);
+
+  const handleCancelConfirm = async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    try {
+      await API.patch(`/bookings/${cancelTarget._id}/cancel`, { reason: cancelReason });
+      toast.success('Booking cancelled successfully');
+      setCancelTarget(null);
+      setCancelReason('');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not cancel booking');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   return (
     <div className="min-h-screen" style={{ background: '#FAF7F2' }}>
@@ -354,10 +479,67 @@ export default function MyBookings() {
           </div>
         ) : (
           <div className="space-y-4">
-            {bookings.map((b) => <BookingCard key={b._id} b={b} onReload={load} />)}
+            {bookings.map((b) => (
+              <BookingCard key={b._id} b={b} onReload={load} onCancel={setCancelTarget} />
+            ))}
           </div>
         )}
       </div>
+
+      {/* ── Cancel Confirmation Modal ── */}
+      {cancelTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+                <AlertTriangle size={18} className="text-red-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg" style={{ fontFamily: '"Cormorant Garamond", serif' }}>
+                  Cancel Booking
+                </h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {cancelTarget.poojaId?.name} · #{cancelTarget.bookingNumber}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to cancel this booking? This action cannot be undone.
+            </p>
+
+            <div className="mb-5">
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                Reason for cancellation <span className="text-gray-400">(optional)</span>
+              </label>
+              <textarea
+                className="w-full text-sm border border-gray-200 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300"
+                rows={3}
+                placeholder="Let us know why you're cancelling…"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setCancelTarget(null); setCancelReason(''); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Keep Booking
+              </button>
+              <button
+                onClick={handleCancelConfirm}
+                disabled={cancelling}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-colors"
+                style={{ background: '#DC2626' }}
+              >
+                {cancelling ? 'Cancelling…' : 'Yes, Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

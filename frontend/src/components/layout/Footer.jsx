@@ -35,7 +35,7 @@ export default function Footer() {
               {logoUrl
                 ? <img src={logoUrl} alt={platformName} className="h-8 w-auto object-contain" />
                 : <span className="text-2xl">🪔</span>}
-              <span className="font-serif text-2xl font-bold text-gold-400">{platformName}</span>
+              <span className="font-serif text-2xl font-bold text-gold-400"></span>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-6">
               India's most trusted spiritual platform — connecting devotees with verified pandits,

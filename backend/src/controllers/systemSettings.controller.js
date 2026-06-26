@@ -33,8 +33,36 @@ exports.updateSettings = async (req, res) => {
     SENSITIVE.forEach((f) => { if (update[f] === MASK || update[f] === '') delete update[f]; });
 
     // Coerce numeric fields
-    ['emailSmtpPort', 'platformCommissionPercent', 'platformGstPercent'].forEach((f) => {
+    ['emailSmtpPort', 'platformCommissionPercent', 'platformCommissionFixed', 'platformGstPercent',
+     'partialPaymentMinAmount',
+    ].forEach((f) => {
       if (update[f] !== undefined) update[f] = Number(update[f]);
+    });
+
+    // Coerce boolean fields
+    if (update.partialPaymentEnabled !== undefined)
+      update.partialPaymentEnabled = update.partialPaymentEnabled === true || update.partialPaymentEnabled === 'true';
+
+    // Coerce array of numbers
+    if (update.partialPaymentOptions !== undefined) {
+      if (!Array.isArray(update.partialPaymentOptions))
+        update.partialPaymentOptions = String(update.partialPaymentOptions).split(',').map(Number).filter(n => !isNaN(n) && n > 0);
+      else
+        update.partialPaymentOptions = update.partialPaymentOptions.map(Number).filter(n => !isNaN(n) && n > 0);
+      // Never persist an empty array — keep schema default
+      if (update.partialPaymentOptions.length === 0) delete update.partialPaymentOptions;
+    }
+
+    // Sanitize enum fields — remove them rather than persisting an invalid value
+    if (update.partialPaymentMode !== undefined && !['percentage', 'fixed'].includes(String(update.partialPaymentMode)))
+      delete update.partialPaymentMode;
+    if (update.platformCommissionType !== undefined && !['percent', 'fixed'].includes(String(update.platformCommissionType)))
+      delete update.platformCommissionType;
+
+    // Sanitize NaN numerics — remove rather than fail runValidators
+    ['emailSmtpPort','platformCommissionPercent','platformCommissionFixed','platformGstPercent','partialPaymentMinAmount',
+     'sessionTimeoutMinutes','otpExpiryMinutes','passwordMinLength'].forEach((f) => {
+      if (update[f] !== undefined && isNaN(update[f])) delete update[f];
     });
 
     delete update._id;

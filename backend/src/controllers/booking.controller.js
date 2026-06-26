@@ -1,55 +1,68 @@
 const crypto  = require('crypto');
 const bcrypt   = require('bcryptjs');
 
-const Booking = require('../models/Booking');
-const Pooja   = require('../models/Pooja');
-const Pandit  = require('../models/Pandit');
-const Kit     = require('../models/Kit');
-const User    = require('../models/User');
+const Booking       = require('../models/Booking');
+const PaymentLedger = require('../models/PaymentLedger');
+const Pooja         = require('../models/Pooja');
+const Pandit        = require('../models/Pandit');
+const Kit           = require('../models/Kit');
+const User          = require('../models/User');
 const AdminAuditLog = require('../models/AdminAuditLog');
 
-const { createOrder, verifySignature }                         = require('../utils/razorpay');
-const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum } = require('../utils/phonepe');
-const settings                                                 = require('../utils/settingsService');
-const { notifyBookingCreated }                                              = require('../utils/notificationService');
-const { sendBookingConfirmedEmail, sendCompletionOtpEmail, sendInvoiceEmail, sendFeedbackRequestEmail } = require('../utils/email');
+const { createOrder, verifySignature }                                        = require('../utils/razorpay');
+const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum }       = require('../utils/phonepe');
+const settings                                                                = require('../utils/settingsService');
+const { notifyBookingCreated, notifyBookingCancelled }                        = require('../utils/notificationService');
+const {
+  sendBookingConfirmedEmail,
+  sendBookingCancelledEmail,
+  sendCompletionOtpEmail,
+  sendInvoiceEmail,
+  sendFeedbackRequestEmail,
+  sendPartialPaymentEmail,
+  sendFinalPaymentEmail,
+} = require('../utils/email');
 const { notifyBookingConfirmed, sendCompletionOtpWhatsApp, sendWhatsAppForEvent } = require('../utils/whatsapp');
+const { dispatchTriggerEvent } = require('../utils/triggerDispatch');
+const { generateInvoiceForPayment } = require('../utils/invoiceGenerator');
 
-// ── Pricing engine ────────────────────────────────────────────
-// Business rule: Tax (GST) applies ONLY on kit/product price.
-// Pooja service is tax-exempt. Platform fee is also tax-exempt.
-//
-//   grandTotal = poojaAmount + platformFee + kitAmount + taxAmount
-//   taxAmount  = kitAmount * gstPercent / 100
+// ── Pricing engine ────────────────────────────────────────────────────────────
+async function calculatePricing(pooja, kitPrice = 0) {
+  const commissionType  = await settings.get('platformCommissionType', 'percent');
+  const commissionPct   = await settings.get('platformCommissionPercent', 0);
+  const commissionFixed = await settings.get('platformCommissionFixed', 0);
+  const gstPct          = await settings.get('platformGstPercent', 0);
 
-async function calculatePricing(poojaPrice, kitPrice = 0) {
-  const commissionPct = await settings.get('platformCommissionPercent', 0);
-  const gstPct        = await settings.get('platformGstPercent', 0);
-
-  const poojaAmount = Math.round(poojaPrice);
-  const platformFee = Math.round((poojaPrice * commissionPct) / 100);
-  const kitAmount   = Math.round(kitPrice);
-  const taxAmount   = Math.round((kitPrice * gstPct) / 100); // ONLY on kit
-  const grandTotal  = poojaAmount + platformFee + kitAmount + taxAmount;
+  const rawPrice    = typeof pooja === 'number' ? pooja : (pooja.salePrice || pooja.price || 0);
+  const poojaAmount = Math.round(rawPrice);
+  const platformFee = commissionType === 'fixed'
+    ? Math.round(commissionFixed)
+    : Math.round((poojaAmount * commissionPct) / 100);
+  const platformGST  = Math.round((platformFee * gstPct) / 100);
+  const kitAmount    = Math.round(kitPrice);
+  const kitGST       = Math.round((kitAmount * gstPct) / 100);
+  const grandTotal   = poojaAmount + platformFee + platformGST + kitAmount + kitGST;
 
   return {
-    // Primary accounting fields
     poojaAmount,
-    kitAmount,
     platformFee,
-    taxAmount,
+    platformGST,
+    kitAmount,
+    kitGST,
     grandTotal,
+    commissionType,
     commissionPercent: commissionPct,
+    commissionFixed,
     gstPercent:        gstPct,
-    // Legacy aliases kept for backward compatibility
-    baseAmount:       poojaAmount,
-    commissionAmount: platformFee,
-    gstAmount:        taxAmount,
-    finalAmount:      grandTotal,
+    baseAmount:        poojaAmount,
+    commissionAmount:  platformFee,
+    taxAmount:         kitGST,
+    gstAmount:         platformGST + kitGST,
+    kitGstPercent:     gstPct,
+    finalAmount:       grandTotal,
   };
 }
 
-// Resolve kit price from kitId; returns 0 if kitId is invalid or urgent
 async function resolveKitPrice(kitId, isUrgent) {
   if (isUrgent || !kitId) return { kitPrice: 0, resolvedKitId: null };
   const kit = await Kit.findById(kitId).select('discountPrice isActive');
@@ -57,18 +70,65 @@ async function resolveKitPrice(kitId, isUrgent) {
   return { kitPrice: kit.discountPrice || 0, resolvedKitId: kitId };
 }
 
-// ── Post-payment notifications ────────────────────────────────
+// ── Partial payment config ─────────────────────────────────────────────────────
+async function getPartialPaymentConfig() {
+  const enabled   = await settings.get('partialPaymentEnabled',   false);
+  const minAmount = await settings.get('partialPaymentMinAmount', 500);
+  const mode      = await settings.get('partialPaymentMode',      'fixed');
+  const options   = await settings.get('partialPaymentOptions',   [500, 1000, 1500]);
+  return { enabled, minAmount, mode, options };
+}
+
+// Validate + resolve the actual charge amount for a payment request.
+async function resolveChargeAmount(grandTotal, paymentMode, partialAmount) {
+  if (paymentMode !== 'PARTIAL') return { chargeAmount: grandTotal, paymentType: 'FULL' };
+
+  const { enabled, minAmount } = await getPartialPaymentConfig();
+  if (!enabled) throw Object.assign(new Error('Partial payment is not enabled'), { status: 400 });
+
+  const charge = Math.round(Number(partialAmount) || 0);
+  if (charge < minAmount) throw Object.assign(
+    new Error(`Minimum partial payment is ₹${minAmount}`), { status: 400 }
+  );
+  if (charge >= grandTotal) throw Object.assign(
+    new Error('Partial amount must be less than the grand total'), { status: 400 }
+  );
+  if (grandTotal - charge < 1) throw Object.assign(
+    new Error('Remaining amount cannot be zero'), { status: 400 }
+  );
+
+  return { chargeAmount: charge, paymentType: 'PARTIAL' };
+}
+
+// ── Post-payment notifications ─────────────────────────────────────────────────
 
 async function onPaymentSuccess(booking, poojaName) {
-  // In-app
   notifyBookingCreated(booking.userId, booking.bookingNumber, poojaName).catch(() => {});
-  // Email
   sendBookingConfirmedEmail(booking, poojaName).catch(() => {});
-  // WhatsApp (approved template only)
+  const ud = booking.userDetails || {};
+  const triggered = await dispatchTriggerEvent('booking_confirmed', {
+    user: { phone: ud.phone, email: ud.email, name: ud.name, id: String(booking.userId || '') },
+    components: [{ type: 'body', parameters: [
+      { type: 'text', text: ud.name || 'Customer' },
+      { type: 'text', text: String(booking.amountPaid || booking.amount || 0) },
+      { type: 'text', text: booking.bookingNumber },
+    ]}],
+    emailVars: { 'user.name': ud.name, 'booking.number': booking.bookingNumber, 'booking.amount': booking.amount, 'pooja.name': poojaName },
+  }).catch(() => false);
+  if (!triggered) notifyBookingConfirmed(booking, poojaName).catch(() => {});
+}
+
+async function onPartialPaymentSuccess(booking, poojaName) {
+  notifyBookingCreated(booking.userId, booking.bookingNumber, poojaName).catch(() => {});
+  sendPartialPaymentEmail(booking, poojaName).catch(() => {});
   notifyBookingConfirmed(booking, poojaName).catch(() => {});
 }
 
-// ── Routes ────────────────────────────────────────────────────
+async function onFinalPaymentSuccess(booking, poojaName) {
+  sendFinalPaymentEmail(booking, poojaName).catch(() => {});
+}
+
+// ── Routes ────────────────────────────────────────────────────────────────────
 
 // POST /api/bookings/create-order  (Razorpay — legacy)
 exports.createBookingOrder = async (req, res, next) => {
@@ -78,7 +138,7 @@ exports.createBookingOrder = async (req, res, next) => {
     const pooja = await Pooja.findById(poojaId);
     if (!pooja || !pooja.isActive) return res.status(404).json({ success: false, message: 'Pooja not found' });
 
-    const pricing   = await calculatePricing(pooja.price);
+    const pricing   = await calculatePricing(pooja);
     const rpOrder   = await createOrder(pricing.finalAmount, 'INR', `booking_${Date.now()}`);
 
     const booking = await Booking.create({
@@ -91,6 +151,11 @@ exports.createBookingOrder = async (req, res, next) => {
       userDetails,
       ...pricing,
       amount:          pricing.finalAmount,
+      grandTotal:      pricing.grandTotal,
+      amountPaid:      0,
+      remainingAmount: 0,
+      paymentMode:     'FULL',
+      paymentStatus:   'PENDING',
       razorpayOrderId: rpOrder.id,
       status:          'pending_payment',
       isUrgent:        isUrgent === true || isUrgent === 'true',
@@ -116,9 +181,19 @@ exports.verifyPayment = async (req, res, next) => {
 
     const booking = await Booking.findByIdAndUpdate(
       bookingId,
-      { status: 'paid', razorpayPaymentId, razorpaySignature },
+      {
+        status: 'paid', razorpayPaymentId, razorpaySignature,
+        paymentStatus: 'FULLY_PAID', amountPaid: 0, remainingAmount: 0, // legacy: backfill
+      },
       { new: true }
     ).populate('poojaId', 'name');
+
+    // Backfill amountPaid for legacy Razorpay bookings
+    if (booking && booking.amountPaid === 0) {
+      booking.amountPaid      = booking.grandTotal || booking.amount || 0;
+      booking.remainingAmount = 0;
+      await booking.save();
+    }
 
     await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
     await onPaymentSuccess(booking, booking.poojaId?.name || '');
@@ -130,7 +205,11 @@ exports.verifyPayment = async (req, res, next) => {
 // POST /api/bookings/create-phonepe-order
 exports.createPhonePeBooking = async (req, res, next) => {
   try {
-    const { poojaId, scheduledDate, scheduledTime, language, specialNote, userDetails, isUrgent, withKit, kitId } = req.body;
+    const {
+      poojaId, scheduledDate, scheduledTime, language, specialNote,
+      userDetails, isUrgent, withKit, kitId,
+      paymentMode = 'FULL', partialAmount,
+    } = req.body;
 
     const urgent = isUrgent === true || isUrgent === 'true';
 
@@ -138,9 +217,17 @@ exports.createPhonePeBooking = async (req, res, next) => {
     if (!pooja || !pooja.isActive) return res.status(404).json({ success: false, message: 'Pooja not found' });
 
     const { kitPrice, resolvedKitId } = await resolveKitPrice(kitId, urgent);
-    const pricing               = await calculatePricing(pooja.price, kitPrice);
+    const pricing               = await calculatePricing(pooja, kitPrice);
     const merchantTransactionId = `ZUT_${Date.now()}_${req.user._id.toString().slice(-6)}`;
     const clientUrl             = process.env.CLIENT_URL || 'http://localhost:3000';
+
+    const pMode = String(paymentMode).toUpperCase() === 'PARTIAL' ? 'PARTIAL' : 'FULL';
+    let chargeAmount, paymentType;
+    try {
+      ({ chargeAmount, paymentType } = await resolveChargeAmount(pricing.grandTotal, pMode, partialAmount));
+    } catch (err) {
+      return res.status(err.status || 400).json({ success: false, message: err.message });
+    }
 
     const booking = await Booking.create({
       userId:        req.user._id,
@@ -150,39 +237,54 @@ exports.createPhonePeBooking = async (req, res, next) => {
       language:      language || 'Hindi',
       specialNote,
       userDetails,
-      // New accounting fields
       poojaAmount:      pricing.poojaAmount,
       kitAmount:        pricing.kitAmount,
+      kitGST:           pricing.kitGST,
       platformFee:      pricing.platformFee,
-      taxAmount:        pricing.taxAmount,
+      platformGST:      pricing.platformGST,
+      taxAmount:        pricing.kitGST,
       grandTotal:       pricing.grandTotal,
-      // Legacy fields (backward compat)
-      baseAmount:        pricing.baseAmount,
-      commissionPercent: pricing.commissionPercent,
-      commissionAmount:  pricing.commissionAmount,
-      gstPercent:        pricing.gstPercent,
-      gstAmount:         pricing.gstAmount,
-      amount:            pricing.grandTotal,
-      // Payment
+      baseAmount:       pricing.baseAmount,
+      commissionPercent:pricing.commissionPercent,
+      commissionAmount: pricing.commissionAmount,
+      gstPercent:       pricing.gstPercent,
+      gstAmount:        pricing.gstAmount,
+      amount:           pricing.grandTotal,
+      // Payment tracking
+      paymentMode:      pMode,
+      paymentStatus:    'PENDING',
+      amountPaid:       0,
+      remainingAmount:  pricing.grandTotal,
       paymentProvider:              'phonepe',
       phonePeMerchantTransactionId: merchantTransactionId,
       status:                       'pending_payment',
-      // Booking type + kit
       bookingType: urgent ? 'urgent' : 'normal',
       isUrgent:    urgent,
       withKit:     !!resolvedKitId,
       kitId:       resolvedKitId,
     });
 
+    // Record in ledger
+    await PaymentLedger.create({
+      bookingId:             booking._id,
+      amount:                chargeAmount,
+      paymentType,
+      paymentStatus:         'PENDING',
+      merchantTransactionId,
+    });
+
     const { redirectUrl } = await createPhonePeOrder({
       merchantTransactionId,
-      amount:      pricing.grandTotal,
+      amount:      chargeAmount,
       userId:      req.user._id,
       redirectUrl: `${clientUrl}/payment-callback/${merchantTransactionId}`,
       callbackUrl: `${process.env.SERVER_URL || 'http://localhost:5000'}/api/bookings/phonepe-webhook`,
     });
 
-    res.status(201).json({ success: true, booking, redirectUrl, merchantTransactionId, pricing });
+    res.status(201).json({
+      success: true, booking, redirectUrl, merchantTransactionId, pricing,
+      paymentMode: pMode, chargeAmount, remainingAmount: pricing.grandTotal - chargeAmount,
+    });
   } catch (err) { next(err); }
 };
 
@@ -194,19 +296,156 @@ exports.verifyPhonePePayment = async (req, res, next) => {
       .populate('poojaId', 'name');
 
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-    if (booking.status === 'paid') return res.json({ success: true, booking, alreadyVerified: true });
+
+    // Already fully processed
+    if (['FULLY_PAID', 'PARTIALLY_PAID'].includes(booking.paymentStatus) && booking.status === 'paid') {
+      return res.json({ success: true, booking, alreadyVerified: true });
+    }
 
     const result = await checkPhonePeStatus(merchantTransactionId);
 
     if (result.success) {
+      // Look up ledger to know exact charged amount
+      const ledger = await PaymentLedger.findOne({ merchantTransactionId });
+      const chargedAmount = ledger?.amount ?? booking.grandTotal;
+      const remaining     = booking.grandTotal - chargedAmount;
+
       booking.status               = 'paid';
       booking.phonePeTransactionId = result.transactionId;
+      booking.amountPaid           = chargedAmount;
+      booking.remainingAmount      = remaining;
+      booking.paymentStatus        = remaining > 0 ? 'PARTIALLY_PAID' : 'FULLY_PAID';
       await booking.save();
 
+      if (ledger) {
+        ledger.paymentStatus        = 'SUCCESS';
+        ledger.phonePeTransactionId = result.transactionId;
+        ledger.paidAt               = new Date();
+        await ledger.save();
+        await generateInvoiceForPayment(booking, ledger, booking.poojaId?.name || '');
+      }
+
       await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
-      await onPaymentSuccess(booking, booking.poojaId?.name || '');
+
+      if (booking.paymentStatus === 'PARTIALLY_PAID') {
+        await onPartialPaymentSuccess(booking, booking.poojaId?.name || '');
+      } else {
+        await onPaymentSuccess(booking, booking.poojaId?.name || '');
+      }
 
       return res.json({ success: true, booking });
+    }
+
+    // Mark ledger as failed if payment failed (not pending)
+    if (result.state && result.state !== 'PENDING') {
+      const ledger = await PaymentLedger.findOne({ merchantTransactionId });
+      if (ledger && ledger.paymentStatus === 'PENDING') {
+        ledger.paymentStatus = 'FAILED';
+        await ledger.save();
+      }
+    }
+
+    res.json({ success: false, code: result.code, state: result.state, booking });
+  } catch (err) { next(err); }
+};
+
+// POST /api/bookings/:id/pay-remaining
+exports.payRemaining = async (req, res, next) => {
+  try {
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    if (String(booking.userId) !== String(req.user._id))
+      return res.status(403).json({ success: false, message: 'Access denied' });
+
+    if (booking.paymentStatus !== 'PARTIALLY_PAID')
+      return res.status(400).json({ success: false, message: 'No remaining balance on this booking' });
+
+    const remaining = booking.remainingAmount;
+    if (remaining <= 0)
+      return res.status(400).json({ success: false, message: 'Remaining amount is already zero' });
+
+    // Guard against duplicate in-flight payments
+    const inflight = await PaymentLedger.findOne({
+      bookingId:     booking._id,
+      paymentType:   'REMAINING',
+      paymentStatus: 'PENDING',
+    });
+    if (inflight) {
+      return res.status(409).json({
+        success: false,
+        message: 'A remaining payment is already in progress for this booking',
+        merchantTransactionId: inflight.merchantTransactionId,
+      });
+    }
+
+    const merchantTransactionId = `ZUT_REM_${Date.now()}_${req.user._id.toString().slice(-6)}`;
+    const clientUrl             = process.env.CLIENT_URL || 'http://localhost:3000';
+
+    await PaymentLedger.create({
+      bookingId:             booking._id,
+      amount:                remaining,
+      paymentType:           'REMAINING',
+      paymentStatus:         'PENDING',
+      merchantTransactionId,
+    });
+
+    const { redirectUrl } = await createPhonePeOrder({
+      merchantTransactionId,
+      amount:      remaining,
+      userId:      req.user._id,
+      redirectUrl: `${clientUrl}/payment-callback/${merchantTransactionId}`,
+      callbackUrl: `${process.env.SERVER_URL || 'http://localhost:5000'}/api/bookings/phonepe-webhook`,
+    });
+
+    res.json({
+      success: true,
+      redirectUrl,
+      merchantTransactionId,
+      remainingAmount: remaining,
+      poojaName: booking.poojaId?.name || '',
+    });
+  } catch (err) { next(err); }
+};
+
+// GET /api/bookings/verify-remaining/:merchantTransactionId
+exports.verifyRemainingPayment = async (req, res, next) => {
+  try {
+    const { merchantTransactionId } = req.params;
+
+    const ledger = await PaymentLedger.findOne({ merchantTransactionId, paymentType: 'REMAINING' });
+    if (!ledger) return res.status(404).json({ success: false, message: 'Payment record not found' });
+
+    const booking = await Booking.findById(ledger.bookingId).populate('poojaId', 'name');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    // Already processed
+    if (booking.paymentStatus === 'FULLY_PAID' && ledger.paymentStatus === 'SUCCESS') {
+      return res.json({ success: true, booking, alreadyVerified: true });
+    }
+
+    const result = await checkPhonePeStatus(merchantTransactionId);
+
+    if (result.success) {
+      booking.amountPaid      = booking.grandTotal;
+      booking.remainingAmount = 0;
+      booking.paymentStatus   = 'FULLY_PAID';
+      await booking.save();
+
+      ledger.paymentStatus        = 'SUCCESS';
+      ledger.phonePeTransactionId = result.transactionId;
+      ledger.paidAt               = new Date();
+      await ledger.save();
+      await generateInvoiceForPayment(booking, ledger, booking.poojaId?.name || '');
+
+      await onFinalPaymentSuccess(booking, booking.poojaId?.name || '');
+
+      return res.json({ success: true, booking });
+    }
+
+    if (result.state && result.state !== 'PENDING') {
+      ledger.paymentStatus = 'FAILED';
+      await ledger.save();
     }
 
     res.json({ success: false, code: result.code, state: result.state, booking });
@@ -225,15 +464,62 @@ exports.phonePeWebhook = async (req, res) => {
     const merchantTransactionId = decoded?.data?.merchantTransactionId;
 
     if (decoded?.code === 'PAYMENT_SUCCESS' && merchantTransactionId) {
+      const phonePeTransactionId = decoded?.data?.transactionId;
+
+      // ── Remaining payment webhook ──────────────────────────────
+      if (merchantTransactionId.startsWith('ZUT_REM_')) {
+        const ledger = await PaymentLedger.findOne({ merchantTransactionId, paymentType: 'REMAINING' });
+        if (ledger && ledger.paymentStatus !== 'SUCCESS') {
+          const booking = await Booking.findById(ledger.bookingId).populate('poojaId', 'name');
+          if (booking) {
+            booking.amountPaid      = booking.grandTotal;
+            booking.remainingAmount = 0;
+            booking.paymentStatus   = 'FULLY_PAID';
+            await booking.save();
+
+            ledger.paymentStatus        = 'SUCCESS';
+            ledger.phonePeTransactionId = phonePeTransactionId;
+            ledger.paidAt               = new Date();
+            await ledger.save();
+            await generateInvoiceForPayment(booking, ledger, booking.poojaId?.name || '');
+
+            await onFinalPaymentSuccess(booking, booking.poojaId?.name || '');
+          }
+        }
+        return res.json({ success: true });
+      }
+
+      // ── Standard single-booking webhook ───────────────────────
       const booking = await Booking.findOne({ phonePeMerchantTransactionId: merchantTransactionId })
         .populate('poojaId', 'name');
 
       if (booking && booking.status !== 'paid') {
+        const ledger        = await PaymentLedger.findOne({ merchantTransactionId });
+        const chargedAmount = ledger?.amount ?? booking.grandTotal;
+        const remaining     = booking.grandTotal - chargedAmount;
+
         booking.status               = 'paid';
-        booking.phonePeTransactionId = decoded?.data?.transactionId;
+        booking.phonePeTransactionId = phonePeTransactionId;
+        booking.amountPaid           = chargedAmount;
+        booking.remainingAmount      = remaining;
+        booking.paymentStatus        = remaining > 0 ? 'PARTIALLY_PAID' : 'FULLY_PAID';
         await booking.save();
+
+        if (ledger && ledger.paymentStatus !== 'SUCCESS') {
+          ledger.paymentStatus        = 'SUCCESS';
+          ledger.phonePeTransactionId = phonePeTransactionId;
+          ledger.paidAt               = new Date();
+          await ledger.save();
+          await generateInvoiceForPayment(booking, ledger, booking.poojaId?.name || '');
+        }
+
         await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
-        await onPaymentSuccess(booking, booking.poojaId?.name || '');
+
+        if (booking.paymentStatus === 'PARTIALLY_PAID') {
+          await onPartialPaymentSuccess(booking, booking.poojaId?.name || '');
+        } else {
+          await onPaymentSuccess(booking, booking.poojaId?.name || '');
+        }
       }
     }
 
@@ -245,12 +531,14 @@ exports.phonePeWebhook = async (req, res) => {
 exports.getPricingPreview = async (req, res, next) => {
   try {
     const { poojaId, kitId } = req.query;
-    const pooja = await Pooja.findById(poojaId).select('price name');
+    const pooja = await Pooja.findById(poojaId).select('name price salePrice mrp taxEnabled taxRate');
     if (!pooja) return res.status(404).json({ success: false, message: 'Pooja not found' });
 
     const { kitPrice } = await resolveKitPrice(kitId, false);
-    const pricing = await calculatePricing(pooja.price, kitPrice);
-    res.json({ success: true, pricing, poojaName: pooja.name });
+    const pricing      = await calculatePricing(pooja, kitPrice);
+    const ppConfig     = await getPartialPaymentConfig();
+
+    res.json({ success: true, pricing, poojaName: pooja.name, partialPayment: ppConfig });
   } catch (err) { next(err); }
 };
 
@@ -271,6 +559,76 @@ exports.getMyBookings = async (req, res, next) => {
 
     const total = await Booking.countDocuments(query);
     res.json({ success: true, bookings, total, page: +page });
+  } catch (err) { next(err); }
+};
+
+// GET /api/bookings/:id
+exports.getBookingById = async (req, res, next) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+      .populate('poojaId',  'name image price duration description')
+      .populate('panditId', 'name phone profilePhoto specializations')
+      .populate('kitId',    'name image discountPrice');
+
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (booking.userId.toString() !== req.user._id.toString() && req.user.role !== 'admin')
+      return res.status(403).json({ success: false, message: 'Access denied' });
+
+    // Fetch payment history from ledger
+    const ledger = await PaymentLedger.find({ bookingId: booking._id }).sort({ createdAt: 1 }).lean();
+
+    res.json({ success: true, booking, paymentLedger: ledger });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/bookings/:id/cancel  (user self-cancellation)
+const USER_CANCELLABLE_STATUSES = ['pending_payment', 'paid', 'pandit_assigned', 'pandit_accepted', 'pending_reassignment'];
+
+exports.cancelBooking = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    if (String(booking.userId) !== String(req.user._id))
+      return res.status(403).json({ success: false, message: 'Not authorised to cancel this booking' });
+
+    if (!USER_CANCELLABLE_STATUSES.includes(booking.status))
+      return res.status(400).json({ success: false, message: `Booking cannot be cancelled in its current state (${booking.status})` });
+
+    const prevStatus = booking.status;
+    const cancelNote = reason || '';
+    const poojaName  = booking.poojaId?.name || 'Pooja';
+    const phone      = booking.userDetails?.phone;
+
+    booking.status        = 'cancelled';
+    booking.paymentStatus = booking.amountPaid > 0 ? 'REFUNDED' : booking.paymentStatus;
+    if (cancelNote) booking.cancelReason = cancelNote;
+    booking.auditLog.push({
+      action:          'status_changed_to_cancelled',
+      performedBy:     req.user._id,
+      performedByName: req.user.name || 'Customer',
+      note:            `Cancelled by user from ${prevStatus}${cancelNote ? ': ' + cancelNote : ''}`,
+      at:              new Date(),
+    });
+    await booking.save();
+
+    notifyBookingCancelled(booking.userId, booking.bookingNumber, cancelNote).catch(() => {});
+    sendBookingCancelledEmail(booking, poojaName, cancelNote).catch(() => {});
+    const ud = booking.userDetails || {};
+    const components = [{ type: 'body', parameters: [
+      { type: 'text', text: ud.name || 'Customer' },
+      { type: 'text', text: booking.bookingNumber },
+    ]}];
+    const triggered = await dispatchTriggerEvent('booking_cancelled', {
+      user: { phone: ud.phone, email: ud.email, name: ud.name, id: String(booking.userId || '') },
+      components,
+      emailVars: { 'user.name': ud.name, 'booking.number': booking.bookingNumber, 'pooja.name': poojaName },
+    }).catch(() => false);
+    if (!triggered && phone) sendWhatsAppForEvent('booking_cancelled', phone, components).catch(() => {});
+
+    res.json({ success: true, message: 'Booking cancelled successfully', booking });
   } catch (err) { next(err); }
 };
 
@@ -309,29 +667,29 @@ exports.rateBooking = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// GET /api/bookings/:id
-exports.getBookingById = async (req, res, next) => {
-  try {
-    const booking = await Booking.findById(req.params.id)
-      .populate('poojaId',  'name image price duration description')
-      .populate('panditId', 'name phone profilePhoto specializations')
-      .populate('kitId',    'name image discountPrice');
+function computeUnlockTime(booking, pooja) {
+  const datePart = booking.scheduledDate instanceof Date
+    ? booking.scheduledDate.toISOString().slice(0, 10)
+    : String(booking.scheduledDate).slice(0, 10);
+  const timePart = booking.scheduledTime || '00:00';
+  const startMs  = new Date(`${datePart}T${timePart}:00`).getTime();
+  if (isNaN(startMs)) return null;
 
-    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-    if (booking.userId.toString() !== req.user._id.toString() && req.user.role !== 'admin')
-      return res.status(403).json({ success: false, message: 'Access denied' });
+  let durationMs = 0;
+  if (pooja?.durationValue && pooja?.durationUnit) {
+    durationMs = pooja.durationUnit === 'days'
+      ? pooja.durationValue * 24 * 60 * 60 * 1000
+      : pooja.durationValue * 60 * 60 * 1000;
+  }
+  return new Date(startMs + durationMs);
+}
 
-    res.json({ success: true, booking });
-  } catch (err) { next(err); }
-};
-
-// POST /api/bookings/:id/request-completion  — pandit requests completion, generates OTP
+// POST /api/bookings/:id/request-completion
 exports.requestCompletion = async (req, res, next) => {
   try {
-    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name durationValue durationUnit');
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
-    // Only the assigned pandit's user account may call this
     const pandit = await Pandit.findOne({ userId: req.user._id });
     if (!pandit || booking.panditId?.toString() !== pandit._id.toString())
       return res.status(403).json({ success: false, message: 'Not authorised' });
@@ -339,25 +697,31 @@ exports.requestCompletion = async (req, res, next) => {
     if (booking.status !== 'pandit_accepted')
       return res.status(400).json({ success: false, message: 'Booking must be in pandit_accepted status' });
 
-    // Generate 6-digit OTP
+    const unlockAt = computeUnlockTime(booking, booking.poojaId);
+    if (unlockAt && new Date() < unlockAt) {
+      const fmt = unlockAt.toLocaleString('en-IN', {
+        day: 'numeric', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+      });
+      return res.status(400).json({
+        success: false,
+        message: `Pooja completion can only be requested after ${fmt}. Please wait until the ceremony is over.`,
+        unlocksAt: unlockAt.toISOString(),
+      });
+    }
+
     const rawOtp    = String(Math.floor(100000 + Math.random() * 900000));
     const hashedOtp = await bcrypt.hash(rawOtp, 8);
-    const expiry    = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    const expiry    = new Date(Date.now() + 10 * 60 * 1000);
 
     booking.status                    = 'completion_requested';
     booking.completionOtp             = hashedOtp;
     booking.completionOtpExpiry       = expiry;
     booking.completionOtpRequestedAt  = new Date();
-    booking.auditLog.push({
-      action:          'completion_otp_generated',
-      performedBy:     req.user._id,
-      performedByName: req.user.name || 'Pandit',
-    });
+    booking.auditLog.push({ action: 'completion_otp_generated', performedBy: req.user._id, performedByName: req.user.name || 'Pandit' });
     await booking.save();
 
     const poojaName = booking.poojaId?.name || 'Pooja';
-
-    // Send OTP to user
     sendCompletionOtpEmail(booking, poojaName, rawOtp).catch(() => {});
     sendCompletionOtpWhatsApp(booking, poojaName, rawOtp).catch(() => {});
 
@@ -365,7 +729,7 @@ exports.requestCompletion = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// POST /api/bookings/:id/verify-completion-otp  — pandit submits OTP user shared
+// POST /api/bookings/:id/verify-completion-otp
 exports.verifyCompletionOtp = async (req, res, next) => {
   try {
     const { otp } = req.body;
@@ -390,36 +754,51 @@ exports.verifyCompletionOtp = async (req, res, next) => {
     const valid = await bcrypt.compare(String(otp), booking.completionOtp);
     if (!valid) return res.status(400).json({ success: false, message: 'Invalid OTP' });
 
-    booking.status            = 'completed';
-    booking.completedAt       = new Date();
-    booking.completionOtp     = null;
+    booking.status              = 'completed';
+    booking.completedAt         = new Date();
+    booking.completionOtp       = null;
     booking.completionOtpExpiry = null;
-    booking.verifiedByName    = req.user.name || 'Pandit';
-    booking.verifiedAt        = new Date();
-    booking.payout.status     = 'pending';
-    booking.auditLog.push({
-      action:          'otp_verified_completion',
-      performedBy:     req.user._id,
-      performedByName: req.user.name || 'Pandit',
-    });
+    booking.verifiedByName      = req.user.name || 'Pandit';
+    booking.verifiedAt          = new Date();
+    booking.payout.status       = 'pending';
+    booking.auditLog.push({ action: 'otp_verified_completion', performedBy: req.user._id, performedByName: req.user.name || 'Pandit' });
     await booking.save();
 
-    // Audit log
     AdminAuditLog.create({
-      action:          'booking_completed_otp',
-      performedBy:     req.user._id,
-      performedByName: req.user.name || 'Pandit',
-      targetId:        booking._id,
-      targetType:      'booking',
-      targetName:      booking.bookingNumber,
+      action: 'booking_completed_otp', performedBy: req.user._id, performedByName: req.user.name || 'Pandit',
+      targetId: booking._id, targetType: 'booking', targetName: booking.bookingNumber,
     }).catch(() => {});
 
-    // Invoice + feedback email; mark invoiceSent so cron doesn't double-send
     const completedPoojaName = booking.poojaId?.name || 'Pooja';
     sendInvoiceEmail(booking, completedPoojaName).catch(() => {});
     sendFeedbackRequestEmail(booking, completedPoojaName).catch(() => {});
     Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
 
     res.json({ success: true, message: 'Booking completed successfully', booking });
+  } catch (err) { next(err); }
+};
+
+// GET /api/bookings/:id/invoice  — full invoice data with kit items populated
+exports.getInvoiceData = async (req, res, next) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+      .populate('poojaId',  'name category description duration')
+      .populate('panditId', 'name phone profilePhoto')
+      .populate({
+        path: 'kitId',
+        select: 'name description discountPrice taxRate items',
+        populate: { path: 'items.productId', select: 'name price' },
+      });
+
+    if (!booking)
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (booking.userId.toString() !== req.user._id.toString() && req.user.role !== 'admin')
+      return res.status(403).json({ success: false, message: 'Access denied' });
+
+    const paymentLedger = await PaymentLedger
+      .find({ bookingId: booking._id, paymentStatus: 'SUCCESS' })
+      .sort({ createdAt: 1 }).lean();
+
+    res.json({ success: true, booking, paymentLedger });
   } catch (err) { next(err); }
 };

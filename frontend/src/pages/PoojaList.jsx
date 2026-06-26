@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { Search, Clock, Star } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Search, Clock, Star, CheckCircle } from 'lucide-react';
 import API from '../api/axios';
 import { formatDuration } from '../utils/durationFormatter';
 
 export default function PoojaList() {
   const { categorySlug } = useParams();
+  const navigate = useNavigate();
   const [poojas,   setPoojas]   = useState([]);
   const [category, setCategory] = useState(null);
   const [loading,  setLoading]  = useState(true);
@@ -65,7 +66,11 @@ export default function PoojaList() {
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {poojas.map((p) => (
-              <div key={p._id} className="card group">
+              <div
+                key={p._id}
+                onClick={() => navigate(`/book/${p.slug}`)}
+                className="card group cursor-pointer hover:shadow-lg transition-shadow duration-300"
+              >
                 <div className="h-48 bg-saffron-100 overflow-hidden relative">
                   {p.image
                     ? <img src={`http://localhost:5000/${p.image}`} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
@@ -85,12 +90,41 @@ export default function PoojaList() {
                     )}
                   </div>
                   <p className="text-sm text-gray-500 line-clamp-2 mb-3">{p.shortDesc}</p>
-                  <div className="flex items-center gap-4 text-xs text-gray-400 mb-4">
+                  <div className="flex items-center gap-4 text-xs text-gray-400 mb-3">
                     {formatDuration(p) && <span className="flex items-center gap-1"><Clock size={12} /> {formatDuration(p)}</span>}
                   </div>
+
+                  {p.requirements?.length > 0 && (
+                    <div className="mb-4 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                      <p className="text-xs font-bold text-amber-700 mb-1.5 uppercase tracking-wide">Requirements</p>
+                      <ul className="space-y-1">
+                        {p.requirements.slice(0, 4).map((r, i) => (
+                          <li key={i} className="flex items-center gap-1.5 text-xs text-gray-600">
+                            <CheckCircle size={10} className="text-amber-500 shrink-0" /> {r}
+                          </li>
+                        ))}
+                        {p.requirements.length > 4 && (
+                          <li className="text-xs text-amber-600 font-medium">+{p.requirements.length - 4} more…</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between">
-                    <span className="text-xl font-bold text-saffron-600">₹{p.price.toLocaleString('en-IN')}</span>
-                    <Link to={`/book/${p.slug}`} className="btn-primary text-sm px-4 py-2">Book Now</Link>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xl font-bold text-saffron-600">
+                        ₹{(p.salePrice || p.price).toLocaleString('en-IN')}
+                      </span>
+                      {p.mrp && p.mrp > (p.salePrice || p.price) && (
+                        <span className="text-sm text-gray-400 line-through">₹{p.mrp.toLocaleString('en-IN')}</span>
+                      )}
+                    </div>
+                    <span
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-block"
+                    >
+                      <Link to={`/book/${p.slug}`} className="btn-primary text-sm px-4 py-2">Book Now</Link>
+                    </span>
                   </div>
                 </div>
               </div>

@@ -5,6 +5,8 @@ import { Link, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { useNotifications } from '../../context/NotificationContext';
 import ThemeToggle from '../ui/ThemeSwitcher';
+import { useAuth } from '../../context/AuthContext';
+import ZutsavAIWidget from '../ai/ZutsavAIWidget';
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -92,6 +94,8 @@ function TopBar({ onMenuClick }) {
 
 export default function DashboardLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   return (
     <div
@@ -122,6 +126,9 @@ export default function DashboardLayout({ children }) {
           </motion.div>
         </main>
       </div>
+
+      {/* AI widget — only for regular users and pandits, never for admin */}
+      {!isAdmin && <ZutsavAIWidget />}
     </div>
   );
 }

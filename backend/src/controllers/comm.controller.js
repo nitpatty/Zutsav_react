@@ -209,9 +209,14 @@ exports.listTriggerRules = async (req, res) => {
 exports.updateTriggerRule = async (req, res) => {
   try {
     const { channels, isActive, description } = req.body;
+    const cleanChannels = (channels || []).map((ch) => ({
+      ...ch,
+      emailTemplateId:      ch.emailTemplateId || null,
+      whatsAppTemplateName: ch.whatsAppTemplateName || '',
+    }));
     const rule = await TriggerRule.findByIdAndUpdate(
       req.params.id,
-      { channels, isActive, description },
+      { channels: cleanChannels, isActive, description },
       { new: true, runValidators: true }
     ).populate('channels.emailTemplateId', 'name slug');
     if (!rule) return err(res, 'Trigger rule not found', 404);

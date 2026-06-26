@@ -5,6 +5,7 @@ import {
   Clock, Star, User, FileText, ShieldCheck,
   BadgeCheck, AlertTriangle, MapPin, BarChart3, Sun,
 } from 'lucide-react';
+import ZutsavLoader from '../components/shared/ZutsavLoader';
 import { Link, useSearchParams, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
@@ -267,6 +268,73 @@ function DashboardHome({ pandit, reload }) {
         </div>
       </div>
 
+      {/* ── Action Required (shown at top, conditional) ── */}
+      {showActionRequired && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+          <h2 className="font-bold text-amber-900 flex items-center gap-2 mb-3">
+            <AlertTriangle size={17} className="text-amber-600" />
+            Action Required
+          </h2>
+          <div className="space-y-2">
+            {pendingActions.length > 0 && (
+              <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-amber-100">
+                <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center shrink-0">
+                  <Clock size={15} className="text-purple-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">Pending Booking Response</p>
+                  <p className="text-xs text-gray-500">
+                    {pendingActions.length} booking{pendingActions.length !== 1 ? 's' : ''} awaiting your accept/reject
+                  </p>
+                </div>
+                <Link to="/pandit/dashboard?tab=bookings"
+                  className="text-xs font-bold text-purple-600 hover:underline shrink-0">
+                  Respond →
+                </Link>
+              </div>
+            )}
+            {profileIncomplete && (
+              <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-amber-100">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                  <User size={15} className="text-amber-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">Complete Your Profile</p>
+                  <p className="text-xs text-gray-500">
+                    Profile is {calcCompletion(pandit)}% complete. Reach 70% to receive bookings.
+                  </p>
+                </div>
+                <Link to="/pandit/profile"
+                  className="text-xs font-bold text-amber-600 hover:underline shrink-0">
+                  Complete →
+                </Link>
+              </div>
+            )}
+            {kycPending && (
+              <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-amber-100">
+                <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                  <ShieldCheck size={15} className="text-red-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">
+                    {pandit.kycStatus === 'reupload_required' ? 'Document Re-upload Required' : 'KYC Pending'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {pandit.kycStatus === 'reupload_required'
+                      ? pandit.kycRejectionReason || 'Please re-upload your KYC documents.'
+                      : 'Submit KYC documents to start receiving bookings.'}
+                  </p>
+                </div>
+                <Link to="/pandit/profile"
+                  className="text-xs font-bold text-red-500 hover:underline shrink-0">
+                  {pandit.kycStatus === 'reupload_required' ? 'Re-upload →' : 'Submit →'}
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── SECTION 2: Quick Stats Cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
@@ -381,73 +449,6 @@ function DashboardHome({ pandit, reload }) {
           </div>
         )}
       </div>
-
-      {/* ── SECTION 5: Action Required (conditional) ── */}
-      {showActionRequired && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-          <h2 className="font-bold text-amber-900 flex items-center gap-2 mb-3">
-            <AlertTriangle size={17} className="text-amber-600" />
-            Action Required
-          </h2>
-          <div className="space-y-2">
-            {pendingActions.length > 0 && (
-              <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-amber-100">
-                <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center shrink-0">
-                  <Clock size={15} className="text-purple-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800">Pending Booking Response</p>
-                  <p className="text-xs text-gray-500">
-                    {pendingActions.length} booking{pendingActions.length !== 1 ? 's' : ''} awaiting your accept/reject
-                  </p>
-                </div>
-                <Link to="/pandit/dashboard?tab=bookings"
-                  className="text-xs font-bold text-purple-600 hover:underline shrink-0">
-                  Respond →
-                </Link>
-              </div>
-            )}
-            {profileIncomplete && (
-              <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-amber-100">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
-                  <User size={15} className="text-amber-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800">Complete Your Profile</p>
-                  <p className="text-xs text-gray-500">
-                    Profile is {calcCompletion(pandit)}% complete. Reach 70% to receive bookings.
-                  </p>
-                </div>
-                <Link to="/pandit/profile"
-                  className="text-xs font-bold text-amber-600 hover:underline shrink-0">
-                  Complete →
-                </Link>
-              </div>
-            )}
-            {kycPending && (
-              <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-amber-100">
-                <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-                  <ShieldCheck size={15} className="text-red-500" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800">
-                    {pandit.kycStatus === 'reupload_required' ? 'Document Re-upload Required' : 'KYC Pending'}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {pandit.kycStatus === 'reupload_required'
-                      ? pandit.kycRejectionReason || 'Please re-upload your KYC documents.'
-                      : 'Submit KYC documents to start receiving bookings.'}
-                  </p>
-                </div>
-                <Link to="/pandit/profile"
-                  className="text-xs font-bold text-red-500 hover:underline shrink-0">
-                  {pandit.kycStatus === 'reupload_required' ? 'Re-upload →' : 'Submit →'}
-                </Link>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ── SECTION 6: Recent Earnings ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -974,7 +975,7 @@ function EarningsTab({ pandit }) {
   const fmt     = (n) => `₹${(n || 0).toLocaleString('en-IN')}`;
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
-  useEffect(() => {
+  const loadEarnings = useCallback(() => {
     setLoading(true);
     Promise.all([
       API.get('/pandits/me/payouts/stats'),
@@ -989,6 +990,8 @@ function EarningsTab({ pandit }) {
     }).catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadEarnings(); }, [loadEarnings]);
 
   const StarDisplay = ({ value }) => (
     <span className="inline-flex gap-0.5">
@@ -1007,7 +1010,12 @@ function EarningsTab({ pandit }) {
 
   return (
     <div className="animate-fade-in space-y-5">
-      <h2 className="text-xl font-bold" style={{ color: '#1B1F3B', fontFamily: "'Cormorant Garamond', serif" }}>My Earnings</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold" style={{ color: '#1B1F3B', fontFamily: "'Cormorant Garamond', serif" }}>My Earnings</h2>
+        <button onClick={loadEarnings} disabled={loading} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors">
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
+        </button>
+      </div>
 
       {/* Stats cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1183,11 +1191,7 @@ export default function PanditDashboard() {
   // Redirect legacy profile tab URL to the dedicated profile page
   if (tab === 'profile') return <Navigate to="/pandit/profile" replace />;
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="animate-spin text-4xl">🪔</div>
-    </div>
-  );
+  if (loading) return <ZutsavLoader size={60} />;
 
   if (!pandit) return (
     <div className="flex items-center justify-center py-24 text-center px-4" style={{ color: 'var(--t-muted)' }}>

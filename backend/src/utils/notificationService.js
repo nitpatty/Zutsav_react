@@ -274,6 +274,24 @@ const notifyPayoutReleased = (panditUserId, amount, batchId, bookingCount) =>
     data:    { batchId, amount, bookingCount },
   });
 
+const notifyOrderShipmentCreated = (userId, orderNumber, courierName, trackingNumber) =>
+  createNotification({
+    userId,
+    type:    'order_shipped',
+    title:   'Order Shipped! 🚚',
+    message: `Your order #${orderNumber} has been shipped via ${courierName || 'courier'}${trackingNumber ? `. Tracking: ${trackingNumber}` : ''}.`,
+    data:    { orderNumber, courierName, trackingNumber },
+  });
+
+const notifyOrderShipmentStatusChanged = (userId, orderNumber, statusLabel) =>
+  createNotification({
+    userId,
+    type:    'shipment_update',
+    title:   `Shipment Update: ${statusLabel}`,
+    message: `Your order #${orderNumber} — ${statusLabel}.`,
+    data:    { orderNumber, statusLabel },
+  });
+
 // ── Kit delivery notifications ───────────────────────────────────
 
 const notifyKitShipped = (userId, bookingNumber, courier, trackingId) =>
@@ -292,6 +310,26 @@ const notifyKitDelivered = (userId, bookingNumber) =>
     title:   'Samagri Kit Delivered!',
     message: `Your pooja samagri kit for booking #${bookingNumber} has been delivered. You are all set for your pooja!`,
     data:    { bookingNumber },
+  });
+
+// ── Delivery OTP notifications ───────────────────────────────────
+
+const notifyDeliveryOTPSent = (userId, orderNumber) =>
+  createNotification({
+    userId,
+    type:    'delivery_otp_sent',
+    title:   'Delivery OTP Sent',
+    message: `Your delivery OTP for order #${orderNumber} has been sent to your registered WhatsApp / email. Share it only after receiving your order.`,
+    data:    { orderNumber },
+  });
+
+const notifyDeliveryOTPVerified = (userId, orderNumber) =>
+  createNotification({
+    userId,
+    type:    'order_delivered',
+    title:   'Order Delivered! 🎉',
+    message: `Your order #${orderNumber} has been delivered successfully. Thank you for shopping with Zutsav!`,
+    data:    { orderNumber },
   });
 
 // ── Account deletion workflow ────────────────────────────────────
@@ -325,6 +363,8 @@ module.exports = {
   setIO,
   createNotification,
   notifyUserRegistered,
+  notifyOrderShipmentCreated,
+  notifyOrderShipmentStatusChanged,
   notifyPanditRegistered,
   notifyPanditApproved,
   notifyBookingCreated,
@@ -356,4 +396,6 @@ module.exports = {
   notifyDeletionCancelled,
   notifyAccountRestored,
   notifyPayoutReleased,
+  notifyDeliveryOTPSent,
+  notifyDeliveryOTPVerified,
 };

@@ -147,7 +147,8 @@ exports.createPooja = async (req, res, next) => {
   try {
     const {
       name, categoryId, categoryIds: rawCatIds,
-      description, shortDesc, price,
+      description, shortDesc, price, mrp, salePrice,
+      taxEnabled, taxRate,
       durationValue, durationUnit,
       requirements, benefits, languages,
     } = req.body;
@@ -168,6 +169,10 @@ exports.createPooja = async (req, res, next) => {
       description,
       shortDesc,
       price:         +price,
+      mrp:           mrp       ? +mrp       : undefined,
+      salePrice:     salePrice ? +salePrice : undefined,
+      taxEnabled:    taxEnabled === 'true' || taxEnabled === true,
+      taxRate:       taxRate   ? +taxRate   : 0,
       durationValue: durationValue ? +durationValue : undefined,
       durationUnit:  durationUnit  || undefined,
       image,
@@ -203,7 +208,11 @@ exports.updatePooja = async (req, res, next) => {
       }
     });
     if (updates.durationValue !== undefined) updates.durationValue = +updates.durationValue || undefined;
-    if (updates.price !== undefined)         updates.price         = +updates.price;
+    if (updates.price     !== undefined) updates.price     = +updates.price;
+    if (updates.mrp       !== undefined) updates.mrp       = updates.mrp ? +updates.mrp : undefined;
+    if (updates.salePrice !== undefined) updates.salePrice = updates.salePrice ? +updates.salePrice : undefined;
+    if (updates.taxRate   !== undefined) updates.taxRate   = +updates.taxRate || 0;
+    if (updates.taxEnabled !== undefined) updates.taxEnabled = updates.taxEnabled === 'true' || updates.taxEnabled === true;
 
     // Handle multi-category update (fix: do NOT delete categoryIds after setting)
     if (updates.categoryIds !== undefined || updates.categoryId !== undefined) {

@@ -10,6 +10,10 @@ const poojaSchema = new mongoose.Schema({
   description: { type: String },
   shortDesc:   { type: String },
   price:        { type: Number, required: true, min: 0 },
+  mrp:          { type: Number, min: 0 },            // original/crossed-out price (display only)
+  salePrice:    { type: Number, min: 0 },            // effective booking price (overrides price if set)
+  taxEnabled:   { type: Boolean, default: false },   // apply GST on pooja price
+  taxRate:      { type: Number, min: 0, max: 100, default: 0 }, // GST % (e.g. 18)
   durationValue:{ type: Number, min: 1, max: 30 },
   durationUnit: { type: String, enum: ['hours', 'days'] },
   duration:     { type: String },           // legacy free-text, kept for backward compat

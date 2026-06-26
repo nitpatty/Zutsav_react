@@ -4,23 +4,35 @@ const Kit      = require('../models/Kit');
 const Product  = require('../models/Product');
 const Order    = require('../models/Order');
 const settings = require('../utils/settingsService');
+const { deductStock } = require('../utils/inventoryUtils');
 const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum } = require('../utils/phonepe');
 const { notifyBookingCreated } = require('../utils/notificationService');
 const { sendBookingConfirmedEmail } = require('../utils/email');
 const { notifyBookingConfirmed }    = require('../utils/whatsapp');
 
-// Reuse same pricing logic as booking.controller (tax only on kit)
-async function computePricing(poojaPrice, kitPrice = 0) {
-  const commissionPct = await settings.get('platformCommissionPercent', 0);
-  const gstPct        = await settings.get('platformGstPercent', 0);
+// Mirrors calculatePricing in booking.controller — accepts Pooja document or plain number
+async function computePricing(pooja, kitPrice = 0) {
+  const commissionType  = await settings.get('platformCommissionType', 'percent');
+  const commissionPct   = await settings.get('platformCommissionPercent', 0);
+  const commissionFixed = await settings.get('platformCommissionFixed', 0);
+  const gstPct          = await settings.get('platformGstPercent', 0);
 
-  const poojaAmount = Math.round(poojaPrice);
-  const platformFee = Math.round((poojaPrice * commissionPct) / 100);
-  const kitAmount   = Math.round(kitPrice);
-  const taxAmount   = Math.round((kitPrice * gstPct) / 100);
-  const grandTotal  = poojaAmount + platformFee + kitAmount + taxAmount;
+  const rawPrice    = typeof pooja === 'number' ? pooja : (pooja.salePrice || pooja.price || 0);
+  const poojaAmount = Math.round(rawPrice);
+  const platformFee = commissionType === 'fixed'
+    ? Math.round(commissionFixed)
+    : Math.round((poojaAmount * commissionPct) / 100);
+  const platformGST  = Math.round((platformFee * gstPct) / 100);
+  const kitAmount    = Math.round(kitPrice);
+  const kitGST       = Math.round((kitAmount * gstPct) / 100);
+  const grandTotal   = poojaAmount + platformFee + platformGST + kitAmount + kitGST;
 
-  return { poojaAmount, kitAmount, platformFee, taxAmount, grandTotal, commissionPercent: commissionPct, gstPercent: gstPct };
+  return {
+    poojaAmount, platformFee, platformGST, kitAmount, kitGST, grandTotal,
+    commissionType, commissionPercent: commissionPct, commissionFixed, gstPercent: gstPct,
+    taxAmount: kitGST, baseAmount: poojaAmount, commissionAmount: platformFee,
+    gstAmount: platformGST + kitGST,
+  };
 }
 
 // POST /api/checkout/cart
@@ -30,7 +42,7 @@ async function computePricing(poojaPrice, kitPrice = 0) {
 //   products: [{ productId, variantId, quantity }]  (optional)
 exports.cartCheckout = async (req, res, next) => {
   try {
-    const { bookings: bookingItems = [], products: productItems = [] } = req.body;
+    const { bookings: bookingItems = [], products: productItems = [], shippingAddress } = req.body;
 
     if (bookingItems.length === 0 && productItems.length === 0) {
       return res.status(400).json({ success: false, message: 'Cart is empty' });
@@ -48,7 +60,7 @@ exports.cartCheckout = async (req, res, next) => {
       const { poojaId, scheduledDate, scheduledTime, language, specialNote, userDetails, isUrgent, withKit, kitId } = item;
       const urgent = isUrgent === true || isUrgent === 'true';
 
-      const pooja = await Pooja.findById(poojaId).select('price name isActive');
+      const pooja = await Pooja.findById(poojaId).select('name price salePrice taxEnabled taxRate isActive');
       if (!pooja || !pooja.isActive) continue;
 
       let kitPrice = 0;
@@ -58,7 +70,7 @@ exports.cartCheckout = async (req, res, next) => {
         if (kit && kit.isActive) { kitPrice = kit.discountPrice || 0; resolvedKitId = kitId; }
       }
 
-      const pricing = await computePricing(pooja.price, kitPrice);
+      const pricing = await computePricing(pooja, kitPrice);
 
       const booking = await Booking.create({
         userId:        req.user._id,
@@ -70,15 +82,21 @@ exports.cartCheckout = async (req, res, next) => {
         userDetails,
         poojaAmount:      pricing.poojaAmount,
         kitAmount:        pricing.kitAmount,
+        kitGST:           pricing.kitGST,
         platformFee:      pricing.platformFee,
-        taxAmount:        pricing.taxAmount,
+        platformGST:      pricing.platformGST,
+        taxAmount:        pricing.kitGST,
         grandTotal:       pricing.grandTotal,
         baseAmount:        pricing.poojaAmount,
         commissionPercent: pricing.commissionPercent,
         commissionAmount:  pricing.platformFee,
         gstPercent:        pricing.gstPercent,
-        gstAmount:         pricing.taxAmount,
+        gstAmount:         pricing.gstAmount,
         amount:            pricing.grandTotal,
+        paymentMode:       'FULL',
+        paymentStatus:     'PENDING',
+        amountPaid:        0,
+        remainingAmount:   pricing.grandTotal,
         paymentProvider:              'phonepe',
         phonePeMerchantTransactionId: merchantTransactionId,
         status:                       'pending_payment',
@@ -97,16 +115,29 @@ exports.cartCheckout = async (req, res, next) => {
     let productTotal = 0;
 
     if (productItems.length > 0) {
-      const gstPct = await settings.get('platformGstPercent', 0);
       const orderItems = [];
 
       for (const pi of productItems) {
-        const product = await Product.findById(pi.productId).select('name price salePrice images variants isActive');
+        const product = await Product.findById(pi.productId).select('name price salePrice stock images variants taxRate isActive');
         if (!product || !product.isActive) continue;
 
-        const unitPrice = product.salePrice || product.price;
         const qty = Math.max(1, parseInt(pi.quantity) || 1);
-        const itemTax = Math.round((unitPrice * qty * gstPct) / 100);
+        let unitPrice = product.salePrice ?? product.price ?? 0;
+
+        if (pi.variantId) {
+          const variant = product.variants?.find(v => v.variantId === pi.variantId);
+          if (!variant || variant.isActive === false)
+            return res.status(400).json({ success: false, message: `Selected variant not available for ${product.name}` });
+          if (variant.stock < qty)
+            return res.status(400).json({ success: false, message: `Only ${variant.stock} unit${variant.stock !== 1 ? 's' : ''} of ${product.name} (${variant.quantity}) in stock` });
+          unitPrice = variant.salePrice ?? variant.price ?? unitPrice;
+        } else {
+          if (product.stock < qty)
+            return res.status(400).json({ success: false, message: `Only ${product.stock} unit${product.stock !== 1 ? 's' : ''} of ${product.name} in stock` });
+        }
+        unitPrice = unitPrice || 0;
+        const productTaxRate = product.taxRate || 0;
+        const itemTax = Math.round((unitPrice * qty * productTaxRate) / 100);
         const itemTotal = unitPrice * qty + itemTax;
 
         orderItems.push({
@@ -115,6 +146,7 @@ exports.cartCheckout = async (req, res, next) => {
           name:      product.name,
           price:     unitPrice,
           quantity:  qty,
+          taxRate:   productTaxRate,
           taxAmount: itemTax,
           total:     itemTotal,
         });
@@ -122,6 +154,7 @@ exports.cartCheckout = async (req, res, next) => {
       }
 
       if (orderItems.length > 0) {
+        const resolvedShipping = shippingAddress || bookingItems[0]?.userDetails || {};
         createdOrder = await Order.create({
           userId:      req.user._id,
           items:       orderItems,
@@ -129,7 +162,7 @@ exports.cartCheckout = async (req, res, next) => {
           phonePeMerchantTransactionId: merchantTransactionId,
           status:      'pending_payment',
           paymentProvider: 'phonepe',
-          userDetails: bookingItems[0]?.userDetails || {},
+          shippingAddress: resolvedShipping,
         });
       }
     }
@@ -178,6 +211,9 @@ exports.verifyCartPayment = async (req, res, next) => {
         if (booking.status !== 'paid') {
           booking.status               = 'paid';
           booking.phonePeTransactionId = result.transactionId;
+          booking.paymentStatus        = 'FULLY_PAID';
+          booking.amountPaid           = booking.grandTotal || booking.amount || 0;
+          booking.remainingAmount      = 0;
           await booking.save();
           await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
           notifyBookingCreated(booking.userId, booking.bookingNumber, booking.poojaId?.name || '').catch(() => {});
@@ -189,6 +225,7 @@ exports.verifyCartPayment = async (req, res, next) => {
         order.status               = 'paid';
         order.phonePeTransactionId = result.transactionId;
         await order.save();
+        await deductStock(order.items, order._id);
       }
       return res.json({ success: true, bookings, order });
     }
@@ -217,6 +254,9 @@ exports.cartWebhook = async (req, res) => {
         if (booking.status !== 'paid') {
           booking.status               = 'paid';
           booking.phonePeTransactionId = decoded?.data?.transactionId;
+          booking.paymentStatus        = 'FULLY_PAID';
+          booking.amountPaid           = booking.grandTotal || booking.amount || 0;
+          booking.remainingAmount      = 0;
           await booking.save();
           await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
           notifyBookingCreated(booking.userId, booking.bookingNumber, booking.poojaId?.name || '').catch(() => {});
@@ -228,6 +268,7 @@ exports.cartWebhook = async (req, res) => {
         order.status               = 'paid';
         order.phonePeTransactionId = decoded?.data?.transactionId;
         await order.save();
+        deductStock(order.items, order._id).catch(() => {});
       }
     }
 

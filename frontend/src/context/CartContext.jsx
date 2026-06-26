@@ -39,10 +39,13 @@ export function CartProvider({ children }) {
   }, []);
 
   // ── Marketplace product item ───────────────────────────────
-  const addProduct = useCallback(({ product, variantId, variantLabel, quantity = 1 }) => {
+  // priceOverride lets callers pass variant-specific price instead of product-level price
+  const addProduct = useCallback(({ product, variantId, variantLabel, quantity = 1, price: priceOverride, taxRate: taxRateOverride }) => {
     setItems((prev) => {
       const key = `${product._id}::${variantId || ''}`;
       const existing = prev.find((i) => i.type === 'PRODUCT' && i.key === key);
+      const itemPrice = priceOverride ?? (product.salePrice || product.price);
+      const itemTaxRate = taxRateOverride ?? product.taxRate ?? 0;
       if (existing) {
         return prev.map((i) => i.key === key ? { ...i, quantity: i.quantity + quantity } : i);
       }
@@ -55,7 +58,8 @@ export function CartProvider({ children }) {
           productId:    product._id,
           name:         product.name,
           image:        product.images?.[0] || null,
-          price:        product.salePrice || product.price,
+          price:        itemPrice,
+          taxRate:      itemTaxRate,
           variantId:    variantId    || null,
           variantLabel: variantLabel || null,
           quantity,
@@ -80,9 +84,11 @@ export function CartProvider({ children }) {
   const productItems = items.filter((i) => i.type === 'PRODUCT');
   const cartCount    = items.length;
 
-  const poojaTotal   = poojaItems.reduce((s, i) => s + (i.pricing?.grandTotal || 0), 0);
-  const productTotal = productItems.reduce((s, i) => s + i.price * i.quantity, 0);
-  const grandTotal   = poojaTotal + productTotal;
+  const poojaTotal        = poojaItems.reduce((s, i) => s + (i.pricing?.grandTotal || 0), 0);
+  const productSubtotal   = productItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  const productTaxTotal   = productItems.reduce((s, i) => s + Math.round(i.price * i.quantity * (i.taxRate || 0) / 100), 0);
+  const productTotal      = productSubtotal + productTaxTotal;
+  const grandTotal        = poojaTotal + productTotal;
 
   const cartType = poojaItems.length > 0 && productItems.length > 0
     ? 'MIXED'
@@ -96,6 +102,8 @@ export function CartProvider({ children }) {
       cartCount,
       cartType,
       poojaTotal,
+      productSubtotal,
+      productTaxTotal,
       productTotal,
       grandTotal,
       addPooja,

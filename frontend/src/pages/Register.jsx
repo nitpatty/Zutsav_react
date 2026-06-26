@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, CheckCircle, Mail, MessageCircle, Upload, X, Gift } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import PincodeInput from '../components/shared/PincodeInput';
 import API from '../api/axios';
 
@@ -469,6 +470,7 @@ export default function Register() {
   const navigate       = useNavigate();
   const { login }      = useAuth();
 
+  const { logoUrl, platformName } = useSettings();
   const [role, setRole]     = useState(null);                // 'devotee' | 'pandit'
   const [step, setStep]     = useState('role');              // role | info | channel | otp | password | profile | done
   const [basicForm, setBasicForm] = useState({ name:'', email:'', phone:'' });
@@ -579,9 +581,11 @@ export default function Register() {
     <div className="min-h-screen bg-spiritual-light flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2 mb-4">
-            <span className="text-3xl">🪔</span>
-            <span className="font-serif text-3xl font-bold text-maroon-600">Zutsav</span>
+          <Link to="/" className="inline-flex items-center justify-center mb-4">
+            {logoUrl
+              ? <img src={logoUrl} alt={platformName || 'Zutsav'} className="h-14 w-auto object-contain" />
+              : <span className="font-serif text-3xl font-bold text-maroon-600">{platformName || 'Zutsav'}</span>
+            }
           </Link>
           <h1 className="text-2xl font-bold text-gray-800">{stepTitle[step] || 'Register'}</h1>
           {step === 'role' && <p className="text-gray-500 mt-1 text-sm">Begin your spiritual journey</p>}

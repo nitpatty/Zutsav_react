@@ -12,9 +12,10 @@ const {
   notifyKYCSubmitted,
 } = require('../utils/notificationService');
 const { notifyPanditAssigned } = require('../utils/whatsapp');
+const { sendPanditAssignedEmail } = require('../utils/email');
 
 // Fields a pandit must never see (financial & payment internals)
-const PANDIT_BOOKING_EXCLUDE = '-amount -payout -razorpayOrderId -razorpayPaymentId -razorpaySignature -phonePeMerchantTransactionId -phonePeTransactionId -paymentProvider -panditRejections';
+const PANDIT_BOOKING_EXCLUDE = '-amount -razorpayOrderId -razorpayPaymentId -razorpaySignature -phonePeMerchantTransactionId -phonePeTransactionId -paymentProvider -panditRejections';
 
 // POST /api/pandits/register
 exports.register = async (req, res, next) => {
@@ -394,9 +395,10 @@ exports.acceptBooking = async (req, res, next) => {
     });
     await booking.save();
 
-    // Notify the user their pandit confirmed (in-app + WhatsApp)
+    // Notify the user their pandit confirmed (in-app + WhatsApp + email)
     notifyUserPanditAccepted(booking.userId, pandit.name, booking.bookingNumber).catch(() => {});
     notifyPanditAssigned(booking, pandit).catch(() => {});
+    sendPanditAssignedEmail(booking, pandit).catch(() => {});
 
     // Notify all admins
     const admins = await User.find({ role: 'admin' }).select('_id');

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, List, ChevronLeft, ChevronRight, CalendarDays, Sparkles } from 'lucide-react';
+import { Calendar, List, ChevronLeft, ChevronRight, CalendarDays, Sparkles, X } from 'lucide-react';
 import API from '../api/axios';
 
 const MONTHS = [
@@ -89,12 +89,16 @@ function FestivalCard({ festival, compact }) {
   );
 }
 
-function CalDay({ day, festivals, today }) {
-  const s       = festivals.length > 0 ? typeStyle(festivals[0]?.dataType) : null;
-  const isToday = today.getDate() === day && today.getMonth() === today.getMonth();
+function CalDay({ day, festivals, today, onClick }) {
+  const isToday   = today.getDate() === day && today.getMonth() === today.getMonth();
+  const hasEvents = festivals.length > 0;
 
   return (
-    <div className="min-h-[72px] p-1.5 border-b border-r transition-colors" style={{ borderColor: 'var(--t-border)', background: isToday ? 'var(--t-nav-active-bg)' : 'var(--t-card)' }}>
+    <div
+      onClick={onClick}
+      className={`min-h-[72px] p-1.5 border-b border-r transition-colors select-none ${hasEvents ? 'cursor-pointer hover:brightness-95' : 'cursor-default'}`}
+      style={{ borderColor: 'var(--t-border)', background: isToday ? 'var(--t-nav-active-bg)' : 'var(--t-card)' }}
+    >
       <span
         className="text-xs font-semibold inline-flex w-5 h-5 items-center justify-center rounded-full"
         style={isToday ? { background: 'var(--t-primary)', color: 'var(--t-text-inv)' } : { color: 'var(--t-muted)' }}
@@ -115,13 +119,63 @@ function CalDay({ day, festivals, today }) {
   );
 }
 
+function DayDetailModal({ day, month, year, festivals, onClose }) {
+  const monthName = MONTHS[month - 1];
+  const today     = new Date();
+  const isToday   = today.getDate() === day && today.getMonth() + 1 === month && today.getFullYear() === year;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+
+      {/* Panel */}
+      <div
+        className="relative w-full sm:max-w-md max-h-[80vh] flex flex-col rounded-t-3xl sm:rounded-2xl overflow-hidden shadow-2xl"
+        style={{ background: 'var(--t-card)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--t-border)' }}>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest mb-0.5" style={{ color: 'var(--t-primary)' }}>
+              {monthName} {year}
+            </p>
+            <h2 className="font-display font-bold text-2xl leading-none" style={{ color: 'var(--t-text)', letterSpacing: '-0.02em' }}>
+              {day}{isToday && <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full bg-saffron-500 text-white font-sans align-middle">Today</span>}
+            </h2>
+            <p className="text-xs mt-1 font-sans" style={{ color: 'var(--t-muted)' }}>
+              {festivals.length} event{festivals.length !== 1 ? 's' : ''} on this day
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
+            style={{ background: 'var(--t-surface)', color: 'var(--t-muted)' }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Events list */}
+        <div className="overflow-y-auto flex-1 p-4 space-y-3">
+          {festivals.map((f) => (
+            <FestivalCard key={f._id} festival={f} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Festivals() {
   const today  = new Date();
-  const [festivals, setFestivals] = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [month,     setMonth]     = useState(today.getMonth() + 1);
-  const [year,      setYear]      = useState(today.getFullYear());
-  const [view,      setView]      = useState('timeline');
+  const [festivals,    setFestivals]    = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [month,        setMonth]        = useState(today.getMonth() + 1);
+  const [year,         setYear]         = useState(today.getFullYear());
+  const [view,         setView]         = useState('timeline');
+  const [selectedDay,  setSelectedDay]  = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -285,7 +339,13 @@ export default function Festivals() {
                   <div key={`b-${i}`} className="min-h-[72px] border-b border-r border-gray-100 bg-gray-50/20" />
                 ))}
                 {Array.from({ length: total }, (_, i) => i + 1).map((day) => (
-                  <CalDay key={day} day={day} festivals={festivalsByDay[day] || []} today={today} />
+                  <CalDay
+                    key={day}
+                    day={day}
+                    festivals={festivalsByDay[day] || []}
+                    today={today}
+                    onClick={() => { if (festivalsByDay[day]?.length > 0) setSelectedDay(day); }}
+                  />
                 ))}
               </div>
             )}
@@ -319,6 +379,17 @@ export default function Festivals() {
           </div>
         )}
       </div>
+
+      {/* Day detail modal */}
+      {selectedDay !== null && (
+        <DayDetailModal
+          day={selectedDay}
+          month={month}
+          year={year}
+          festivals={festivalsByDay[selectedDay] || []}
+          onClose={() => setSelectedDay(null)}
+        />
+      )}
     </div>
   );
 }

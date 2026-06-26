@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, Receipt, Ban, Archive } from 'lucide-react';
 import CommunicationCenter from '../components/admin/CommunicationCenter';
+import ZutsavLoader, { ZutsavLoaderInline } from '../components/shared/ZutsavLoader';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
 import { useAuth } from '../context/AuthContext';
@@ -11,7 +12,7 @@ import PincodeInput from '../components/shared/PincodeInput';
 
 
 const statusColor  = { pending_payment:'badge-pending', paid:'badge-paid', pandit_assigned:'badge-assigned', pandit_accepted:'badge-approved', pending_reassignment:'badge-rejected', completion_requested:'badge-pending', completed:'badge-approved', cancelled:'badge-rejected' };
-const statusLabel  = { pending_payment:'Pending Payment', paid:'Paid', pandit_assigned:'Pandit Assigned', pandit_accepted:'Pandit Accepted', pending_reassignment:'Needs Reassignment', completion_requested:'Completion Pending', completed:'Completed', cancelled:'Cancelled', with_kit:'With Kit' };
+const statusLabel  = { pending_payment:'Pending Payment', paid:'New Booking', pandit_assigned:'Pandit Assigned', pandit_accepted:'Pandit Accepted', pending_reassignment:'Needs Reassignment', completion_requested:'Completion Pending', completed:'Completed', cancelled:'Cancelled', refunded:'Refunded', with_kit:'With Kit' };
 const kitStatusColor = { pending:'bg-gray-100 text-gray-600', packed:'bg-blue-100 text-blue-700', shipped:'bg-amber-100 text-amber-700', out_for_delivery:'bg-orange-100 text-orange-700', delivered:'bg-green-100 text-green-700' };
 const kitStatusLabel = { pending:'Pending', packed:'Packed', shipped:'Shipped', out_for_delivery:'Out for Delivery', delivered:'Delivered' };
 const panditStatus = { pending:'badge-pending', under_review:'badge-paid', approved:'badge-approved', rejected:'badge-rejected', suspended:'badge-rejected', reupload_required:'badge-pending' };
@@ -40,6 +41,8 @@ export default function AdminDashboard() {
       {tab === 'comm-center'           && <CommunicationCenter />}
       {tab === 'system-settings'       && <SystemSettingsTab />}
       {tab === 'payouts'               && <PayoutsTab />}
+      {tab === 'blog-management'       && <BlogManagementTab />}
+      {tab === 'invoices'              && <InvoicesTab />}
       {tab === 'profile'               && <AdminProfile user={user} refreshUser={refreshUser} />}
     </div>
   );
@@ -102,7 +105,9 @@ function DashboardTab() {
                   <td className="py-2.5 font-mono text-xs text-gray-400">{b.bookingNumber}</td>
                   <td className="py-2.5 font-semibold text-gray-800">{b.userId?.name}</td>
                   <td className="py-2.5 text-gray-600">{b.poojaId?.name}</td>
-                  <td className="py-2.5 font-bold" style={{ color: '#D4AF37', fontFamily: '"Cormorant Garamond"', fontSize: '1rem' }}>₹{b.amount?.toLocaleString('en-IN')}</td>
+                  <td className="py-2.5 font-bold" style={{ color: '#D4AF37', fontFamily: '"Cormorant Garamond"', fontSize: '1rem' }}>
+                    ₹{((b.amount || 0) + (b.linkedOrder?.totalAmount || 0)).toLocaleString('en-IN')}
+                  </td>
                   <td className="py-2.5 text-gray-400 text-xs">{new Date(b.createdAt).toLocaleDateString('en-IN')}</td>
                 </tr>
               ))}
@@ -119,6 +124,7 @@ function BookingsTab() {
   const [bookings,       setBookings]       = useState([]);
   const [loading,        setLoading]        = useState(true);
   const [filter,         setFilter]         = useState('paid');
+  const [search,         setSearch]         = useState('');
   const [selected,       setSelected]       = useState(null);
   const [pandits,        setPandits]        = useState([]);
   const [panditId,       setPanditId]       = useState('');
@@ -133,6 +139,9 @@ function BookingsTab() {
   const [payoutRef,      setPayoutRef]      = useState('');
   const [payoutAction,   setPayoutAction]   = useState('assign'); // 'assign' | 'paid'
   const [savingPayout,   setSavingPayout]   = useState(false);
+
+  // Order details modal state
+  const [viewBooking, setViewBooking] = useState(null);
 
   // Kit delivery modal state
   const [kitBooking,  setKitBooking]  = useState(null);
@@ -151,6 +160,32 @@ function BookingsTab() {
   };
 
   useEffect(() => { load(); }, [filter]);
+
+  const q = search.trim().toLowerCase();
+  const filteredBookings = q
+    ? bookings.filter((b) =>
+        (b.bookingNumber || '').toLowerCase().includes(q) ||
+        (b.userId?.name  || '').toLowerCase().includes(q) ||
+        (b.userDetails?.phone || '').includes(q) ||
+        (b.poojaId?.name || '').toLowerCase().includes(q) ||
+        (b.panditId?.name || '').toLowerCase().includes(q)
+      )
+    : bookings;
+
+  const exportExcel = async () => {
+    try {
+      const params = filter === 'with_kit' ? '?withKit=true' : `?status=${filter}`;
+      const res = await API.get(`/admin/bookings/export${params}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      const a   = document.createElement('a');
+      a.href     = url;
+      a.download = `bookings_${filter}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Export failed. Please try again.');
+    }
+  };
 
   const openKitModal = (b) => {
     setKitBooking(b);
@@ -273,6 +308,36 @@ function BookingsTab() {
     }
   };
 
+  // Refund modal state
+  const [refundBooking,  setRefundBooking]  = useState(null);
+  const [refundNote,     setRefundNote]     = useState('');
+  const [refundRef,      setRefundRef]      = useState('');
+  const [processingRefund, setProcessingRefund] = useState(false);
+
+  const openRefundModal = (booking) => {
+    setRefundBooking(booking);
+    setRefundNote('');
+    setRefundRef('');
+  };
+
+  const handleRefund = async () => {
+    if (!refundRef.trim()) { toast.error('Please enter transaction / reference ID'); return; }
+    setProcessingRefund(true);
+    try {
+      await API.patch(`/admin/bookings/${refundBooking._id}/status`, {
+        status: 'refunded',
+        cancelReason: refundNote || `Refunded via ${refundRef}`,
+      });
+      toast.success('Booking marked as Refunded');
+      setRefundBooking(null);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Refund action failed');
+    } finally {
+      setProcessingRefund(false);
+    }
+  };
+
   const openPayoutAssign = (booking) => {
     setPayoutBooking(booking);
     setPayoutAmount(booking.payout?.amount || '');
@@ -320,16 +385,36 @@ function BookingsTab() {
       <h1 className="text-2xl font-bold text-gray-800">Booking Management</h1>
 
       <div className="flex gap-2 flex-wrap">
-        {['paid','pandit_assigned','pandit_accepted','pending_reassignment','completion_requested','completed','cancelled','pending_payment'].map((s) => (
-          <button key={s} onClick={() => setFilter(s)}
+        {['paid','pandit_assigned','pandit_accepted','pending_reassignment','completion_requested','completed','cancelled','refunded','pending_payment'].map((s) => (
+          <button key={s} onClick={() => { setFilter(s); setSearch(''); }}
             className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${filter === s ? 'bg-saffron-500 text-white' : 'bg-white text-gray-600 border hover:border-saffron-300'} ${s === 'pending_reassignment' && filter !== s ? 'border-red-200 text-red-600' : ''}`}>
             {statusLabel[s]}
           </button>
         ))}
-        <button onClick={() => setFilter('with_kit')}
+        <button onClick={() => { setFilter('with_kit'); setSearch(''); }}
           className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all flex items-center gap-1 ${filter === 'with_kit' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 border border-amber-200 hover:border-amber-400'}`}>
           📦 With Kit
         </button>
+      </div>
+
+      {/* Search + Export row */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by booking #, user, phone, pooja, pandit…"
+          className="flex-1 min-w-[240px] text-sm border border-gray-200 rounded-xl px-4 py-2 outline-none focus:border-saffron-400 focus:ring-2 focus:ring-saffron-100"
+        />
+        <button
+          onClick={exportExcel}
+          className="flex items-center gap-2 text-sm font-semibold bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-colors whitespace-nowrap"
+        >
+          ⬇ Export Excel
+        </button>
+        {q && (
+          <span className="text-xs text-gray-400">{filteredBookings.length} result{filteredBookings.length !== 1 ? 's' : ''}</span>
+        )}
       </div>
 
       {loading ? <LoadingSpinner /> : (
@@ -337,16 +422,24 @@ function BookingsTab() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="bg-saffron-50 text-left text-xs text-gray-500 border-b">
-                {['Booking #','User','Location','Pooja','Date/Time','Amount','Status','Pandit','Action'].map((h) => (
+                {['Booking #','Booked On','User','Location','Pooja','Puja Date','Amount / Payment','Status','Pandit','Action'].map((h) => (
                   <th key={h} className="px-4 py-3 font-semibold">{h}</th>
                 ))}
               </tr></thead>
               <tbody className="divide-y divide-gray-50">
-                {bookings.map((b) => (
+                {filteredBookings.map((b) => (
                   <tr key={b._id} className="hover:bg-saffron-50/40 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs text-gray-500">{b.bookingNumber}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                      {b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—'}
+                    </td>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-800">{b.userId?.name}</p>
+                      <p className="font-medium text-gray-800">
+                        {b.userId?.name || b.userDetails?.name || b.userDetails?._deletedName || '—'}
+                        {!b.userId && b.userDetails?._deletedAt && (
+                          <span className="ml-1.5 text-[10px] text-red-400 font-normal">(deleted)</span>
+                        )}
+                      </p>
                       <p className="text-xs text-gray-400">{b.userDetails?.phone}</p>
                     </td>
                     <td className="px-4 py-3">
@@ -356,22 +449,61 @@ function BookingsTab() {
                     <td className="px-4 py-3">
                       <p className="text-gray-700">{b.poojaId?.name}</p>
                       {b.withKit && (
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold">📦 WITH KIT</span>
-                          {b.kitDelivery?.status && b.kitDelivery.status !== 'pending' && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${kitStatusColor[b.kitDelivery.status] || ''}`}>
-                              {kitStatusLabel[b.kitDelivery.status]}
-                            </span>
+                        <div className="flex flex-col gap-0.5 mt-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold">📦 WITH KIT</span>
+                            {b.kitDelivery?.status && b.kitDelivery.status !== 'pending' && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${kitStatusColor[b.kitDelivery.status] || ''}`}>
+                                {kitStatusLabel[b.kitDelivery.status]}
+                              </span>
+                            )}
+                          </div>
+                          {b.kitId?.name && (
+                            <p className="text-[10px] text-amber-700 font-medium">{b.kitId.name}</p>
                           )}
                         </div>
                       )}
+                      {b.linkedOrder?.items?.length > 0 && (
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full font-medium mt-0.5">
+                          🛍️ {b.linkedOrder.items.length} product{b.linkedOrder.items.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{b.scheduledDate?.split('T')[0]} {b.scheduledTime}</td>
-                    <td className="px-4 py-3 font-bold text-saffron-600">₹{b.amount?.toLocaleString('en-IN')}</td>
-                    <td className="px-4 py-3"><span className={statusColor[b.status] || 'badge-pending'}>{statusLabel[b.status]}</span></td>
+                    <td className="px-4 py-3">
+                      <p className="font-bold text-saffron-600" style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1rem' }}>
+                        ₹{((b.grandTotal || b.amount || 0) + (b.linkedOrder?.totalAmount || 0)).toLocaleString('en-IN')}
+                      </p>
+                      {b.linkedOrder?.totalAmount > 0 ? (
+                        <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-medium">Pooja + Products</span>
+                      ) : b.withKit ? (
+                        <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">Pooja + Kit</span>
+                      ) : (
+                        <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-medium">Pooja Only</span>
+                      )}
+                      {b.paymentStatus === 'PARTIALLY_PAID' && (
+                        <div className="mt-1 space-y-0.5">
+                          <p className="text-[10px] text-green-700 font-medium">Paid ₹{(b.amountPaid || 0).toLocaleString('en-IN')}</p>
+                          <p className="text-[10px] text-red-600 font-semibold">Pending ₹{(b.remainingAmount || 0).toLocaleString('en-IN')}</p>
+                          <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-bold">PARTIAL</span>
+                        </div>
+                      )}
+                      {b.paymentStatus === 'FULLY_PAID' && b.paymentMode === 'PARTIAL' && (
+                        <p className="text-[10px] text-green-600 font-medium mt-1">Fully Paid ✓</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={statusColor[b.status] || 'badge-pending'}>{statusLabel[b.status]}</span>
+                    </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{b.panditId?.name || '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1.5">
+                        <button
+                          onClick={() => setViewBooking(b)}
+                          className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                        >
+                          <Eye size={13} /> View Details
+                        </button>
                         {b.status === 'paid' && (
                           <button onClick={() => openAssign(b)} className="bg-saffron-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-saffron-600 transition-colors whitespace-nowrap">
                             Assign Pandit
@@ -413,8 +545,16 @@ function BookingsTab() {
                         {b.status === 'completed' && b.payout?.status === 'completed' && (
                           <span className="text-[10px] text-green-600 font-semibold bg-green-50 px-2 py-1 rounded-lg">Paid ₹{b.payout.amount}</span>
                         )}
+                        {b.status === 'cancelled' && (
+                          <button onClick={() => openRefundModal(b)} className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap font-semibold">
+                            ↩ Refund
+                          </button>
+                        )}
+                        {b.status === 'refunded' && (
+                          <span className="text-[10px] text-green-700 font-semibold bg-green-50 border border-green-200 px-2 py-1 rounded-lg">✓ Refunded</span>
+                        )}
                         {b.withKit && (
-                          <button onClick={() => openKitModal(b)} className="bg-amber-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors whitespace-nowrap">
+                          <button onClick={() => openKitModal(b)} className={`text-white text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ${b.kitDelivery?.status === 'delivered' ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-500 hover:bg-amber-600'}`}>
                             📦 Kit Delivery
                           </button>
                         )}
@@ -729,6 +869,63 @@ function BookingsTab() {
         </div>
       )}
 
+      {/* Refund Modal */}
+      {refundBooking && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
+          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md">
+            <h2 className="font-bold text-gray-800 text-xl mb-1">Process Refund</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Booking <span className="font-mono font-semibold">{refundBooking.bookingNumber}</span> · ₹{refundBooking.amount?.toLocaleString('en-IN')}
+            </p>
+
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4 text-sm text-red-700">
+              <p className="font-semibold">Customer: {refundBooking.userDetails?.name}</p>
+              <p className="text-xs mt-0.5">{refundBooking.userDetails?.phone}</p>
+              <p className="text-xs mt-0.5">Pooja: {refundBooking.poojaId?.name}</p>
+            </div>
+
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Transaction / Reference ID <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
+                  placeholder="e.g. RZP123456789 / UTR number"
+                  value={refundRef}
+                  onChange={(e) => setRefundRef(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Note <span className="text-gray-400">(optional)</span></label>
+                <textarea
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-300"
+                  rows={2}
+                  placeholder="Reason or additional notes…"
+                  value={refundNote}
+                  onChange={(e) => setRefundNote(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRefundBooking(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRefund}
+                disabled={processingRefund}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-60 transition-colors"
+              >
+                {processingRefund ? 'Processing…' : '↩ Mark as Refunded'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Kit Delivery Modal */}
       {kitBooking && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
@@ -843,6 +1040,332 @@ function BookingsTab() {
           </div>
         </div>
       )}
+
+      {viewBooking && (
+        <OrderDetailsModal booking={viewBooking} onClose={() => setViewBooking(null)} />
+      )}
+    </div>
+  );
+}
+
+// ─── Order Details Modal ──────────────────────────────────────
+function OrderDetailsModal({ booking: b, onClose }) {
+  const [payments,        setPayments]        = useState([]);
+  const [loadingPayments, setLoadingPayments] = useState(true);
+
+  useEffect(() => {
+    setLoadingPayments(true);
+    API.get(`/admin/bookings/${b._id}/payments`)
+      .then(({ data }) => setPayments(data.payments || []))
+      .catch(() => {})
+      .finally(() => setLoadingPayments(false));
+  }, [b._id]);
+
+  const productItems = b.linkedOrder?.items || [];
+  const hasProducts  = productItems.length > 0;
+  const hasKit       = b.withKit;
+  const productTotal = b.linkedOrder?.totalAmount || 0;
+  const productGST   = productItems.reduce((s, i) => s + (i.taxAmount || 0), 0);
+  const bookingTotal = b.grandTotal || b.amount || 0;
+  const orderTotal   = bookingTotal + productTotal;
+
+  // Payment-aware computed values — fall back gracefully for older bookings without paymentStatus
+  const paymentStatus   = b.paymentStatus   || (b.status !== 'pending_payment' ? 'FULLY_PAID' : 'PENDING');
+  const amountPaid      = b.amountPaid      != null ? b.amountPaid      : (b.status !== 'pending_payment' ? bookingTotal : 0);
+  const remainingAmount = b.remainingAmount != null ? b.remainingAmount : Math.max(0, bookingTotal - amountPaid);
+  const paymentMode     = b.paymentMode     || 'FULL';
+
+  const psConfig = ({
+    FULLY_PAID:     { bg: 'bg-green-50',  border: 'border-green-200',  badge: 'bg-green-100 text-green-700',   divider: 'border-green-200',  label: '✓ Fully Paid' },
+    PARTIALLY_PAID: { bg: 'bg-orange-50', border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700', divider: 'border-orange-200', label: '◑ Partially Paid' },
+    PENDING:        { bg: 'bg-yellow-50', border: 'border-yellow-200', badge: 'bg-yellow-100 text-yellow-700', divider: 'border-yellow-200', label: '⏳ Pending Payment' },
+    REFUNDED:       { bg: 'bg-blue-50',   border: 'border-blue-200',   badge: 'bg-blue-100 text-blue-700',     divider: 'border-blue-200',   label: '↩ Refunded' },
+    FAILED:         { bg: 'bg-red-50',    border: 'border-red-200',    badge: 'bg-red-100 text-red-700',       divider: 'border-red-200',    label: '✗ Failed' },
+  })[paymentStatus] || { bg: 'bg-gray-50', border: 'border-gray-200', badge: 'bg-gray-100 text-gray-600', divider: 'border-gray-200', label: paymentStatus || '—' };
+
+  const successPayments = payments.filter((p) => p.paymentStatus === 'SUCCESS');
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4 py-6" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+
+        {/* Sticky header */}
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-3xl z-10">
+          <div>
+            <h2 className="font-bold text-gray-800 text-xl" style={{ fontFamily: '"Cormorant Garamond"', letterSpacing: '-0.01em' }}>Order Details</h2>
+            <p className="text-xs font-mono text-gray-400 mt-0.5">{b.bookingNumber}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className={statusColor[b.status] || 'badge-pending'}>{statusLabel[b.status]}</span>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100">
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+
+          {/* Section 1 — Customer */}
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">👤 Customer Information</p>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-3 bg-gray-50 rounded-2xl p-4">
+              <OdItem label="Name"    value={b.userId?.name  || b.userDetails?.name  || b.userDetails?._deletedName  || '—'} />
+              <OdItem label="Phone"   value={b.userId?.phone || b.userDetails?.phone || b.userDetails?._deletedPhone || '—'} />
+              <OdItem label="Email"   value={b.userId?.email || b.userDetails?.email || '—'} />
+              <OdItem label="Address" value={[b.userDetails?.address, b.userDetails?.city, b.userDetails?.state, b.userDetails?.pincode].filter(Boolean).join(', ') || '—'} />
+              {!b.userId && b.userDetails?._deletedAt && (
+                <div className="col-span-2">
+                  <span className="text-[10px] text-red-400 bg-red-50 px-2 py-0.5 rounded-full">Account deleted on {new Date(b.userDetails._deletedAt).toLocaleDateString('en-IN')}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section 2 — Booking */}
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">📋 Booking Information</p>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-3 bg-gray-50 rounded-2xl p-4">
+              <OdItem label="Pooja"         value={b.poojaId?.name || '—'} />
+              <OdItem label="Language"      value={b.language || '—'} />
+              <OdItem label="Ceremony Date" value={b.scheduledDate?.split('T')[0] || '—'} />
+              <OdItem label="Ceremony Time" value={b.scheduledTime || '—'} />
+              <OdItem label="Booking Type"  value={b.isUrgent ? '⚡ Urgent' : 'Normal'} />
+              <OdItem label="Booked On"     value={b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} />
+              {b.specialNote && (
+                <div className="col-span-2">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Special Note</p>
+                  <p className="text-sm text-gray-700 mt-0.5 italic">"{b.specialNote}"</p>
+                </div>
+              )}
+            </div>
+            {b.panditId && (
+              <div className="mt-3 bg-indigo-50 rounded-2xl p-4">
+                <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">Assigned Pandit</p>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                  <OdItem label="Pandit"          value={b.panditId.name || '—'} />
+                  <OdItem label="Phone"           value={b.panditId.phone || '—'} />
+                  {b.payout?.amount > 0          && <OdItem label="Payout Assigned" value={`₹${Number(b.payout.amount).toLocaleString('en-IN')}`} />}
+                  {b.payout?.status              && <OdItem label="Payout Status"   value={b.payout.status} />}
+                  {b.payout?.paidAt              && <OdItem label="Payout Date"     value={new Date(b.payout.paidAt).toLocaleDateString('en-IN')} />}
+                  {b.payout?.transactionRef      && <OdItem label="Payout Ref"      value={b.payout.transactionRef} mono />}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 3 — Kit (conditional) */}
+          {hasKit && (
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">📦 Kit Details</p>
+              <div className="bg-amber-50 rounded-2xl p-4">
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                  <OdItem label="Kit Name"        value={b.kitId?.name || '—'} />
+                  <OdItem label="Kit Price"       value={b.kitAmount > 0 ? `₹${Number(b.kitAmount).toLocaleString('en-IN')}` : '—'} />
+                  <OdItem label="Delivery Status" value={b.kitDelivery?.status || 'pending'} />
+                  {b.kitDelivery?.courier    && <OdItem label="Courier"     value={b.kitDelivery.courier} />}
+                  {b.kitDelivery?.trackingId && <OdItem label="Tracking ID" value={b.kitDelivery.trackingId} mono />}
+                  {b.kitDelivery?.remarks    && <OdItem label="Remarks"     value={b.kitDelivery.remarks} />}
+                </div>
+                {b.kitId?.items?.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-amber-200">
+                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-2">Kit Contents</p>
+                    <div className="space-y-1.5">
+                      {b.kitId.items.map((ki, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-xs text-gray-700">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                          <span className="font-medium">{ki.productId?.name || 'Item'}</span>
+                          <span className="text-gray-400">×{ki.quantity || 1}</span>
+                          {ki.variantLabel && <span className="text-gray-400">({ki.variantLabel})</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Section 4 — Products (conditional) */}
+          {hasProducts && (
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">🛍️ Products Ordered</p>
+              <div className="border border-gray-100 rounded-2xl overflow-hidden">
+                {productItems.map((item, idx) => (
+                  <div key={idx} className={`flex items-center justify-between px-4 py-3 ${idx < productItems.length - 1 ? 'border-b border-gray-50' : ''} ${idx % 2 === 0 ? '' : 'bg-gray-50/50'}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{item.name || item.productId?.name || 'Product'}</p>
+                      {item.variantLabel && <p className="text-xs text-gray-400">{item.variantLabel}</p>}
+                      <p className="text-xs text-gray-400">₹{Number(item.price).toLocaleString('en-IN')} × {item.quantity}</p>
+                    </div>
+                    <div className="text-right shrink-0 ml-4">
+                      <p className="text-sm font-semibold text-gray-800">₹{Number(item.total || item.price * item.quantity).toLocaleString('en-IN')}</p>
+                      {(item.taxAmount || 0) > 0 && (
+                        <p className="text-[10px] text-gray-400">incl. ₹{item.taxAmount} GST ({item.taxRate}%)</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center px-4 py-3 bg-indigo-50 border-t border-indigo-100">
+                  <span className="text-xs font-bold text-indigo-600 uppercase tracking-wide">Products Total</span>
+                  <span className="font-bold text-indigo-700" style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1.05rem' }}>₹{Number(productTotal).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Section 5 — Price Breakdown (pricing only, no implied payment completion) */}
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">💰 Price Breakdown</p>
+            <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm">
+              <OdPriceLine label="Pooja Amount"         value={b.poojaAmount || 0} />
+              {(b.kitAmount   || 0) > 0 && <OdPriceLine label="Kit Amount"          value={b.kitAmount}   />}
+              {(b.platformFee || 0) > 0 && <OdPriceLine label="Platform Fee"        value={b.platformFee} muted />}
+              {(b.platformGST || 0) > 0 && <OdPriceLine label="GST on Platform Fee" value={b.platformGST} muted />}
+              {(b.kitGST      || 0) > 0 && <OdPriceLine label="GST on Kit"          value={b.kitGST}      muted />}
+              {productTotal > 0         && <OdPriceLine label="Marketplace Products" value={productTotal}  />}
+              {productGST   > 0         && <OdPriceLine label="GST on Products"      value={productGST}    muted />}
+              <div className="border-t border-gray-200 pt-3 mt-1">
+                <OdPriceLine label="Grand Total" value={orderTotal} bold />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 6 — Payment Summary (payment-aware: never implies Grand Total == Paid) */}
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">💳 Payment Summary</p>
+
+            {/* Hero status card */}
+            <div className={`rounded-2xl p-5 mb-3 border ${psConfig.bg} ${psConfig.border}`}>
+              <div className="flex items-center justify-between mb-4">
+                <span className={`text-xs font-bold px-3 py-1 rounded-full ${psConfig.badge}`}>
+                  {psConfig.label}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {paymentMode === 'PARTIAL' ? 'Partial Payment Plan' : 'Full Payment'}
+                </span>
+              </div>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600">Grand Total</span>
+                  <span className="text-base font-bold text-gray-900" style={{ fontFamily: '"Cormorant Garamond"' }}>
+                    ₹{Number(bookingTotal).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-600 flex items-center gap-1.5">
+                    {amountPaid > 0 && <span className="text-sm leading-none">✅</span>}
+                    Amount Paid
+                  </span>
+                  <span className={`text-base font-bold ${amountPaid > 0 ? 'text-green-700' : 'text-gray-400'}`} style={{ fontFamily: '"Cormorant Garamond"' }}>
+                    ₹{Number(amountPaid).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className={`flex justify-between items-center pt-3 border-t ${psConfig.divider}`}>
+                  <span className={`text-sm font-semibold ${remainingAmount > 0 ? 'text-red-600' : 'text-green-700'}`}>
+                    Pending Amount
+                  </span>
+                  <span className={`text-base font-bold ${remainingAmount > 0 ? 'text-red-600' : 'text-green-700'}`} style={{ fontFamily: '"Cormorant Garamond"' }}>
+                    ₹{Number(remainingAmount).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment details grid */}
+            <div className="grid grid-cols-2 gap-x-8 gap-y-3 bg-gray-50 rounded-2xl p-4">
+              <OdItem label="Gateway"      value={b.paymentProvider ? b.paymentProvider.charAt(0).toUpperCase() + b.paymentProvider.slice(1) : 'PhonePe'} />
+              <OdItem label="Payment Type" value={paymentMode === 'PARTIAL' ? 'Partial Payment' : 'Full Payment'} />
+              {successPayments[0]?.paidAt && (
+                <OdItem label="Payment Date" value={new Date(successPayments[0].paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} />
+              )}
+              {b.phonePeTransactionId         && <OdItem label="Transaction ID" value={b.phonePeTransactionId}         mono />}
+              {b.phonePeMerchantTransactionId && <OdItem label="Merchant Ref"   value={b.phonePeMerchantTransactionId} mono />}
+            </div>
+          </div>
+
+          {/* Section 7 — Payment History (all ledger entries) */}
+          {!loadingPayments && payments.length > 0 && (
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">📋 Payment History</p>
+              <div className="space-y-3">
+                {payments.map((payment, idx) => {
+                  const isSuccess = payment.paymentStatus === 'SUCCESS';
+                  const isPending = payment.paymentStatus === 'PENDING';
+                  return (
+                    <div key={payment._id || idx} className={`rounded-2xl p-4 border ${
+                      isSuccess ? 'bg-green-50 border-green-200' :
+                      isPending ? 'bg-yellow-50 border-yellow-200' :
+                      'bg-red-50 border-red-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-gray-800">Payment #{idx + 1}</span>
+                          <span className="text-xs text-gray-400">
+                            {payment.paymentType === 'PARTIAL'   ? '· First Instalment' :
+                             payment.paymentType === 'REMAINING' ? '· Remaining Amount' : '· Full Payment'}
+                          </span>
+                        </div>
+                        <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                          isSuccess ? 'bg-green-100 text-green-700' :
+                          isPending ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {isSuccess ? '✓ Completed' : isPending ? '⏳ Pending' : '✗ Failed'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                        <div>
+                          <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Amount</p>
+                          <p className="font-bold text-gray-900" style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1.05rem' }}>₹{Number(payment.amount).toLocaleString('en-IN')}</p>
+                        </div>
+                        {payment.paidAt && (
+                          <div>
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Date</p>
+                            <p className="text-sm text-gray-700">{new Date(payment.paidAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                          </div>
+                        )}
+                        {payment.phonePeTransactionId && (
+                          <div className="col-span-2">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Transaction ID</p>
+                            <p className="text-sm text-gray-700 font-mono break-all">{payment.phonePeTransactionId}</p>
+                          </div>
+                        )}
+                        {payment.note && (
+                          <div className="col-span-2">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Note</p>
+                            <p className="text-sm text-gray-600 italic">{payment.note}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OdItem({ label, value, mono = false }) {
+  return (
+    <div>
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+      <p className={`text-sm text-gray-700 mt-0.5 ${mono ? 'font-mono text-xs break-all' : ''}`}>{value || '—'}</p>
+    </div>
+  );
+}
+
+function OdPriceLine({ label, value, muted = false, bold = false }) {
+  return (
+    <div className={`flex justify-between ${muted ? 'text-gray-500 text-xs' : 'text-gray-700'} ${bold ? 'font-bold text-gray-900' : ''}`}>
+      <span>{label}</span>
+      <span style={bold ? { fontFamily: '"Cormorant Garamond"', fontSize: '1.15rem', color: '#1B1F3B' } : {}}>
+        ₹{Number(value || 0).toLocaleString('en-IN')}
+      </span>
     </div>
   );
 }
@@ -919,7 +1442,7 @@ function PanditProfileDrawer({ panditId, onClose }) {
 
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
-            <Loader size={28} className="text-gray-300 animate-spin" />
+            <ZutsavLoaderInline size={36} />
           </div>
         ) : pandit ? (
           <div className="flex-1 p-6 space-y-6">
@@ -1157,6 +1680,29 @@ function PanditsTab() {
       })
     : pandits;
 
+  const exportPanditsCSV = () => {
+    const headers = ['Name', 'Phone', 'Email', 'City', 'State', 'KYC Status', 'Profile Status', 'Total Bookings', 'Joined'];
+    const rows = filteredPandits.map((p) => [
+      p.name || '',
+      p.phone || '',
+      p.email || '',
+      p.city  || '',
+      p.state || '',
+      p.kycStatus    || '',
+      p.status       || '',
+      p.totalBookings || 0,
+      p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-IN') : '',
+    ]);
+    const csv = [headers, ...rows]
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `pandits_${kycFilter}_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const kycAction = async (id, action, actionReason) => {
     try {
       await API.patch(`/admin/pandits/${id}/kyc`, { kycAction: action, reason: actionReason });
@@ -1221,6 +1767,9 @@ function PanditsTab() {
           </div>
           <button onClick={load} className="text-xs text-gray-400 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
             <RotateCcw size={12} /> Refresh
+          </button>
+          <button onClick={exportPanditsCSV} className="text-xs font-semibold flex items-center gap-1 bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors">
+            ⬇ Export CSV
           </button>
         </div>
       </div>
@@ -1472,6 +2021,26 @@ function UsersTab() {
     return () => clearTimeout(t);
   }, [search, userView]);
 
+  const exportUsersCSV = () => {
+    const headers = ['Name', 'Phone', 'Email', 'Role', 'Status', 'Joined'];
+    const rows = users.map((u) => [
+      u.name  || '',
+      u.phone || '',
+      u.email || '',
+      u.role  || '',
+      u.isActive ? 'Active' : 'Suspended',
+      u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN') : '',
+    ]);
+    const csv = [headers, ...rows]
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `users_${userView}_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleDeleteUser = async () => {
     if (!delUserModal) return;
     setDeletingUser(true);
@@ -1489,10 +2058,15 @@ function UsersTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-800">User Management</h1>
-        {userView === 'all' && (
-          <input className="input w-64" placeholder="Search name, phone, email..."
-            value={search} onChange={(e) => setSearch(e.target.value)} />
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {userView === 'all' && (
+            <input className="input w-64" placeholder="Search name, phone, email..."
+              value={search} onChange={(e) => setSearch(e.target.value)} />
+          )}
+          <button onClick={exportUsersCSV} className="text-xs font-semibold flex items-center gap-1 bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+            ⬇ Export CSV
+          </button>
+        </div>
       </div>
 
       {/* Sub-tabs */}
@@ -1639,7 +2213,7 @@ function UsersTab() {
 }
 
 // ─── Poojas Tab ───────────────────────────────────────────────
-const EMPTY_POOJA_FORM = { name:'', categoryIds:[], price:'', durationValue:'', durationUnit:'hours', shortDesc:'', description:'', requirements:'', benefits:'', languages:'Hindi, English, Sanskrit' };
+const EMPTY_POOJA_FORM = { name:'', categoryIds:[], price:'', mrp:'', salePrice:'', taxEnabled:false, taxRate:'', durationValue:'', durationUnit:'hours', shortDesc:'', description:'', requirements:'', benefits:'', languages:'Hindi, English, Sanskrit' };
 const POOJA_STATUS_TABS = ['all','active','inactive','deleted','featured'];
 
 function PoojaFormFields({ form, setForm, categories, image, setImage }) {
@@ -1666,7 +2240,42 @@ function PoojaFormFields({ form, setForm, categories, image, setImage }) {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="label">Price (₹) *</label><input required type="number" min="0" className="input" value={form.price} onChange={set('price')} /></div>
+        <div>
+          <label className="label">MRP (₹) <span className="text-gray-400 text-xs font-normal">(original/crossed price)</span></label>
+          <input type="number" min="0" className="input" placeholder="e.g. 5000" value={form.mrp} onChange={set('mrp')} />
+        </div>
+        <div>
+          <label className="label">Sale Price (₹) *</label>
+          <input required type="number" min="0" className="input" placeholder="e.g. 3999" value={form.salePrice} onChange={set('salePrice')} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">Tax / GST</label>
+          <div className="flex items-center gap-3 mt-1">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={form.taxEnabled}
+                onChange={(e) => setForm((f) => ({ ...f, taxEnabled: e.target.checked }))}
+                className="accent-saffron-500 w-4 h-4"
+              />
+              <span className="text-sm text-gray-700">Apply GST on pooja price</span>
+            </label>
+            {form.taxEnabled && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number" min="0" max="100" step="0.5"
+                  className="input w-20 text-sm"
+                  placeholder="18"
+                  value={form.taxRate}
+                  onChange={set('taxRate')}
+                />
+                <span className="text-sm text-gray-500">%</span>
+              </div>
+            )}
+          </div>
+        </div>
         <div>
           <label className="label">Duration</label>
           <div className="flex gap-2">
@@ -1721,6 +2330,26 @@ function PoojasTab() {
 
   const handleSearchSubmit = (e) => { e.preventDefault(); reload(); };
 
+  const exportPoojasCSV = () => {
+    const headers = ['Name', 'Categories', 'Price (₹)', 'Duration', 'Featured', 'Status'];
+    const rows = poojas.map((p) => [
+      p.name || '',
+      (p.categoryIds || []).map((c) => c.name || c).join('; '),
+      p.price || 0,
+      p.durationValue ? `${p.durationValue} ${p.durationUnit || ''}` : '',
+      p.isFeatured ? 'Yes' : 'No',
+      p.isDeleted ? 'Deleted' : p.isActive ? 'Active' : 'Inactive',
+    ]);
+    const csv = [headers, ...rows]
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `poojas_${statusFilter}_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ── Category CRUD ──
   const createCategory = async (e) => {
     e.preventDefault();
@@ -1740,7 +2369,11 @@ function PoojasTab() {
   const buildPoojaFD = (form, image) => {
     const fd = new FormData();
     if (form.name)         fd.append('name', form.name);
-    if (form.price)        fd.append('price', form.price);
+    fd.append('price', form.salePrice || form.mrp || form.price || '0');
+    if (form.mrp)          fd.append('mrp', form.mrp);
+    if (form.salePrice)    fd.append('salePrice', form.salePrice);
+    fd.append('taxEnabled', String(form.taxEnabled));
+    if (form.taxEnabled && form.taxRate) fd.append('taxRate', form.taxRate);
     if (form.durationValue)fd.append('durationValue', form.durationValue);
     if (form.durationUnit) fd.append('durationUnit', form.durationUnit);
     if (form.shortDesc)    fd.append('shortDesc', form.shortDesc);
@@ -1776,6 +2409,10 @@ function PoojasTab() {
       name:          p.name,
       categoryIds:   ids,
       price:         String(p.price),
+      mrp:           p.mrp       ? String(p.mrp)       : '',
+      salePrice:     p.salePrice ? String(p.salePrice) : '',
+      taxEnabled:    !!p.taxEnabled,
+      taxRate:       p.taxRate   ? String(p.taxRate)   : '',
       durationValue: p.durationValue ? String(p.durationValue) : '',
       durationUnit:  p.durationUnit || 'hours',
       shortDesc:     p.shortDesc || '',
@@ -1873,6 +2510,9 @@ function PoojasTab() {
                 </button>
               ))}
             </div>
+            <button onClick={exportPoojasCSV} className="text-xs font-semibold flex items-center gap-1 bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+              ⬇ Export CSV
+            </button>
           </div>
 
           {loading ? (
@@ -2151,7 +2791,7 @@ function FestivalsTab() {
               <button onClick={() => doSync(false)} disabled={syncing}
                 className="btn-primary w-full flex items-center justify-center gap-2 py-3">
                 {syncing
-                  ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> Fetching Festival Data...</>
+                  ? <><ZutsavLoaderInline size={16} /> Fetching Festival Data...</>
                   : <><Sparkles size={16} /> Fetch Festival Data</>
                 }
               </button>
@@ -2655,6 +3295,8 @@ function PanditPoojasTab() {
 }
 
 // ─── Orders Tab ───────────────────────────────────────────────
+// ─── Order Management ─────────────────────────────────────────
+
 const ORDER_STATUS_META = {
   paid:             { label: 'Order Placed',    color: 'bg-blue-100 text-blue-700'    },
   confirmed:        { label: 'Confirmed',        color: 'bg-indigo-100 text-indigo-700'},
@@ -2670,11 +3312,863 @@ const STATUS_TRANSITIONS = {
   paid:             ['confirmed', 'cancelled'],
   confirmed:        ['packed', 'cancelled'],
   packed:           ['shipped', 'cancelled'],
-  shipped:          ['out_for_delivery'],
-  out_for_delivery: ['delivered'],
+  shipped:          ['out_for_delivery', 'cancelled'],
+  out_for_delivery: ['delivered', 'cancelled'],
   delivered:        ['refunded'],
   cancelled:        ['refunded'],
 };
+
+// ── Invoice print helper ──────────────────────────────────────
+function _openInvoiceWindow(order, shipment) {
+  const addr      = order.shippingAddress || {};
+  const user      = order.userId || {};
+  const fmtINR    = (n) => `₹${(+(n || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const orderDate = new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  const invoiceNo = `INV-${order.orderNumber}`;
+  const subtotal  = order.items.reduce((s, it) => s + (it.price * it.quantity), 0);
+  const total     = order.totalAmount || subtotal;
+  const taxAmt    = Math.round(total * 0.18 / 1.18 * 100) / 100;
+  const pretax    = Math.round((total - taxAmt) * 100) / 100;
+
+  const itemRows = order.items.map(it => `
+    <tr>
+      <td class="td">${it.name}${it.variantLabel ? `<br><small style="color:#9ca3af">${it.variantLabel}</small>` : ''}</td>
+      <td class="td tc">${it.quantity}</td>
+      <td class="td tr">${fmtINR(it.price)}</td>
+      <td class="td tr">${it.taxRate ? it.taxRate + '%' : '—'}</td>
+      <td class="td tr fw">${fmtINR(it.price * it.quantity)}</td>
+    </tr>`).join('');
+
+  const w = window.open('', '_blank', 'width=900,height=700');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Invoice ${invoiceNo}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#374151;background:#fff;padding:32px}
+    .page{max-width:794px;margin:0 auto}
+    .header{background:#1B1F3B;color:white;padding:24px 28px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:flex-start}
+    .brand{font-size:22px;font-weight:900;font-family:Georgia,serif;color:#D4AF37}
+    .brand small{font-size:11px;font-weight:400;color:rgba(255,255,255,0.7);letter-spacing:2px;vertical-align:middle}
+    .inv-title{text-align:right;color:#D4AF37;font-size:16px;font-weight:900;font-family:Georgia,serif;letter-spacing:2px}
+    .inv-sub{color:rgba(255,255,255,0.6);font-size:11px;margin-top:3px}
+    .parties{display:flex;gap:24px;padding:16px 28px;border:1px solid #e5e7eb;border-top:none;background:#f9fafb}
+    .party{flex:1}
+    .party-label{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#9ca3af;margin-bottom:6px}
+    .party-name{font-weight:700;color:#1B1F3B;margin-bottom:3px}
+    .party-sub{font-size:12px;color:#6b7280;line-height:1.5}
+    table{width:100%;border-collapse:collapse}
+    .th{background:#1B1F3B;color:white;padding:9px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700}
+    .td{padding:9px 12px;border-bottom:1px solid #f3f4f6;vertical-align:top}
+    tr:nth-child(even) .td{background:#f9fafb}
+    .tc{text-align:center}.tr{text-align:right}.fw{font-weight:700}
+    .total-row td{padding:9px 12px;border-top:1px solid #e5e7eb;color:#6b7280}
+    .grand-row td{padding:12px;background:#1B1F3B;color:#D4AF37;font-weight:900;font-size:15px}
+    .paid-box{margin:16px 28px;padding:14px 20px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:8px;display:flex;justify-content:space-between;align-items:center}
+    .paid-amt{font-size:20px;font-weight:900;color:#15803d}
+    .paid-badge{padding:5px 16px;border-radius:999px;background:#dcfce7;color:#15803d;font-weight:700;font-size:12px;border:1px solid #86efac}
+    .footer{text-align:center;color:#9ca3af;font-size:11px;padding:16px 28px 0;line-height:1.7}
+    @media print{body{padding:0}.page{max-width:100%}}
+  </style>
+  </head><body>
+  <div class="page">
+    <div class="header">
+      <div>
+        <div class="brand">🪔 Zutsav <small>ENTERPRISES</small></div>
+        <div class="inv-sub" style="margin-top:6px">GSTIN: 09AAAFZ1234Z1Z5 | PAN: AAAFZ1234Z</div>
+        <div class="inv-sub">info@zutsav.com | +91-8851576605</div>
+      </div>
+      <div>
+        <div class="inv-title">TAX INVOICE</div>
+        <div class="inv-sub">Invoice: ${invoiceNo}</div>
+        <div class="inv-sub">Order: #${order.orderNumber}</div>
+        <div class="inv-sub">Date: ${orderDate}</div>
+      </div>
+    </div>
+
+    <div class="parties">
+      <div class="party">
+        <div class="party-label">Bill To</div>
+        <div class="party-name">${addr.name || user.name || ''}</div>
+        <div class="party-sub">${user.phone || addr.phone || ''}<br>${user.email || ''}</div>
+      </div>
+      <div class="party">
+        <div class="party-label">Ship To</div>
+        <div class="party-name">${addr.name || ''}</div>
+        <div class="party-sub">${[addr.address, addr.city, addr.state, addr.pincode].filter(Boolean).join(', ')}<br>${addr.phone || ''}</div>
+      </div>
+      ${shipment ? `<div class="party">
+        <div class="party-label">Shipment</div>
+        <div class="party-name">${shipment.courierName || shipment.deliveryPartner || 'TekiPost'}</div>
+        <div class="party-sub">AWB: ${shipment.awbNumber || shipment.trackingNumber || '—'}<br>Status: ${shipment.shipmentStatus || '—'}</div>
+      </div>` : ''}
+    </div>
+
+    <table>
+      <thead><tr>
+        <th class="th" style="text-align:left">Product</th>
+        <th class="th tc">Qty</th>
+        <th class="th tr">Unit Price</th>
+        <th class="th tr">Tax %</th>
+        <th class="th tr">Amount</th>
+      </tr></thead>
+      <tbody>${itemRows}</tbody>
+      <tfoot>
+        <tr class="total-row"><td colspan="4" style="text-align:right">Subtotal (excl. GST)</td><td class="tr">${fmtINR(pretax)}</td></tr>
+        <tr class="total-row"><td colspan="4" style="text-align:right">GST @ 18%</td><td class="tr">${fmtINR(taxAmt)}</td></tr>
+        <tr class="grand-row"><td colspan="4" style="text-align:right;font-size:13px;font-weight:700">GRAND TOTAL</td><td class="tr">${fmtINR(total)}</td></tr>
+      </tfoot>
+    </table>
+
+    <div class="paid-box">
+      <div>
+        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px">Amount Paid</div>
+        <div class="paid-amt">${fmtINR(total)}</div>
+      </div>
+      <div class="paid-badge">✅ Paid in Full</div>
+    </div>
+
+    <div class="footer">
+      This is a computer-generated invoice and does not require a physical signature.<br>
+      For support: info@zutsav.com | +91-8851576605 | www.zutsav.com
+    </div>
+
+    <div style="text-align:center;margin-top:20px">
+      <button onclick="window.print()" style="padding:10px 28px;background:#1B1F3B;color:white;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">🖨 Print / Save as PDF</button>
+    </div>
+  </div>
+  </body></html>`);
+  w.document.close();
+}
+
+const SHIPMENT_STATUS_META = {
+  created:          { label: 'Shipment Created',  color: 'bg-blue-100 text-blue-700'    },
+  picked_up:        { label: 'Picked Up',          color: 'bg-indigo-100 text-indigo-700'},
+  in_transit:       { label: 'In Transit',         color: 'bg-purple-100 text-purple-700'},
+  out_for_delivery: { label: 'Out for Delivery',   color: 'bg-amber-100 text-amber-700'  },
+  delivered:        { label: 'Delivered',          color: 'bg-green-100 text-green-700'  },
+  failed_delivery:  { label: 'Failed Delivery',    color: 'bg-red-100 text-red-700'      },
+  cancelled:        { label: 'Cancelled',          color: 'bg-red-100 text-red-700'      },
+  returned:         { label: 'Returned',           color: 'bg-gray-100 text-gray-600'    },
+};
+
+const TRACKING_STEPS = [
+  { key: 'created',          label: 'Shipment Created'  },
+  { key: 'picked_up',        label: 'Picked Up'         },
+  { key: 'in_transit',       label: 'In Transit'        },
+  { key: 'out_for_delivery', label: 'Out for Delivery'  },
+  { key: 'delivered',        label: 'Delivered'         },
+];
+
+const MANUAL_SHIPMENT_STATUS_OPTIONS = [
+  { value: 'created',          label: 'Shipment Created'  },
+  { value: 'picked_up',        label: 'Picked Up'         },
+  { value: 'out_for_delivery', label: 'Out for Delivery'  },
+  { value: 'delivered',        label: 'Delivered'         },
+  { value: 'failed_delivery',  label: 'Failed Delivery'   },
+  { value: 'cancelled',        label: 'Cancelled'         },
+  { value: 'returned',         label: 'Returned'          },
+];
+
+// ── Manage Order Modal ────────────────────────────────────────
+function ManageOrderModal({ order, onClose, onRefresh }) {
+  // Shipment state
+  const [shipment,        setShipment]        = useState(null);
+  const [shipmentLoading, setShipmentLoading] = useState(true);
+  const [shippingConfig,  setShippingConfig]  = useState({ couriers: [], localPartners: [] });
+
+  // UI state
+  const [shippingMethod,  setShippingMethod]  = useState(null);   // null | 'tekipost' | 'manual'
+  const [manualType,      setManualType]      = useState(null);   // null | 'courier' | 'local_delivery'
+
+  // TekiPost
+  const [tekiposting,     setTekiposting]     = useState(false);
+  const [syncing,         setSyncing]         = useState(false);
+
+  // Manual courier form
+  const [mCourierName,    setMCourierName]    = useState('');
+  const [mCourierCustom,  setMCourierCustom]  = useState('');
+  const [mTracking,       setMTracking]       = useState('');
+  const [mETA,            setMETA]            = useState('');
+  const [mRemarks,        setMRemarks]        = useState('');
+
+  // Manual local delivery form
+  const [mPartner,        setMPartner]        = useState('');
+  const [mPartnerCustom,  setMPartnerCustom]  = useState('');
+  const [mDriverName,     setMDriverName]     = useState('');
+  const [mDriverPhone,    setMDriverPhone]    = useState('');
+  const [mVehicle,        setMVehicle]        = useState('');
+  const [mExpectedTime,   setMExpectedTime]   = useState('');
+  const [mLocalRemarks,   setMLocalRemarks]   = useState('');
+
+  // Shipment status update
+  const [newShipStatus,   setNewShipStatus]   = useState('');
+  const [shipStatusNote,  setShipStatusNote]  = useState('');
+  const [updatingStatus,  setUpdatingStatus]  = useState(false);
+
+  // Order status
+  const [newOrderStatus,  setNewOrderStatus]  = useState('');
+  const [cancelReason,    setCancelReason]    = useState('');
+  const [updatingOrder,   setUpdatingOrder]   = useState(false);
+
+  // Delivery OTP
+  const [otpInput,        setOtpInput]        = useState('');
+  const [otpLoading,      setOtpLoading]      = useState(false);
+  const [otpGenerated,    setOtpGenerated]    = useState(!!order.deliveryOTP?.generatedAt);
+  const [otpVerified,     setOtpVerified]     = useState(!!order.deliveryOTP?.verified);
+  const [localOrder,      setLocalOrder]      = useState(order);
+
+  const [saving,          setSaving]          = useState(false);
+
+  useEffect(() => {
+    async function loadShipment() {
+      try {
+        const [{ data: sd }, { data: cd }] = await Promise.all([
+          API.get(`/admin/orders/${order._id}/shipment`),
+          API.get('/admin/shipping-config'),
+        ]);
+        setShipment(sd.shipment || null);
+        setShippingConfig({ couriers: cd.couriers || [], localPartners: cd.localPartners || [] });
+        if (sd.shipment) {
+          setShippingMethod(sd.shipment.shippingMethod);
+          setManualType(sd.shipment.manualType || null);
+        }
+      } catch { toast.error('Could not load shipment data'); }
+      finally { setShipmentLoading(false); }
+    }
+    loadShipment();
+  }, [order._id]);
+
+  const handleTekiPost = async () => {
+    if (!window.confirm('Create a TekiPost shipment for this order? This will auto-assign a courier and generate an AWB.')) return;
+    setTekiposting(true);
+    try {
+      const { data } = await API.post(`/admin/orders/${order._id}/shipment/tekipost`);
+      setShipment(data.shipment);
+      toast.success(`Shipped via ${data.shipment.courierName}! AWB: ${data.shipment.awbNumber}`);
+      onRefresh();
+    } catch (err) {
+      const errData  = err?.response?.data;
+      const mainMsg  = errData?.message || 'TekiPost shipment failed';
+      const tpErrors = errData?.tekipostResponse?.errors;
+      const detail   = Array.isArray(tpErrors) && tpErrors.length
+        ? tpErrors.map((e) => `${e.field ? e.field + ': ' : ''}${e.message}`).join('\n')
+        : null;
+      // Show primary message immediately; follow with validation details if any
+      toast.error(mainMsg, { duration: 6000 });
+      if (detail) toast.error(`TekiPost details:\n${detail}`, { duration: 8000 });
+    }
+    finally { setTekiposting(false); }
+  };
+
+  const handleManualSave = async () => {
+    if (!manualType) { toast.error('Select Courier or Local Delivery'); return; }
+    const courierName    = mCourierName   === 'Other' ? mCourierCustom  : mCourierName;
+    const partnerName    = mPartner       === 'Other' ? mPartnerCustom  : mPartner;
+    if (manualType === 'courier' && !courierName) { toast.error('Select or enter a courier'); return; }
+    if (manualType === 'local_delivery' && !partnerName) { toast.error('Select or enter a delivery partner'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        manualType,
+        courierName:     manualType === 'courier'        ? courierName  : undefined,
+        trackingNumber:  manualType === 'courier'        ? mTracking    : undefined,
+        estimatedDelivery: mETA || undefined,
+        remarks:         manualType === 'courier'        ? mRemarks     : mLocalRemarks,
+        deliveryPartner: manualType === 'local_delivery' ? partnerName  : undefined,
+        driverName:      manualType === 'local_delivery' ? mDriverName  : undefined,
+        driverPhone:     manualType === 'local_delivery' ? mDriverPhone : undefined,
+        vehicleNumber:   manualType === 'local_delivery' ? mVehicle     : undefined,
+        expectedTime:    manualType === 'local_delivery' ? mExpectedTime: undefined,
+      };
+      const { data } = await API.post(`/admin/orders/${order._id}/shipment/manual`, payload);
+      setShipment(data.shipment);
+      toast.success('Shipment saved!');
+      onRefresh();
+    } catch (err) { toast.error(err?.response?.data?.message || 'Failed to save shipment'); }
+    finally { setSaving(false); }
+  };
+
+  const handleSyncStatus = async () => {
+    setSyncing(true);
+    try {
+      const { data } = await API.post(`/admin/orders/${order._id}/shipment/sync`);
+      setShipment(data.shipment);
+      toast.success(`Status synced: ${data.mappedStatus}`);
+      onRefresh();
+    } catch (err) { toast.error(err?.response?.data?.message || 'Sync failed'); }
+    finally { setSyncing(false); }
+  };
+
+  const handleShipmentStatusUpdate = async () => {
+    if (!newShipStatus) { toast.error('Select a shipment status'); return; }
+    setUpdatingStatus(true);
+    try {
+      const { data } = await API.patch(`/admin/orders/${order._id}/shipment/status`, { status: newShipStatus, note: shipStatusNote });
+      setShipment(data.shipment);
+      setNewShipStatus(''); setShipStatusNote('');
+      toast.success('Shipment status updated');
+      onRefresh();
+    } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
+    finally { setUpdatingStatus(false); }
+  };
+
+  const handleOrderStatusUpdate = async () => {
+    if (!newOrderStatus) { toast.error('Select a status'); return; }
+    setUpdatingOrder(true);
+    try {
+      const { data } = await API.patch(`/admin/orders/${order._id}/status`, { status: newOrderStatus, cancelReason });
+      toast.success('Order status updated');
+      setNewOrderStatus(''); setCancelReason('');
+      setLocalOrder(data.order || order);
+      if (newOrderStatus === 'out_for_delivery') setOtpGenerated(true);
+      onRefresh();
+    } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
+    finally { setUpdatingOrder(false); }
+  };
+
+  const handleGenerateOTP = async () => {
+    setOtpLoading(true);
+    try {
+      await API.post(`/admin/orders/${order._id}/delivery-otp/generate`);
+      toast.success('Delivery OTP sent to customer via WhatsApp & email');
+      setOtpGenerated(true);
+    } catch (err) { toast.error(err?.response?.data?.message || 'Failed to generate OTP'); }
+    finally { setOtpLoading(false); }
+  };
+
+  const handleResendOTP = async () => {
+    setOtpLoading(true);
+    try {
+      await API.post(`/admin/orders/${order._id}/delivery-otp/resend`);
+      toast.success('New OTP sent to customer');
+      setOtpInput('');
+    } catch (err) { toast.error(err?.response?.data?.message || 'Failed to resend OTP'); }
+    finally { setOtpLoading(false); }
+  };
+
+  const handleVerifyOTP = async () => {
+    if (!otpInput.trim()) { toast.error('Enter the OTP'); return; }
+    setOtpLoading(true);
+    try {
+      await API.post(`/admin/orders/${order._id}/delivery-otp/verify`, { otp: otpInput.trim() });
+      toast.success('OTP verified! Order marked as Delivered.');
+      setOtpVerified(true);
+      onRefresh();
+      onClose();
+    } catch (err) { toast.error(err?.response?.data?.message || 'OTP verification failed'); }
+    finally { setOtpLoading(false); }
+  };
+
+  const handleViewInvoice = async () => {
+    try {
+      const { data } = await API.get(`/admin/orders/${order._id}/invoice`);
+      _openInvoiceWindow(data.order, data.shipment);
+    } catch (err) { toast.error('Could not load invoice'); }
+  };
+
+  const addr          = order.shippingAddress || {};
+  const curStatus     = localOrder.status || order.status;
+  const nextStatuses  = STATUS_TRANSITIONS[curStatus] || [];
+  const isSaved       = !!shipment;
+  const isTekiPost    = shipment?.shippingMethod === 'tekipost';
+  const isManual      = shipment?.shippingMethod === 'manual';
+  const showOTPPanel  = ['out_for_delivery', 'shipped'].includes(curStatus) && !otpVerified;
+  const showInvoiceBtn = ['paid', 'confirmed', 'packed', 'shipped', 'out_for_delivery', 'delivered'].includes(curStatus);
+
+  const SectionHeader = ({ icon: Icon, title }) => (
+    <div className="flex items-center gap-2 mb-3">
+      {Icon && <Icon size={14} className="text-gray-400" />}
+      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">{title}</p>
+    </div>
+  );
+
+  const Divider = () => <div className="border-t border-gray-100 my-4" />;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4 py-6">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto">
+
+        {/* Modal Header */}
+        <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100">
+          <div>
+            <p className="text-xs text-gray-400 font-medium">Manage Order</p>
+            <h2 className="font-bold text-gray-800 text-xl" style={{ fontFamily: '"Cormorant Garamond", serif' }}>
+              #{order.orderNumber}
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${ORDER_STATUS_META[order.status]?.color || 'bg-gray-100 text-gray-500'}`}>
+              {ORDER_STATUS_META[order.status]?.label || order.status}
+            </span>
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-6 py-5 space-y-0">
+
+          {/* ── Section 1: Customer Details ──────────────── */}
+          <SectionHeader icon={User} title="Customer Details" />
+          <div className="bg-gray-50 rounded-2xl p-4 space-y-1 mb-4">
+            <p className="font-semibold text-gray-800 text-sm">{order.userId?.name || addr.name || '—'}</p>
+            <p className="text-xs text-gray-500 flex items-center gap-1"><Phone size={10} /> {order.userId?.phone || addr.phone || '—'}</p>
+            {order.userId?.email && <p className="text-xs text-gray-500 flex items-center gap-1"><Mail size={10} /> {order.userId.email}</p>}
+            <div className="pt-1">
+              <p className="text-xs text-gray-400 flex items-center gap-1 mb-0.5"><MapPin size={10} /> Delivery Address</p>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                {[addr.address, addr.city, addr.district, addr.state, addr.pincode].filter(Boolean).join(', ') || '—'}
+              </p>
+            </div>
+          </div>
+
+          <Divider />
+
+          {/* ── Section 2: Products Ordered ──────────────── */}
+          <SectionHeader icon={Package} title="Products Ordered" />
+          <div className="space-y-1.5 mb-4">
+            {order.items?.map((item, i) => (
+              <div key={i} className="flex justify-between items-center text-sm py-1.5 border-b border-gray-50 last:border-0">
+                <span className="text-gray-700 text-xs">{item.name} <span className="text-gray-400">×{item.quantity}</span></span>
+                <span className="font-semibold text-gray-800 text-xs">₹{item.total?.toLocaleString('en-IN')}</span>
+              </div>
+            ))}
+            <div className="flex justify-between items-center pt-2 font-bold">
+              <span className="text-sm text-gray-700">Order Total</span>
+              <span style={{ fontFamily: '"Cormorant Garamond", serif', fontSize: '1.1rem', color: '#1B1F3B' }}>
+                ₹{order.totalAmount?.toLocaleString('en-IN')}
+              </span>
+            </div>
+          </div>
+
+          <Divider />
+
+          {/* ── Section 3: Shipment ──────────────────────── */}
+          <SectionHeader icon={Truck} title="Shipping Method" />
+
+          {shipmentLoading ? (
+            <div className="flex items-center gap-2 py-4 text-gray-400 text-sm">
+              <Loader size={14} className="animate-spin" /> Loading shipment info...
+            </div>
+          ) : isSaved ? (
+            /* ─ Shipment already created — show details ─ */
+            <div className="space-y-4 mb-4">
+              {/* Method badge */}
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-bold px-3 py-1 rounded-full ${isTekiPost ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'}`}>
+                  {isTekiPost ? '🚀 TekiPost' : `✋ Manual ${shipment.manualType === 'local_delivery' ? '· Local Delivery' : '· Courier'}`}
+                </span>
+                {shipment.shipmentStatus && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${SHIPMENT_STATUS_META[shipment.shipmentStatus]?.color || 'bg-gray-100 text-gray-500'}`}>
+                    {SHIPMENT_STATUS_META[shipment.shipmentStatus]?.label || shipment.shipmentStatus}
+                  </span>
+                )}
+              </div>
+
+              {/* Shipment details grid */}
+              <div className="bg-indigo-50 rounded-2xl p-4 grid grid-cols-2 gap-3 text-xs">
+                {(shipment.courierName || shipment.deliveryPartner) && (
+                  <div>
+                    <p className="text-indigo-400 mb-0.5">{isManual && shipment.manualType === 'local_delivery' ? 'Delivery Partner' : 'Courier Partner'}</p>
+                    <p className="font-bold text-indigo-900">{shipment.courierName || shipment.deliveryPartner || '—'}</p>
+                  </div>
+                )}
+                {shipment.trackingNumber && (
+                  <div>
+                    <p className="text-indigo-400 mb-0.5">Tracking Number</p>
+                    <p className="font-bold text-indigo-900 font-mono">{shipment.trackingNumber}</p>
+                  </div>
+                )}
+                {shipment.awbNumber && shipment.awbNumber !== shipment.trackingNumber && (
+                  <div>
+                    <p className="text-indigo-400 mb-0.5">AWB</p>
+                    <p className="font-bold text-indigo-900 font-mono">{shipment.awbNumber}</p>
+                  </div>
+                )}
+                {shipment.estimatedDelivery && (
+                  <div>
+                    <p className="text-indigo-400 mb-0.5">Estimated Delivery</p>
+                    <p className="font-bold text-indigo-900">
+                      {new Date(shipment.estimatedDelivery).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                )}
+                {shipment.driverName && (
+                  <div>
+                    <p className="text-indigo-400 mb-0.5">Driver Name</p>
+                    <p className="font-bold text-indigo-900">{shipment.driverName}</p>
+                  </div>
+                )}
+                {shipment.driverPhone && (
+                  <div>
+                    <p className="text-indigo-400 mb-0.5">Driver Phone</p>
+                    <p className="font-bold text-indigo-900">{shipment.driverPhone}</p>
+                  </div>
+                )}
+                {shipment.vehicleNumber && (
+                  <div>
+                    <p className="text-indigo-400 mb-0.5">Vehicle</p>
+                    <p className="font-bold text-indigo-900">{shipment.vehicleNumber}</p>
+                  </div>
+                )}
+                {shipment.expectedTime && (
+                  <div>
+                    <p className="text-indigo-400 mb-0.5">Expected Time</p>
+                    <p className="font-bold text-indigo-900">{shipment.expectedTime}</p>
+                  </div>
+                )}
+                {shipment.remarks && (
+                  <div className="col-span-2">
+                    <p className="text-indigo-400 mb-0.5">Remarks</p>
+                    <p className="text-indigo-800">{shipment.remarks}</p>
+                  </div>
+                )}
+                {shipment.lastSyncedAt && isTekiPost && (
+                  <div className="col-span-2">
+                    <p className="text-indigo-400 text-[10px]">Last synced: {new Date(shipment.lastSyncedAt).toLocaleString('en-IN')}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex flex-wrap gap-2">
+                {isTekiPost && (
+                  <button onClick={handleSyncStatus} disabled={syncing}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition-colors disabled:opacity-50">
+                    <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
+                    {syncing ? 'Syncing...' : 'Refresh Status'}
+                  </button>
+                )}
+                {shipment.labelUrl && (
+                  <a href={shipment.labelUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-green-200 text-green-700 hover:bg-green-50 transition-colors">
+                    <Download size={12} /> Download Label
+                  </a>
+                )}
+                {shipment.trackingUrl && (
+                  <a href={shipment.trackingUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors">
+                    <ExternalLink size={12} /> View Tracking
+                  </a>
+                )}
+              </div>
+
+              {/* Tracking Timeline */}
+              <div>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Tracking Timeline</p>
+                <div className="relative">
+                  {TRACKING_STEPS.map((step, idx) => {
+                    const histEntry = (shipment.shipmentHistory || []).find(h => h.status === step.key);
+                    const reached   = !!(histEntry || shipment.shipmentStatus === step.key ||
+                      TRACKING_STEPS.findIndex(s => s.key === shipment.shipmentStatus) > idx);
+                    return (
+                      <div key={step.key} className="flex items-start gap-3 relative">
+                        {idx < TRACKING_STEPS.length - 1 && (
+                          <div className="absolute left-[9px] top-5 w-0.5 h-8" style={{ background: reached ? '#1B1F3B' : '#e5e7eb' }} />
+                        )}
+                        <div className="w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center"
+                          style={{ borderColor: reached ? '#1B1F3B' : '#e5e7eb', background: reached ? '#1B1F3B' : 'white' }}>
+                          {reached && <CheckCircle size={10} className="text-white" />}
+                        </div>
+                        <div className="pb-6">
+                          <p className={`text-xs font-semibold ${reached ? 'text-gray-800' : 'text-gray-400'}`}>{step.label}</p>
+                          {histEntry?.timestamp && (
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                              {new Date(histEntry.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          )}
+                          {histEntry?.note && histEntry.note !== step.label && (
+                            <p className="text-[10px] text-gray-400 italic">{histEntry.note}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Manual shipment status update */}
+              {isManual && (
+                <div>
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Update Shipment Status</p>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {MANUAL_SHIPMENT_STATUS_OPTIONS.map(opt => (
+                      <button key={opt.value} onClick={() => setNewShipStatus(opt.value)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${newShipStatus === opt.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {newShipStatus && (
+                    <>
+                      <input className="input text-xs mb-2" placeholder="Note (optional)" value={shipStatusNote} onChange={e => setShipStatusNote(e.target.value)} />
+                      <button onClick={handleShipmentStatusUpdate} disabled={updatingStatus}
+                        className="w-full py-2.5 rounded-xl text-xs font-bold text-white transition-all"
+                        style={{ background: '#1B1F3B' }}>
+                        {updatingStatus ? 'Updating...' : `Mark as: ${MANUAL_SHIPMENT_STATUS_OPTIONS.find(o => o.value === newShipStatus)?.label}`}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ─ No shipment yet — show selection UI ─ */
+            <div className="mb-4">
+              {/* Method selection */}
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {[
+                  { value: 'tekipost', label: 'TekiPost', icon: '🚀', desc: 'Auto-assign courier, generate AWB & label' },
+                  { value: 'manual',   label: 'Manual',   icon: '✋', desc: 'Enter courier details manually'             },
+                ].map(opt => (
+                  <button key={opt.value} onClick={() => { setShippingMethod(opt.value); setManualType(null); }}
+                    className={`p-4 rounded-2xl border-2 text-left transition-all ${shippingMethod === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300 bg-gray-50'}`}>
+                    <p className="text-lg mb-1">{opt.icon}</p>
+                    <p className={`text-sm font-bold ${shippingMethod === opt.value ? 'text-indigo-700' : 'text-gray-700'}`}>{opt.label}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+
+              {/* TekiPost action */}
+              {shippingMethod === 'tekipost' && (
+                <button onClick={handleTekiPost} disabled={tekiposting}
+                  className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                  style={{ background: '#1B1F3B' }}>
+                  {tekiposting ? <><Loader size={14} className="animate-spin" /> Creating Shipment...</> : <><Truck size={14} /> Generate TekiPost Shipment</>}
+                </button>
+              )}
+
+              {/* Manual sub-selection */}
+              {shippingMethod === 'manual' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: 'courier',        label: 'Courier',        icon: '📦' },
+                      { value: 'local_delivery', label: 'Local Delivery', icon: '🛵' },
+                    ].map(opt => (
+                      <button key={opt.value} onClick={() => setManualType(opt.value)}
+                        className={`p-3 rounded-xl border-2 text-center transition-all ${manualType === opt.value ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                        <p className="text-base mb-0.5">{opt.icon}</p>
+                        <p className={`text-xs font-bold ${manualType === opt.value ? 'text-purple-700' : 'text-gray-600'}`}>{opt.label}</p>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Manual Courier Form */}
+                  {manualType === 'courier' && (
+                    <div className="space-y-2.5">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Courier Company *</label>
+                        <select className="input text-sm" value={mCourierName} onChange={e => setMCourierName(e.target.value)}>
+                          <option value="">Select Courier</option>
+                          {shippingConfig.couriers.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                        </select>
+                      </div>
+                      {mCourierName === 'Other' && (
+                        <input className="input text-sm" placeholder="Courier Name" value={mCourierCustom} onChange={e => setMCourierCustom(e.target.value)} />
+                      )}
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Tracking Number</label>
+                        <input className="input text-sm font-mono" placeholder="Optional" value={mTracking} onChange={e => setMTracking(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Expected Delivery Date</label>
+                        <input type="date" className="input text-sm" value={mETA} onChange={e => setMETA(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Remarks</label>
+                        <input className="input text-sm" placeholder="Optional" value={mRemarks} onChange={e => setMRemarks(e.target.value)} />
+                      </div>
+                      <button onClick={handleManualSave} disabled={saving}
+                        className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                        style={{ background: '#1B1F3B' }}>
+                        {saving ? <><Loader size={14} className="animate-spin" /> Saving...</> : <><CheckCircle size={14} /> Save Shipment</>}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Local Delivery Form */}
+                  {manualType === 'local_delivery' && (
+                    <div className="space-y-2.5">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Delivery Partner *</label>
+                        <select className="input text-sm" value={mPartner} onChange={e => setMPartner(e.target.value)}>
+                          <option value="">Select Partner</option>
+                          {shippingConfig.localPartners.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                        </select>
+                      </div>
+                      {mPartner === 'Other' && (
+                        <input className="input text-sm" placeholder="Partner Name" value={mPartnerCustom} onChange={e => setMPartnerCustom(e.target.value)} />
+                      )}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Driver Name</label>
+                          <input className="input text-sm" placeholder="Optional" value={mDriverName} onChange={e => setMDriverName(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Driver Phone</label>
+                          <input className="input text-sm" placeholder="Optional" value={mDriverPhone} onChange={e => setMDriverPhone(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Vehicle Number</label>
+                          <input className="input text-sm" placeholder="Optional" value={mVehicle} onChange={e => setMVehicle(e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Expected Time</label>
+                          <input className="input text-sm" placeholder="e.g. 3:00 PM" value={mExpectedTime} onChange={e => setMExpectedTime(e.target.value)} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Remarks</label>
+                        <input className="input text-sm" placeholder="Optional" value={mLocalRemarks} onChange={e => setMLocalRemarks(e.target.value)} />
+                      </div>
+                      <button onClick={handleManualSave} disabled={saving}
+                        className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                        style={{ background: '#1B1F3B' }}>
+                        {saving ? <><Loader size={14} className="animate-spin" /> Saving...</> : <><CheckCircle size={14} /> Save Shipment</>}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!shippingMethod && (
+                <p className="text-xs text-gray-400 text-center py-3 border border-dashed border-gray-200 rounded-xl">
+                  Select a shipping method above to create a shipment
+                </p>
+              )}
+            </div>
+          )}
+
+          <Divider />
+
+          {/* ── Section 3.5: Delivery OTP ───────────────── */}
+          {showOTPPanel && (
+            <>
+              <SectionHeader icon={ShieldCheck} title="Delivery OTP Verification" />
+              <div className="mb-4">
+                {otpVerified ? (
+                  <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center gap-3">
+                    <CheckCircle size={18} className="text-green-600 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-green-800">OTP Verified — Delivery Confirmed</p>
+                      <p className="text-xs text-green-600 mt-0.5">Order has been marked as Delivered</p>
+                    </div>
+                  </div>
+                ) : !otpGenerated ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                    <p className="text-xs text-amber-800">Order is out for delivery. Generate a 6-digit OTP and send it to the customer before handing over the package.</p>
+                    <button onClick={handleGenerateOTP} disabled={otpLoading}
+                      className="w-full py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
+                      style={{ background: '#D4AF37', color: '#1B1F3B' }}>
+                      {otpLoading ? <><Loader size={13} className="animate-spin" /> Sending OTP...</> : <><ShieldCheck size={13} /> Generate & Send Delivery OTP</>}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                    <p className="text-xs font-semibold text-amber-800">OTP sent to customer. Ask the customer for their OTP and enter it below to confirm delivery.</p>
+                    <div className="flex gap-2">
+                      <input
+                        className="input text-center font-mono text-xl tracking-[0.4em] font-bold flex-1"
+                        placeholder="000000"
+                        maxLength={6}
+                        value={otpInput}
+                        onChange={e => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                        onKeyDown={e => e.key === 'Enter' && handleVerifyOTP()}
+                      />
+                      <button onClick={handleVerifyOTP} disabled={otpLoading || otpInput.length < 6}
+                        className="px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-40 transition-all"
+                        style={{ background: '#1B1F3B' }}>
+                        {otpLoading ? <Loader size={14} className="animate-spin" /> : 'Verify'}
+                      </button>
+                    </div>
+                    <button onClick={handleResendOTP} disabled={otpLoading}
+                      className="w-full text-xs text-amber-700 underline py-1 disabled:opacity-50">
+                      {otpLoading ? 'Sending...' : 'Resend new OTP'}
+                    </button>
+                  </div>
+                )}
+              </div>
+              <Divider />
+            </>
+          )}
+
+          {/* ── Section 3.6: Invoice ─────────────────────── */}
+          {showInvoiceBtn && (
+            <>
+              <SectionHeader icon={FileText} title="Invoice" />
+              <div className="mb-4">
+                <button onClick={handleViewInvoice}
+                  className="w-full py-2.5 rounded-xl text-sm font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 flex items-center justify-center gap-2 transition-all">
+                  <Download size={13} /> View / Download Invoice
+                </button>
+              </div>
+              <Divider />
+            </>
+          )}
+
+          {/* ── Section 4: Order Status Timeline ─────────── */}
+          <SectionHeader icon={Clock} title="Order Timeline" />
+          <div className="space-y-1.5 mb-4">
+            {(order.statusTimeline || []).length === 0 ? (
+              <p className="text-xs text-gray-400">No timeline entries yet</p>
+            ) : (
+              [...(order.statusTimeline || [])].reverse().slice(0, 5).map((entry, i) => (
+                <div key={i} className="flex items-start gap-2.5 text-xs">
+                  <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: i === 0 ? '#1B1F3B' : '#e5e7eb' }} />
+                  <div>
+                    <span className="font-semibold text-gray-700">{ORDER_STATUS_META[entry.status]?.label || entry.status}</span>
+                    {entry.note && <span className="text-gray-400"> · {entry.note}</span>}
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      {new Date(entry.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <Divider />
+
+          {/* ── Section 5: Update Order Status ───────────── */}
+          {nextStatuses.length > 0 && (
+            <div className="mb-4">
+              <SectionHeader icon={ChevronRight} title="Update Order Status" />
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {nextStatuses.map(s => (
+                  <button key={s} onClick={() => setNewOrderStatus(s)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${newOrderStatus === s ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    → {ORDER_STATUS_META[s]?.label || s}
+                  </button>
+                ))}
+              </div>
+              {newOrderStatus === 'cancelled' && (
+                <input className="input text-sm mb-2" placeholder="Cancellation reason (optional)" value={cancelReason} onChange={e => setCancelReason(e.target.value)} />
+              )}
+              {newOrderStatus && (
+                <button onClick={handleOrderStatusUpdate} disabled={updatingOrder}
+                  className="w-full py-3 rounded-2xl text-sm font-bold text-white transition-all disabled:opacity-50"
+                  style={{ background: '#1B1F3B' }}>
+                  {updatingOrder ? 'Updating...' : `Confirm → ${ORDER_STATUS_META[newOrderStatus]?.label || newOrderStatus}`}
+                </button>
+              )}
+            </div>
+          )}
+
+          {nextStatuses.length === 0 && (
+            <p className="text-xs text-gray-400 text-center py-3 border border-dashed border-gray-200 rounded-xl">
+              No further order status transitions available
+            </p>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function OrdersTab() {
   const [orders,       setOrders]       = useState([]);
@@ -2682,13 +4176,7 @@ function OrdersTab() {
   const [loading,      setLoading]      = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQ,      setSearchQ]      = useState('');
-  const [selected,     setSelected]     = useState(null);
   const [actionOrder,  setActionOrder]  = useState(null);
-  const [newStatus,    setNewStatus]    = useState('');
-  const [cancelReason, setCancelReason] = useState('');
-  const [trackingId,   setTrackingId]   = useState('');
-  const [courier,      setCourier]      = useState('');
-  const [updating,     setUpdating]     = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2705,54 +4193,20 @@ function OrdersTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const openAction = (order) => {
-    setActionOrder(order);
-    setNewStatus('');
-    setCancelReason('');
-    setTrackingId(order.trackingId || '');
-    setCourier(order.courier || '');
-  };
-
-  const handleStatusUpdate = async () => {
-    if (!newStatus) { toast.error('Select a status'); return; }
-    setUpdating(true);
-    try {
-      await API.patch(`/admin/orders/${actionOrder._id}/status`, { status: newStatus, cancelReason });
-      toast.success('Order status updated');
-      setActionOrder(null);
-      load();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
-    finally { setUpdating(false); }
-  };
-
-  const handleShipmentUpdate = async () => {
-    if (!trackingId && !courier) { toast.error('Enter tracking ID or courier name'); return; }
-    setUpdating(true);
-    try {
-      await API.patch(`/admin/orders/${actionOrder._id}/shipment`, { trackingId, courier });
-      toast.success('Shipment info saved');
-      setActionOrder(null);
-      load();
-    } catch { toast.error('Failed to save shipment info'); }
-    finally { setUpdating(false); }
-  };
-
-  const nextStatuses = actionOrder ? (STATUS_TRANSITIONS[actionOrder.status] || []) : [];
-
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-bold text-gray-800" style={{ fontFamily: '"Cormorant Garamond"' }}>Order Management</h1>
+      <h1 className="text-2xl font-bold text-gray-800" style={{ fontFamily: '"Cormorant Garamond", serif' }}>Order Management</h1>
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Total Orders',   value: stats.totalOrders   || 0, color: '#1B1F3B' },
-          { label: 'Pending',        value: stats.pendingOrders || 0, color: '#d97706' },
-          { label: 'Delivered',      value: stats.deliveredOrders||0, color: '#059669' },
-          { label: 'Revenue',        value: `₹${(stats.totalRevenue||0).toLocaleString('en-IN')}`, color: '#D4AF37' },
+          { label: 'Total Orders',  value: stats.totalOrders    || 0, color: '#1B1F3B' },
+          { label: 'Pending',       value: stats.pendingOrders  || 0, color: '#d97706' },
+          { label: 'Delivered',     value: stats.deliveredOrders|| 0, color: '#059669' },
+          { label: 'Revenue',       value: `₹${(stats.totalRevenue||0).toLocaleString('en-IN')}`, color: '#D4AF37' },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-100 p-4">
-            <p className="text-2xl font-bold" style={{ color, fontFamily: '"Cormorant Garamond"' }}>{value}</p>
+            <p className="text-2xl font-bold" style={{ color, fontFamily: '"Cormorant Garamond", serif' }}>{value}</p>
             <p className="text-xs text-gray-500 mt-0.5">{label}</p>
           </div>
         ))}
@@ -2783,7 +4237,7 @@ function OrdersTab() {
 
       {/* Orders table */}
       {loading ? (
-        <div className="space-y-2">{[1,2,3].map(i=><div key={i} className="h-14 skeleton rounded-xl"/>)}</div>
+        <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-14 skeleton rounded-xl" />)}</div>
       ) : orders.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <Package size={40} className="mx-auto mb-3 text-gray-200" />
@@ -2795,7 +4249,7 @@ function OrdersTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  {['Order #', 'Customer', 'Items', 'Amount', 'Status', 'Date', 'Actions'].map(h => (
+                  {['Order #', 'Customer', 'Items', 'Amount', 'Status', 'Shipment', 'Date', 'Actions'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -2811,9 +4265,9 @@ function OrdersTab() {
                         <p className="text-gray-400 text-[10px]">{o.userId?.phone}</p>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-600">
-                        {o.items?.[0]?.name}{o.items?.length > 1 ? ` +${o.items.length-1}` : ''}
+                        {o.items?.[0]?.name}{o.items?.length > 1 ? ` +${o.items.length - 1}` : ''}
                       </td>
-                      <td className="px-4 py-3 font-bold text-gray-800" style={{ fontFamily: '"Cormorant Garamond"' }}>
+                      <td className="px-4 py-3 font-bold text-gray-800" style={{ fontFamily: '"Cormorant Garamond", serif' }}>
                         ₹{o.totalAmount?.toLocaleString('en-IN')}
                       </td>
                       <td className="px-4 py-3">
@@ -2821,11 +4275,20 @@ function OrdersTab() {
                           {meta?.label || o.status}
                         </span>
                       </td>
+                      <td className="px-4 py-3">
+                        {o.shipmentId ? (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                            {o.courier || 'Shipped'}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-400">Not Created</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-xs text-gray-500">
-                        {new Date(o.createdAt).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}
+                        {new Date(o.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </td>
                       <td className="px-4 py-3">
-                        <button onClick={() => openAction(o)}
+                        <button onClick={() => setActionOrder(o)}
                           className="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors"
                           style={{ background: '#1B1F3B', color: 'white' }}>
                           Manage
@@ -2840,79 +4303,13 @@ function OrdersTab() {
         </div>
       )}
 
-      {/* Order action modal */}
+      {/* Full-featured Manage Order Modal */}
       {actionOrder && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-gray-800 text-lg">Manage Order #{actionOrder.orderNumber}</h2>
-              <button onClick={() => setActionOrder(null)} className="text-gray-400 hover:text-gray-600 p-1"><XCircle size={18} /></button>
-            </div>
-
-            {/* Order summary */}
-            <div className="bg-gray-50 rounded-xl p-3 mb-4 text-xs space-y-1">
-              <p className="font-semibold text-gray-700">{actionOrder.userId?.name} · {actionOrder.userId?.phone}</p>
-              <p className="text-gray-500">{actionOrder.shippingAddress?.city}, {actionOrder.shippingAddress?.state}</p>
-              <p className="text-gray-600">{actionOrder.items?.length} item(s) · ₹{actionOrder.totalAmount?.toLocaleString('en-IN')}</p>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${ORDER_STATUS_META[actionOrder.status]?.color || 'bg-gray-100 text-gray-600'}`}>
-                  {ORDER_STATUS_META[actionOrder.status]?.label || actionOrder.status}
-                </span>
-              </div>
-            </div>
-
-            {/* Items */}
-            <div className="mb-4">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Items</p>
-              {actionOrder.items?.map((item, i) => (
-                <div key={i} className="flex justify-between text-xs py-1 border-b border-gray-100">
-                  <span className="text-gray-700">{item.name} ×{item.quantity}</span>
-                  <span className="font-semibold">₹{item.total?.toLocaleString('en-IN')}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Shipment tracking */}
-            <div className="mb-4 space-y-2">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1.5"><Truck size={12} /> Shipment Info</p>
-              <input className="input text-sm" placeholder="Courier name (e.g. DTDC, BlueDart)" value={courier} onChange={(e) => setCourier(e.target.value)} />
-              <input className="input text-sm font-mono" placeholder="Tracking number" value={trackingId} onChange={(e) => setTrackingId(e.target.value)} />
-              <button onClick={handleShipmentUpdate} disabled={updating}
-                className="w-full py-2 text-sm rounded-xl font-semibold transition-colors border border-gray-200 hover:bg-gray-50">
-                Save Shipment Info
-              </button>
-            </div>
-
-            {/* Status update */}
-            {nextStatuses.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Update Status</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {nextStatuses.map((s) => (
-                    <button key={s} onClick={() => setNewStatus(s)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${newStatus === s ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                      → {ORDER_STATUS_META[s]?.label || s}
-                    </button>
-                  ))}
-                </div>
-                {newStatus === 'cancelled' && (
-                  <input className="input text-sm mt-2" placeholder="Cancellation reason (optional)" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
-                )}
-                {newStatus && (
-                  <button onClick={handleStatusUpdate} disabled={updating}
-                    className="w-full py-3 rounded-xl font-semibold text-sm text-white transition-all"
-                    style={{ background: '#1B1F3B' }}>
-                    {updating ? 'Updating...' : `Confirm: ${ORDER_STATUS_META[newStatus]?.label || newStatus}`}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {nextStatuses.length === 0 && (
-              <p className="text-xs text-gray-400 text-center py-2">No further status transitions available.</p>
-            )}
-          </div>
-        </div>
+        <ManageOrderModal
+          order={actionOrder}
+          onClose={() => setActionOrder(null)}
+          onRefresh={load}
+        />
       )}
     </div>
   );
@@ -2926,7 +4323,7 @@ const VISIBILITY_META = {
 };
 
 const EMPTY_PRODUCT_FORM = {
-  name: '', category: 'samagri', price: '', salePrice: '', stock: '',
+  name: '', category: '', price: '', salePrice: '', stock: '',
   description: '', tags: '', visibilityType: 'marketplace', taxRate: '', variants: [],
 };
 
@@ -2980,7 +4377,7 @@ function VariantBuilder({ variants, setVariants }) {
   );
 }
 
-function ProductForm({ form, setForm, images, setImages, onSubmit, submitLabel, loading }) {
+function ProductForm({ form, setForm, images, setImages, onSubmit, submitLabel, loading, categories = [] }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const variants    = form.variants || [];
   const setVariants = (fn) => setForm((f) => ({ ...f, variants: typeof fn === 'function' ? fn(f.variants || []) : fn }));
@@ -2993,8 +4390,9 @@ function ProductForm({ form, setForm, images, setImages, onSubmit, submitLabel, 
         <div>
           <label className="label">Category *</label>
           <select required className="input" value={form.category} onChange={set('category')}>
-            {['samagri','rudraksha','yantra','incense','idol','books','pooja_essentials','other'].map((c) => (
-              <option key={c} value={c} className="capitalize">{c.replace('_', ' ')}</option>
+            <option value="">Select category…</option>
+            {categories.map((c) => (
+              <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>
             ))}
           </select>
         </div>
@@ -3051,16 +4449,34 @@ function ProductForm({ form, setForm, images, setImages, onSubmit, submitLabel, 
   );
 }
 
+// ── Inventory stock pill ─────────────────────────────────────
+function StockPill({ stock }) {
+  if (stock === 0)
+    return <span className="inline-block text-[10px] px-1.5 py-0.5 rounded font-bold bg-red-100 text-red-600 leading-none">OOS</span>;
+  if (stock < 10)
+    return <span className="inline-block text-[10px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-700 leading-none">{stock} ⚠</span>;
+  return <span className="inline-block text-[10px] px-1.5 py-0.5 rounded font-bold bg-green-100 text-green-700 leading-none">{stock}</span>;
+}
+
 function MarketplaceTab() {
   const [view,          setView]          = useState('products');
   const [products,      setProducts]      = useState([]);
   const [kits,          setKits]          = useState([]);
+  const [categories,    setCategories]    = useState([]);
   const [loading,       setLoading]       = useState(true);
   const [saving,        setSaving]        = useState(false);
   const [search,        setSearch]        = useState('');
   const [editingProd,   setEditingProd]   = useState(null);
   const [productForm,   setProductForm]   = useState(EMPTY_PRODUCT_FORM);
   const [productImages, setProductImages] = useState([]);
+
+  // ── Category CRUD state ────────────────────────────────────
+  const [catLoading,    setCatLoading]    = useState(false);
+  const [catSaving,     setCatSaving]     = useState(false);
+  const [editingCat,    setEditingCat]    = useState(null);   // null = create mode
+  const [catFormOpen,   setCatFormOpen]   = useState(false);
+  const [catForm,       setCatForm]       = useState({ name:'', slug:'', description:'', icon:'🛍️', featured:false, displayOrder:0, isActive:true, seoTitle:'', seoDescription:'' });
+  const [catImage,      setCatImage]      = useState(null);
 
   const [kitForm,         setKitForm]         = useState({ name:'', description:'', discountType:'percentage', discountValue:'0', isFeatured:false, taxRate:'' });
   const [kitItems,        setKitItems]        = useState([{ productId:'', quantity:1 }]);
@@ -3073,20 +4489,88 @@ function MarketplaceTab() {
   const [editingKit,      setEditingKit]      = useState(null);
   const [kitSearch,       setKitSearch]       = useState('');
 
+  const loadCategories = () => {
+    setCatLoading(true);
+    API.get('/marketplace/admin/categories')
+      .then((r) => setCategories(r.data.categories || []))
+      .catch(() => {})
+      .finally(() => setCatLoading(false));
+  };
+
   const load = () => {
     setLoading(true);
     Promise.all([
       API.get('/marketplace/admin/products'),
       API.get('/marketplace/kits?limit=50'),
       API.get('/poojas/admin-catalog?status=active'),
-    ]).then(([p, k, pj]) => {
+      API.get('/marketplace/admin/categories'),
+    ]).then(([p, k, pj, cats]) => {
       setProducts(p.data.products || []);
       setKits(k.data.kits || []);
       setAvailablePoojas(pj.data.poojas || []);
+      setCategories(cats.data.categories || []);
     }).finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
+
+  // ── Category CRUD handlers ────────────────────────────────
+  const openCatCreate = () => {
+    setEditingCat(null);
+    setCatForm({ name:'', slug:'', description:'', icon:'🛍️', featured:false, displayOrder: categories.length, isActive:true, seoTitle:'', seoDescription:'' });
+    setCatImage(null);
+    setCatFormOpen(true);
+  };
+
+  const openCatEdit = (cat) => {
+    setEditingCat(cat);
+    setCatForm({
+      name: cat.name, slug: cat.slug, description: cat.description || '',
+      icon: cat.icon || '🛍️', featured: cat.featured || false,
+      displayOrder: cat.displayOrder || 0, isActive: cat.isActive !== false,
+      seoTitle: cat.seoTitle || '', seoDescription: cat.seoDescription || '',
+    });
+    setCatImage(null);
+    setCatFormOpen(true);
+  };
+
+  const handleCatSubmit = async (e) => {
+    e.preventDefault();
+    setCatSaving(true);
+    try {
+      const fd = new FormData();
+      Object.entries(catForm).forEach(([k, v]) => fd.append(k, String(v)));
+      if (catImage) fd.append('image', catImage);
+      if (editingCat) {
+        await API.patch(`/marketplace/admin/categories/${editingCat._id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        toast.success('Category updated');
+      } else {
+        await API.post('/marketplace/admin/categories', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        toast.success('Category created');
+      }
+      setCatFormOpen(false);
+      loadCategories();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    finally { setCatSaving(false); }
+  };
+
+  const toggleCatStatus = async (cat) => {
+    try {
+      await API.patch(`/marketplace/admin/categories/${cat._id}/status`);
+      loadCategories();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+  };
+
+  const deleteCat = async (cat) => {
+    if (!window.confirm(`Delete category "${cat.name}"? This cannot be undone.`)) return;
+    try {
+      await API.delete(`/marketplace/admin/categories/${cat._id}`);
+      toast.success('Category deleted');
+      loadCategories();
+    } catch (err) { toast.error(err.response?.data?.message || 'Cannot delete: products are still assigned to this category'); }
+  };
+
+  const autoSlug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 
   // Kit builder products: active, non-deleted. Products with variants only need any in-stock variant.
   const kitBuilderProducts = products.filter((p) => {
@@ -3101,6 +4585,33 @@ function MarketplaceTab() {
     p.category.toLowerCase().includes(search.toLowerCase()) ||
     (p.tags || []).some((t) => t.toLowerCase().includes(search.toLowerCase()))
   );
+
+  const exportProductsCSV = () => {
+    const headers = ['Name', 'Category', 'Visibility', 'Price / Variants', 'Stock / Variant Stock', 'Status'];
+    const rows = filteredProducts.map((p) => {
+      const activeVariants = (p.variants || []).filter(v => v.isActive !== false);
+      return [
+        p.name || '',
+        p.category || '',
+        (VISIBILITY_META[p.visibilityType] || VISIBILITY_META.marketplace).label,
+        activeVariants.length > 0
+          ? activeVariants.map(v => `${v.quantity}: ₹${v.salePrice || v.price}`).join(' | ')
+          : p.salePrice ? `₹${p.salePrice}` : `₹${p.price || 0}`,
+        activeVariants.length > 0
+          ? activeVariants.map(v => `${v.quantity}: ${v.stock}`).join(' | ')
+          : (p.totalStock ?? p.stock ?? 0),
+        p.isDeleted ? 'Deleted' : p.isActive ? 'Active' : 'Inactive',
+      ];
+    });
+    const csv = [headers, ...rows]
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `products_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Auto-recompute kit pricing
   useEffect(() => {
@@ -3299,6 +4810,7 @@ function MarketplaceTab() {
       <div className="flex gap-2 flex-wrap">
         {navBtn('products', 'Products')}
         {navBtn('kits', 'Kits')}
+        {navBtn('categories', '🏷️ Categories')}
         {navBtn('add-product', '+ Add Product')}
         {navBtn('add-kit', '+ Add Kit')}
       </div>
@@ -3306,9 +4818,14 @@ function MarketplaceTab() {
       {/* ── Products List ── */}
       {view === 'products' && (
         <div className="space-y-3">
-          <div className="relative max-w-sm">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input className="input pl-9 text-sm" placeholder="Search by name, category, tag..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input className="input pl-9 text-sm" placeholder="Search by name, category, tag..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+            <button onClick={exportProductsCSV} className="text-xs font-semibold flex items-center gap-1 bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+              ⬇ Export CSV
+            </button>
           </div>
           {loading ? (
             <div className="space-y-2">{[1,2,3].map((i) => <div key={i} className="h-14 bg-white rounded-xl animate-pulse border border-gray-100" />)}</div>
@@ -3337,10 +4854,43 @@ function MarketplaceTab() {
                           {(VISIBILITY_META[p.visibilityType] || VISIBILITY_META.marketplace).label}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-bold text-saffron-600 text-xs whitespace-nowrap">
-                        {p.salePrice ? <><s className="text-gray-400 font-normal">₹{p.price}</s> ₹{p.salePrice}</> : `₹${p.price}`}
+                      <td className="px-4 py-3">
+                        {p.variants?.length > 0 ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-semibold border border-indigo-100 whitespace-nowrap">
+                            <Package size={9} />
+                            {p.variants.filter(v => v.isActive !== false).length} Variant{p.variants.filter(v => v.isActive !== false).length !== 1 ? 's' : ''}
+                          </span>
+                        ) : (
+                          <span className="font-bold text-saffron-600 text-xs whitespace-nowrap">
+                            {p.salePrice
+                              ? <><s className="text-gray-400 font-normal">₹{p.price}</s>{' '}₹{p.salePrice}</>
+                              : `₹${p.price || 0}`}
+                          </span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-600">{p.stock}</td>
+                      <td className="px-4 py-3">
+                        {p.variants?.length > 0 ? (
+                          <div className="space-y-1 min-w-[120px]">
+                            {p.variants.map((v) => (
+                              <div key={v.variantId || v.quantity}
+                                className={`flex items-center gap-1.5 ${v.isActive === false ? 'opacity-40' : ''}`}>
+                                <span className="font-medium text-gray-600 w-9 shrink-0 truncate text-[11px]">{v.quantity}</span>
+                                <span className="text-saffron-600 font-semibold text-[11px] shrink-0">
+                                  ₹{(v.salePrice || v.price || 0).toLocaleString('en-IN')}
+                                </span>
+                                <StockPill stock={v.stock ?? 0} />
+                              </div>
+                            ))}
+                            {p.variants.length > 1 && (
+                              <div className="text-[10px] text-gray-400 pt-1 mt-0.5 border-t border-gray-100">
+                                Total Stock: {p.totalStock ?? p.variants.reduce((s, v) => s + (v.stock || 0), 0)}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <StockPill stock={p.totalStock ?? p.stock ?? 0} />
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         {p.isDeleted
                           ? <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">Deleted</span>
@@ -3381,7 +4931,7 @@ function MarketplaceTab() {
         <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-xl">
           <h2 className="font-bold text-gray-800 mb-4">Add Product</h2>
           <ProductForm form={productForm} setForm={setProductForm} images={productImages} setImages={setProductImages}
-            onSubmit={handleCreateProduct} submitLabel="Add Product" loading={saving} />
+            onSubmit={handleCreateProduct} submitLabel="Add Product" loading={saving} categories={categories} />
         </div>
       )}
 
@@ -3393,7 +4943,160 @@ function MarketplaceTab() {
             <h2 className="font-bold text-gray-800">Edit: {editingProd.name}</h2>
           </div>
           <ProductForm form={productForm} setForm={setProductForm} images={productImages} setImages={setProductImages}
-            onSubmit={handleUpdateProduct} submitLabel="Save Changes" loading={saving} />
+            onSubmit={handleUpdateProduct} submitLabel="Save Changes" loading={saving} categories={categories} />
+        </div>
+      )}
+
+      {/* ── Categories Management ── */}
+      {view === 'categories' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-bold text-gray-800 text-lg">Category Management</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Categories added here appear automatically in the marketplace without code changes.</p>
+            </div>
+            <button onClick={openCatCreate}
+              className="flex items-center gap-2 bg-saffron-500 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-saffron-600 transition-colors">
+              <Plus size={15} /> Add Category
+            </button>
+          </div>
+
+          {/* Category form modal */}
+          {catFormOpen && (
+            <div className="bg-white rounded-2xl border border-gray-200 p-6 max-w-lg shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-gray-800">{editingCat ? `Edit: ${editingCat.name}` : 'New Category'}</h3>
+                <button onClick={() => setCatFormOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+              </div>
+              <form onSubmit={handleCatSubmit} className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Name *</label>
+                    <input required className="input" value={catForm.name}
+                      onChange={(e) => {
+                        const name = e.target.value;
+                        setCatForm((f) => ({ ...f, name, ...(editingCat ? {} : { slug: autoSlug(name) }) }));
+                      }} />
+                  </div>
+                  <div>
+                    <label className="label">Slug * <span className="text-xs text-gray-400">(URL identifier)</span></label>
+                    <input required className="input font-mono text-sm" value={catForm.slug}
+                      onChange={(e) => setCatForm((f) => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') }))}
+                      readOnly={!!editingCat} title={editingCat ? 'Slug cannot be changed after creation' : ''} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="label">Icon (emoji)</label>
+                    <input className="input text-xl text-center" value={catForm.icon}
+                      onChange={(e) => setCatForm((f) => ({ ...f, icon: e.target.value }))} maxLength={4} />
+                  </div>
+                  <div>
+                    <label className="label">Display Order</label>
+                    <input type="number" min="0" className="input" value={catForm.displayOrder}
+                      onChange={(e) => setCatForm((f) => ({ ...f, displayOrder: Number(e.target.value) }))} />
+                  </div>
+                  <div className="flex flex-col justify-end gap-2 pb-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={catForm.featured}
+                        onChange={(e) => setCatForm((f) => ({ ...f, featured: e.target.checked }))} />
+                      <span className="text-sm text-gray-700">Featured</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={catForm.isActive}
+                        onChange={(e) => setCatForm((f) => ({ ...f, isActive: e.target.checked }))} />
+                      <span className="text-sm text-gray-700">Active</span>
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Description</label>
+                  <textarea className="input h-16 resize-none" value={catForm.description}
+                    onChange={(e) => setCatForm((f) => ({ ...f, description: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">Image (optional)</label>
+                  <input type="file" accept="image/*" onChange={(e) => setCatImage(e.target.files[0])} className="text-sm" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">SEO Title</label>
+                    <input className="input text-sm" value={catForm.seoTitle}
+                      onChange={(e) => setCatForm((f) => ({ ...f, seoTitle: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="label">SEO Description</label>
+                    <input className="input text-sm" value={catForm.seoDescription}
+                      onChange={(e) => setCatForm((f) => ({ ...f, seoDescription: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button type="submit" disabled={catSaving}
+                    className="btn-primary flex items-center gap-2 text-sm">
+                    {catSaving ? 'Saving…' : (editingCat ? 'Save Changes' : 'Create Category')}
+                  </button>
+                  <button type="button" onClick={() => setCatFormOpen(false)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Categories table */}
+          {catLoading ? (
+            <div className="space-y-2">{[1,2,3,4].map((i) => <div key={i} className="h-12 bg-white rounded-xl animate-pulse border border-gray-100" />)}</div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 text-xs text-gray-500 border-b">
+                  {['Icon','Name','Slug','Products','Order','Featured','Status','Actions'].map((h) => (
+                    <th key={h} className="px-4 py-3 text-left font-semibold">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody className="divide-y divide-gray-50">
+                  {categories.map((cat) => (
+                    <tr key={cat._id} className={`transition-colors ${cat.isActive ? 'hover:bg-gray-50/50' : 'opacity-60 bg-gray-50/30'}`}>
+                      <td className="px-4 py-3 text-xl">{cat.icon}</td>
+                      <td className="px-4 py-3 font-medium text-gray-800">{cat.name}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500">{cat.slug}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${(cat.productCount || 0) > 0 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
+                          {cat.productCount || 0}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{cat.displayOrder}</td>
+                      <td className="px-4 py-3">
+                        {cat.featured && <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">⭐ Featured</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cat.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {cat.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => openCatEdit(cat)} title="Edit"
+                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                            <Edit3 size={13} />
+                          </button>
+                          <button onClick={() => toggleCatStatus(cat)} title={cat.isActive ? 'Deactivate' : 'Activate'}
+                            className={`p-1.5 rounded-lg transition-colors ${cat.isActive ? 'text-gray-400 hover:text-orange-500 hover:bg-orange-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`}>
+                            {cat.isActive ? <EyeOff size={13} /> : <Eye size={13} />}
+                          </button>
+                          <button onClick={() => deleteCat(cat)} title="Delete"
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {categories.length === 0 && (
+                    <tr><td colSpan={8} className="py-12 text-center text-gray-400 text-sm">No categories yet. Click "Add Category" to create one.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -3889,7 +5592,7 @@ function TemplesTab() {
             </p>
             {geoStatus === 'loading' && (
               <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl">
-                <Loader size={12} className="animate-spin shrink-0" />
+                <ZutsavLoaderInline size={14} />
                 Updating map location...
               </div>
             )}
@@ -4094,14 +5797,15 @@ function ReferralStatsTab() {
 
 // ─── System Settings Tab ──────────────────────────────────────
 const SETTING_SECTIONS = [
-  { key: 'general',   label: 'General',   icon: Settings },
-  { key: 'payment',    label: 'Payment',    icon: CreditCard },
-  { key: 'commission', label: 'Commission', icon: Percent },
-  { key: 'whatsapp',  label: 'WhatsApp',  icon: MessageSquare },
-  { key: 'email',     label: 'Email',     icon: Mail },
-  { key: 'ai',        label: 'AI',        icon: Cpu },
-  { key: 'media',     label: 'Media',     icon: Image },
-  { key: 'security',  label: 'Security',  icon: Shield },
+  { key: 'general',       label: 'General',       icon: Settings },
+  { key: 'payment',       label: 'PhonePe',       icon: CreditCard },
+  { key: 'payment_rules', label: 'Payment Rules', icon: IndianRupee },
+  { key: 'commission',    label: 'Platform Fees', icon: IndianRupee },
+  { key: 'whatsapp',      label: 'WhatsApp',      icon: MessageSquare },
+  { key: 'email',         label: 'Email',         icon: Mail },
+  { key: 'ai',            label: 'AI',            icon: Cpu },
+  { key: 'media',         label: 'Media',         icon: Image },
+  { key: 'security',      label: 'Security',      icon: Shield },
 ];
 
 function SecretInput({ label, name, value, onChange, placeholder }) {
@@ -4215,7 +5919,13 @@ function SystemSettingsTab() {
 
   useEffect(() => {
     API.get('/admin/settings')
-      .then(({ data }) => setForm(data.settings || {}))
+      .then(({ data }) => setForm({
+        partialPaymentEnabled:   false,
+        partialPaymentMinAmount: 500,
+        partialPaymentMode:      'fixed',
+        partialPaymentOptions:   [500, 1000, 1500],
+        ...(data.settings || {}),
+      }))
       .catch(() => toast.error('Could not load settings'))
       .finally(() => setLoading(false));
   }, []);
@@ -4272,43 +5982,211 @@ function SystemSettingsTab() {
         <Field label="Redirect URL (after payment)" name="phonepeRedirectUrl" value={form.phonepeRedirectUrl || ''} onChange={set} placeholder="https://yourdomain.com/booking-status" />
       </SectionForm>
     ),
-    commission: (
-      <SectionForm title="Platform Commission & Tax" onSave={() => save(['platformCommissionPercent','platformGstPercent'])} saving={saving}>
-        <InfoBox>These percentages are applied on top of the base pooja price and shown transparently to users at checkout.</InfoBox>
-        <div className="grid grid-cols-2 gap-4">
+    payment_rules: (() => {
+      const ppMode    = form.partialPaymentMode    || 'fixed';
+      const ppOptions = Array.isArray(form.partialPaymentOptions) ? form.partialPaymentOptions : [500, 1000, 1500];
+      const optionsStr = ppOptions.join(', ');
+      return (
+        <SectionForm
+          title="Payment Rules — Partial Payment"
+          onSave={() => save(['partialPaymentEnabled','partialPaymentMinAmount','partialPaymentMode','partialPaymentOptions'])}
+          saving={saving}
+        >
+          <InfoBox>
+            Partial payment lets users pay a portion of the booking amount upfront and settle the remaining balance before or on the ceremony day.
+            The booking is confirmed immediately upon partial payment.
+          </InfoBox>
+
+          {/* Enable toggle */}
+          <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl border border-gray-200 bg-gray-50">
+            <div className={`w-12 h-6 rounded-full relative transition-all duration-200 ${form.partialPaymentEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
+              onClick={() => setForm(f => ({ ...f, partialPaymentEnabled: !f.partialPaymentEnabled }))}>
+              <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow transition-all duration-200 ${form.partialPaymentEnabled ? 'left-6' : 'left-0.5'}`} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-800">Enable Partial Payment</p>
+              <p className="text-xs text-gray-500">Allow users to pay a portion now and remainder later</p>
+            </div>
+          </label>
+
+          {form.partialPaymentEnabled && (
+            <>
+              {/* Min amount */}
+              <div>
+                <label className="label">Minimum Partial Payment Amount (₹)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
+                  <input type="number" name="partialPaymentMinAmount" min="1" step="1"
+                    value={form.partialPaymentMinAmount ?? 500} onChange={set} className="input pl-7" />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Users cannot pay less than this amount as a partial payment. Minimum: ₹1</p>
+              </div>
+
+              {/* Mode */}
+              <div>
+                <label className="label">Partial Payment Mode</label>
+                <div className="flex gap-3 mt-1">
+                  {[
+                    { value: 'fixed',      label: '₹ Fixed Amounts', desc: 'e.g. ₹500, ₹1000, ₹1500' },
+                    { value: 'percentage', label: '% Percentages',   desc: 'e.g. 25%, 50%, 75%' },
+                  ].map(({ value, label, desc }) => (
+                    <label key={value}
+                      className={`flex-1 flex items-start gap-2.5 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                        ppMode === value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-200'
+                      }`}
+                    >
+                      <input type="radio" name="partialPaymentMode" value={value}
+                        checked={ppMode === value}
+                        onChange={set}
+                        className="accent-indigo-600 mt-0.5"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{label}</p>
+                        <p className="text-xs text-gray-400">{desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Options */}
+              <div>
+                <label className="label">
+                  Predefined Options ({ppMode === 'percentage' ? 'comma-separated percentages, e.g. 25,50,75' : 'comma-separated amounts, e.g. 500,1000,1500'})
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder={ppMode === 'percentage' ? '25,50,75' : '500,1000,1500'}
+                  value={optionsStr}
+                  onChange={(e) => {
+                    const parsed = e.target.value.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n) && n > 0);
+                    setForm(f => ({ ...f, partialPaymentOptions: parsed.length > 0 ? parsed : f.partialPaymentOptions }));
+                  }}
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  These become quick-select buttons at checkout. Amounts below the minimum or ≥ grand total are automatically disabled.
+                </p>
+              </div>
+
+              {/* Preview */}
+              <div className="rounded-xl border p-4" style={{ background: '#f8f9fa', borderColor: 'var(--t-border)' }}>
+                <p className="text-xs font-semibold text-gray-600 mb-2">Preview (example ₹2000 booking):</p>
+                <div className="flex flex-wrap gap-2">
+                  {ppOptions.map((opt) => {
+                    const resolvedAmt = ppMode === 'percentage' ? Math.round(2000 * opt / 100) : opt;
+                    const isValid     = resolvedAmt >= (form.partialPaymentMinAmount ?? 500) && resolvedAmt < 2000;
+                    return (
+                      <span key={opt} className={`text-xs px-3 py-1.5 rounded-xl font-semibold border-2 ${
+                        isValid ? 'border-indigo-400 text-indigo-700 bg-indigo-50' : 'border-gray-200 text-gray-400 line-through'
+                      }`}>
+                        {ppMode === 'percentage' ? `${opt}% (₹${resolvedAmt})` : `₹${resolvedAmt.toLocaleString('en-IN')}`}
+                        {!isValid && ' (disabled)'}
+                      </span>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 space-y-1 text-xs text-gray-600">
+                  <div className="flex justify-between"><span>Booking Total</span><span>₹2,000</span></div>
+                  <div className="flex justify-between text-orange-600 font-semibold"><span>Example: Pay Now</span><span>₹{ppOptions[0] ? (ppMode === 'percentage' ? Math.round(2000 * ppOptions[0] / 100) : ppOptions[0]).toLocaleString('en-IN') : '—'}</span></div>
+                  <div className="flex justify-between text-red-500"><span>Remaining Due</span><span>₹{ppOptions[0] ? (2000 - (ppMode === 'percentage' ? Math.round(2000 * ppOptions[0] / 100) : ppOptions[0])).toLocaleString('en-IN') : '—'}</span></div>
+                </div>
+              </div>
+            </>
+          )}
+        </SectionForm>
+      );
+    })(),
+    commission: (() => {
+      const commType   = form.platformCommissionType || 'percent';
+      const previewFee = commType === 'fixed'
+        ? Math.round(form.platformCommissionFixed || 0)
+        : Math.round(1000 * (form.platformCommissionPercent || 0) / 100);
+      const previewGst = Math.round((1000 + previewFee) * (form.platformGstPercent || 0) / 100);
+      return (
+        <SectionForm title="Platform Fees" onSave={() => save(['platformCommissionType','platformCommissionPercent','platformCommissionFixed','platformGstPercent'])} saving={saving}>
+          <InfoBox>Commission is added on top of the base pooja price and shown transparently to users at checkout.</InfoBox>
+
+          {/* Commission type toggle */}
           <div>
-            <label className="label">Platform Commission (%)</label>
-            <div className="relative">
-              <input type="number" name="platformCommissionPercent" min="0" max="100" step="0.5"
-                value={form.platformCommissionPercent ?? 0} onChange={set} className="input pr-8" />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+            <label className="label">Platform Fees Type</label>
+            <div className="flex gap-2 mt-1">
+              {[
+                { value: 'percent', label: '% Percentage', icon: '%' },
+                { value: 'fixed',   label: '₹ Fixed Amount', icon: '₹' },
+              ].map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => set({ target: { name: 'platformCommissionType', value } })}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
+                    commType === value
+                      ? 'text-white border-transparent'
+                      : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                  style={commType === value ? { background: '#1B1F3B' } : {}}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
-          <div>
-            <label className="label">GST / Tax (%)</label>
-            <div className="relative">
-              <input type="number" name="platformGstPercent" min="0" max="100" step="0.5"
-                value={form.platformGstPercent ?? 0} onChange={set} className="input pr-8" />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Commission value input — changes based on type */}
+            <div>
+              {commType === 'percent' ? (
+                <>
+                  <label className="label">Platform Fees (%)</label>
+                  <div className="relative">
+                    <input type="number" name="platformCommissionPercent" min="0" max="100" step="0.5"
+                      value={form.platformCommissionPercent ?? 0} onChange={set} className="input pr-8" />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label className="label">Fixed Platform Amount (₹)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
+                    <input type="number" name="platformCommissionFixed" min="0" step="1"
+                      value={form.platformCommissionFixed ?? 0} onChange={set} className="input pl-7" />
+                  </div>
+                </>
+              )}
+            </div>
+            <div>
+              <label className="label">GST / Tax (%)</label>
+              <div className="relative">
+                <input type="number" name="platformGstPercent" min="0" max="100" step="0.5"
+                  value={form.platformGstPercent ?? 0} onChange={set} className="input pr-8" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="rounded-xl border p-4" style={{ background: '#f8f9fa', borderColor: 'var(--t-border)' }}>
-          <p className="text-xs font-semibold text-gray-600 mb-2">Preview (example ₹1000 pooja):</p>
-          <div className="space-y-1 text-xs text-gray-600">
-            <div className="flex justify-between"><span>Base Price</span><span>₹1,000</span></div>
-            <div className="flex justify-between"><span>Commission ({form.platformCommissionPercent || 0}%)</span><span>₹{Math.round(1000 * (form.platformCommissionPercent || 0) / 100)}</span></div>
-            <div className="flex justify-between"><span>GST ({form.platformGstPercent || 0}%)</span><span>₹{Math.round((1000 + Math.round(1000 * (form.platformCommissionPercent || 0) / 100)) * (form.platformGstPercent || 0) / 100)}</span></div>
-            <div className="flex justify-between font-bold border-t pt-1 mt-1" style={{ borderColor: 'var(--t-border)' }}>
-              <span>Total Charged</span>
-              <span style={{ color: '#1B1F3B' }}>
-                ₹{1000 + Math.round(1000 * (form.platformCommissionPercent || 0) / 100) + Math.round((1000 + Math.round(1000 * (form.platformCommissionPercent || 0) / 100)) * (form.platformGstPercent || 0) / 100)}
-              </span>
+
+          <div className="rounded-xl border p-4" style={{ background: '#f8f9fa', borderColor: 'var(--t-border)' }}>
+            <p className="text-xs font-semibold text-gray-600 mb-2">Preview (example ₹1000 pooja):</p>
+            <div className="space-y-1 text-xs text-gray-600">
+              <div className="flex justify-between"><span>Base Price</span><span>₹1,000</span></div>
+              <div className="flex justify-between">
+                <span>
+                  Commission {commType === 'percent'
+                    ? `(${form.platformCommissionPercent || 0}%)`
+                    : `(₹${form.platformCommissionFixed || 0} fixed)`}
+                </span>
+                <span>₹{previewFee}</span>
+              </div>
+              <div className="flex justify-between"><span>GST ({form.platformGstPercent || 0}%)</span><span>₹{previewGst}</span></div>
+              <div className="flex justify-between font-bold border-t pt-1 mt-1" style={{ borderColor: 'var(--t-border)' }}>
+                <span>Total Charged</span>
+                <span style={{ color: '#1B1F3B' }}>₹{1000 + previewFee + previewGst}</span>
+              </div>
             </div>
           </div>
-        </div>
-      </SectionForm>
-    ),
+        </SectionForm>
+      );
+    })(),
     whatsapp: (
       <SectionForm title="WhatsApp (Meta Cloud API)" onSave={() => save(['whatsappAppId','whatsappPhoneNumberId','whatsappBusinessAccountId','whatsappAccessToken','whatsappApiVersion'])} saving={saving}>
         <Field label="Meta App ID" name="whatsappAppId" value={form.whatsappAppId || ''} onChange={set} />
@@ -4538,6 +6416,43 @@ function PayoutsTab() {
   const fmt = (n) => `₹${(n || 0).toLocaleString('en-IN')}`;
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
+  const exportPayoutsCSV = () => {
+    if (view === 'pending') {
+      const headers = ['Pandit', 'Bookings Pending', 'Total Amount (₹)'];
+      const rows = pendingGroups.map((g) => [
+        g.panditName || g.pandit?.name || '',
+        g.bookings?.length || 0,
+        g.totalAmount || 0,
+      ]);
+      const csv = [headers, ...rows]
+        .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = `pending_payouts_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const headers = ['Batch ID', 'Pandit', 'Amount (₹)', 'Method', 'Date', 'Note'];
+      const rows = history.map((b) => [
+        b._id || '',
+        b.panditName || b.pandit?.name || '',
+        b.amount || 0,
+        b.paymentMethod || '',
+        b.paidAt ? new Date(b.paidAt).toLocaleDateString('en-IN') : '',
+        b.note || '',
+      ]);
+      const csv = [headers, ...rows]
+        .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = `payout_history_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    }
+  };
+
   return (
     <div className="space-y-5">
       {/* Pay modal */}
@@ -4569,10 +6484,15 @@ function PayoutsTab() {
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-800">Payout Management</h1>
-        <button onClick={() => view === 'pending' ? loadPending() : loadHistory()}
-          className="text-xs text-gray-400 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
-          <RotateCcw size={12} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={exportPayoutsCSV} className="text-xs font-semibold flex items-center gap-1 bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+            ⬇ Export CSV
+          </button>
+          <button onClick={() => view === 'pending' ? loadPending() : loadHistory()}
+            className="text-xs text-gray-400 flex items-center gap-1 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg">
+            <RotateCcw size={12} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Sub-tabs */}
@@ -4793,9 +6713,874 @@ function TestEmailButton() {
 }
 
 function LoadingSpinner() {
+  return <ZutsavLoader />;
+}
+
+// ─── Blog Management Tab ──────────────────────────────────────
+function BlogManagementTab() {
+  const [subTab, setSubTab] = useState('blogs'); // 'blogs' | 'categories' | 'permissions'
+
   return (
-    <div className="flex justify-center py-16">
-      <div className="animate-spin text-4xl">🪔</div>
+    <div>
+      {/* Sub-tab bar */}
+      <div className="flex gap-2 mb-6 border-b" style={{ borderColor: 'var(--t-border)' }}>
+        {[
+          { id: 'blogs',       label: 'All Blogs' },
+          { id: 'categories',  label: 'Categories' },
+          { id: 'permissions', label: 'Permissions' },
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setSubTab(t.id)}
+            className="px-4 py-2.5 text-sm font-semibold border-b-2 transition-all -mb-px"
+            style={{
+              borderColor:  subTab === t.id ? 'var(--t-primary)' : 'transparent',
+              color:        subTab === t.id ? 'var(--t-primary)' : 'var(--t-muted)',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'blogs'       && <BlogListSubTab />}
+      {subTab === 'categories'  && <BlogCategoriesSubTab />}
+      {subTab === 'permissions' && <BlogPermissionsSubTab />}
+    </div>
+  );
+}
+
+// ─── Blog List Sub-tab ────────────────────────────────────────
+function BlogListSubTab() {
+  const [blogs,    setBlogs]    = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [search,   setSearch]   = useState('');
+  const [status,   setStatus]   = useState('');
+  const [role,     setRole]     = useState('');
+  const [acting,   setActing]   = useState(null); // blogId being actioned
+  const [rejectId, setRejectId] = useState(null);
+  const [rejectNote, setRejectNote] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (status) params.set('status', status);
+      if (role)   params.set('authorRole', role);
+      params.set('limit', '100');
+      const { data } = await API.get(`/admin/blogs?${params}`);
+      setBlogs(data.blogs || []);
+    } catch { toast.error('Failed to load blogs'); }
+    finally { setLoading(false); }
+  }, [search, status, role]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const action = async (id, endpoint, body = {}) => {
+    setActing(id);
+    try {
+      if (endpoint === 'delete') {
+        await API.delete(`/admin/blogs/${id}`);
+      } else {
+        await API.patch(`/admin/blogs/${id}/${endpoint}`, body);
+      }
+      toast.success('Done');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Action failed'); }
+    finally { setActing(null); }
+  };
+
+  const STATUS_BADGE = {
+    draft:          { bg: 'bg-gray-100',   text: 'text-gray-700',   label: 'Draft'          },
+    pending_review: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pending Review' },
+    published:      { bg: 'bg-green-100',  text: 'text-green-700',  label: 'Published'      },
+    rejected:       { bg: 'bg-red-100',    text: 'text-red-700',    label: 'Rejected'       },
+    archived:       { bg: 'bg-slate-100',  text: 'text-slate-600',  label: 'Archived'       },
+    scheduled:      { bg: 'bg-blue-100',   text: 'text-blue-700',   label: 'Scheduled'      },
+  };
+
+  const statusCounts = blogs.reduce((acc, b) => {
+    acc[b.status] = (acc[b.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      {/* Stats row */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
+        {Object.entries(STATUS_BADGE).map(([key, cfg]) => (
+          <button
+            key={key}
+            onClick={() => setStatus(s => s === key ? '' : key)}
+            className={`p-3 rounded-xl border text-center transition-all ${status === key ? 'ring-2' : ''}`}
+            style={{
+              background: 'var(--t-card)',
+              borderColor: status === key ? 'var(--t-primary)' : 'var(--t-border)',
+              ringColor: 'var(--t-primary)',
+            }}
+          >
+            <div className="text-xl font-bold" style={{ color: 'var(--t-text)' }}>{statusCounts[key] || 0}</div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--t-muted)' }}>{cfg.label}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--t-muted)' }} />
+          <input
+            className="input pl-8 w-full"
+            placeholder="Search title or author…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <select className="input w-36" value={status} onChange={e => setStatus(e.target.value)}>
+          <option value="">All Statuses</option>
+          {Object.entries(STATUS_BADGE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <select className="input w-32" value={role} onChange={e => setRole(e.target.value)}>
+          <option value="">All Roles</option>
+          <option value="admin">Admin</option>
+          <option value="pandit">Pandit</option>
+          <option value="user">User</option>
+        </select>
+      </div>
+
+      {/* Table */}
+      {loading ? <ZutsavLoaderInline /> : blogs.length === 0 ? (
+        <div className="text-center py-16 text-sm" style={{ color: 'var(--t-muted)' }}>No blogs found.</div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--t-border)' }}>
+          <table className="w-full text-sm">
+            <thead style={{ background: 'var(--t-input-bg)', borderBottom: '1px solid var(--t-border)' }}>
+              <tr>
+                {['Title', 'Author', 'Role', 'Status', 'Views', 'Likes', 'Date', 'Actions'].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--t-muted)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {blogs.map((b, i) => {
+                const sc = STATUS_BADGE[b.status] || STATUS_BADGE.draft;
+                const busy = acting === b._id;
+                return (
+                  <tr
+                    key={b._id}
+                    style={{
+                      background: i % 2 === 0 ? 'var(--t-card)' : 'var(--t-input-bg)',
+                      borderBottom: '1px solid var(--t-border)',
+                    }}
+                  >
+                    <td className="px-4 py-3 max-w-[200px]">
+                      <div className="font-medium truncate" style={{ color: 'var(--t-text)' }}>{b.title}</div>
+                      {b.isFeatured && <span className="text-[10px] text-amber-600 font-semibold">★ Featured</span>}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap" style={{ color: 'var(--t-text)' }}>{b.authorName || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold capitalize ${
+                        b.authorRole === 'admin'  ? 'bg-indigo-100 text-indigo-700' :
+                        b.authorRole === 'pandit' ? 'bg-amber-100 text-amber-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>{b.authorRole}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${sc.bg} ${sc.text}`}>{sc.label}</span>
+                    </td>
+                    <td className="px-4 py-3 text-center" style={{ color: 'var(--t-muted)' }}>{b.views || 0}</td>
+                    <td className="px-4 py-3 text-center" style={{ color: 'var(--t-muted)' }}>{b.likesCount || 0}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-xs" style={{ color: 'var(--t-muted)' }}>
+                      {b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {/* View */}
+                        <a
+                          href={`/blog/${b.slug}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2 py-1 text-[11px] rounded-lg font-medium border transition-all"
+                          style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}
+                        >
+                          View
+                        </a>
+                        {/* Approve */}
+                        {b.status === 'pending_review' && (
+                          <button
+                            disabled={busy}
+                            onClick={() => action(b._id, 'approve')}
+                            className="px-2 py-1 text-[11px] rounded-lg font-medium bg-green-600 text-white transition-all disabled:opacity-50"
+                          >
+                            Approve
+                          </button>
+                        )}
+                        {/* Reject */}
+                        {(b.status === 'pending_review' || b.status === 'published') && (
+                          <button
+                            disabled={busy}
+                            onClick={() => { setRejectId(b._id); setRejectNote(''); }}
+                            className="px-2 py-1 text-[11px] rounded-lg font-medium bg-red-100 text-red-700 transition-all disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        )}
+                        {/* Feature toggle */}
+                        {b.status === 'published' && (
+                          <button
+                            disabled={busy}
+                            onClick={() => action(b._id, 'feature')}
+                            className={`px-2 py-1 text-[11px] rounded-lg font-medium transition-all disabled:opacity-50 ${b.isFeatured ? 'bg-amber-200 text-amber-800' : 'bg-amber-50 text-amber-600'}`}
+                          >
+                            {b.isFeatured ? 'Unfeature' : 'Feature'}
+                          </button>
+                        )}
+                        {/* Archive */}
+                        {b.status !== 'archived' && (
+                          <button
+                            disabled={busy}
+                            onClick={() => action(b._id, 'archive')}
+                            className="px-2 py-1 text-[11px] rounded-lg font-medium bg-slate-100 text-slate-600 transition-all disabled:opacity-50"
+                          >
+                            Archive
+                          </button>
+                        )}
+                        {/* Delete */}
+                        <button
+                          disabled={busy}
+                          onClick={() => { if (window.confirm('Delete this blog permanently?')) action(b._id, 'delete'); }}
+                          className="px-2 py-1 text-[11px] rounded-lg font-medium bg-red-600 text-white transition-all disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Reject modal */}
+      {rejectId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl p-6 space-y-4" style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
+            <h3 className="font-bold text-lg" style={{ color: 'var(--t-text)' }}>Reject Blog</h3>
+            <textarea
+              className="input w-full h-28 resize-none"
+              placeholder="Reason for rejection (optional, shown to author)…"
+              value={rejectNote}
+              onChange={e => setRejectNote(e.target.value)}
+            />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setRejectId(null)} className="px-4 py-2 text-sm rounded-xl border" style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>Cancel</button>
+              <button
+                onClick={() => { action(rejectId, 'reject', { note: rejectNote }); setRejectId(null); }}
+                className="px-4 py-2 text-sm rounded-xl font-semibold bg-red-600 text-white"
+              >
+                Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Blog Categories Sub-tab ──────────────────────────────────
+function BlogCategoriesSubTab() {
+  const [cats,    setCats]    = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null); // null | {} | existing cat
+  const [saving,  setSaving]  = useState(false);
+  const empty = { name: '', slug: '', description: '', icon: '', color: '#1B1F3B', isActive: true, order: 0 };
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await API.get('/admin/blog-categories');
+      setCats(data.categories || []);
+    } catch { toast.error('Failed to load categories'); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    if (!editing?.name?.trim()) return toast.error('Name is required');
+    setSaving(true);
+    try {
+      if (editing._id) {
+        await API.patch(`/admin/blog-categories/${editing._id}`, editing);
+        toast.success('Category updated');
+      } else {
+        await API.post('/admin/blog-categories', editing);
+        toast.success('Category created');
+      }
+      setEditing(null);
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Save failed'); }
+    finally { setSaving(false); }
+  };
+
+  const del = async (id) => {
+    if (!window.confirm('Delete this category? Blogs in it will become uncategorized.')) return;
+    try {
+      await API.delete(`/admin/blog-categories/${id}`);
+      toast.success('Deleted');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Delete failed'); }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold text-lg" style={{ color: 'var(--t-text)' }}>Blog Categories</h3>
+        <button
+          onClick={() => setEditing({ ...empty })}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+          style={{ background: 'var(--t-primary)' }}
+        >
+          <Plus size={15} /> Add Category
+        </button>
+      </div>
+
+      {loading ? <ZutsavLoaderInline /> : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {cats.map(c => (
+            <div key={c._id} className="p-4 rounded-2xl border flex flex-col gap-2" style={{ background: 'var(--t-card)', borderColor: 'var(--t-border)' }}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg" style={{ background: c.color + '22' }}>
+                  {c.icon || '📝'}
+                </div>
+                <div>
+                  <div className="font-semibold text-sm" style={{ color: 'var(--t-text)' }}>{c.name}</div>
+                  <div className="text-xs" style={{ color: 'var(--t-muted)' }}>{c.slug}</div>
+                </div>
+                <div className="ml-auto flex gap-1.5">
+                  {!c.isActive && <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Inactive</span>}
+                  <button onClick={() => setEditing({ ...c })} className="p-1.5 rounded-lg" style={{ color: 'var(--t-muted)' }}>
+                    <Edit3 size={13} />
+                  </button>
+                  <button onClick={() => del(c._id)} className="p-1.5 rounded-lg text-red-500">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+              {c.description && <p className="text-xs" style={{ color: 'var(--t-muted)' }}>{c.description}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl p-6 space-y-4" style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
+            <h3 className="font-bold text-lg" style={{ color: 'var(--t-text)' }}>
+              {editing._id ? 'Edit Category' : 'New Category'}
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <label className="label">Name *</label>
+                <input className="input w-full" value={editing.name} onChange={e => setEditing(v => ({ ...v, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="label">Icon (emoji)</label>
+                <input className="input w-full" value={editing.icon} placeholder="📝" onChange={e => setEditing(v => ({ ...v, icon: e.target.value }))} />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="label">Color</label>
+                  <input type="color" className="input w-full h-10 cursor-pointer p-1" value={editing.color || '#1B1F3B'} onChange={e => setEditing(v => ({ ...v, color: e.target.value }))} />
+                </div>
+                <div className="flex-1">
+                  <label className="label">Order</label>
+                  <input type="number" className="input w-full" value={editing.order} min={0} onChange={e => setEditing(v => ({ ...v, order: +e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="label">Description</label>
+                <input className="input w-full" value={editing.description} onChange={e => setEditing(v => ({ ...v, description: e.target.value }))} />
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={editing.isActive} onChange={e => setEditing(v => ({ ...v, isActive: e.target.checked }))} />
+                <span className="text-sm" style={{ color: 'var(--t-text)' }}>Active</span>
+              </label>
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm rounded-xl border" style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>Cancel</button>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="px-4 py-2 text-sm rounded-xl font-semibold text-white disabled:opacity-50"
+                style={{ background: 'var(--t-primary)' }}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Blog Permissions Sub-tab ─────────────────────────────────
+function BlogPermissionsSubTab() {
+  const [perms,   setPerms]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await API.get('/admin/blog-permissions');
+      setPerms(data.permissions);
+    } catch { toast.error('Failed to load permissions'); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await API.patch('/admin/blog-permissions', perms);
+      toast.success('Blog permissions saved');
+    } catch (err) { toast.error(err.response?.data?.message || 'Save failed'); }
+    finally { setSaving(false); }
+  };
+
+  const toggle = (key) => setPerms(p => ({ ...p, [key]: !p[key] }));
+
+  if (loading) return <ZutsavLoaderInline />;
+  if (!perms)  return null;
+
+  const roles = [
+    {
+      key:         'Admin',
+      publishKey:  'blogAdminPublish',
+      approvalKey: null,
+      label:       'Admin',
+      desc:        'Admins can always publish directly with no review step.',
+      color:       '#1B1F3B',
+    },
+    {
+      key:         'Pandit',
+      publishKey:  'blogPanditPublish',
+      approvalKey: 'blogPanditRequireApproval',
+      label:       'Pandit',
+      desc:        'Allow verified pandits to write and publish spiritual content.',
+      color:       '#D4AF37',
+    },
+    {
+      key:         'User',
+      publishKey:  'blogUserPublish',
+      approvalKey: 'blogUserRequireApproval',
+      label:       'User',
+      desc:        'Allow registered devotees to submit articles for review.',
+      color:       '#6366f1',
+    },
+  ];
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <p className="text-sm mb-6" style={{ color: 'var(--t-muted)' }}>
+        Control who can publish blogs. Disabling a role blocks both the UI and the API endpoints (403 returned regardless of frontend state).
+      </p>
+
+      {roles.map(r => (
+        <div key={r.key} className="p-5 rounded-2xl border" style={{ background: 'var(--t-card)', borderColor: 'var(--t-border)' }}>
+          <div className="flex items-start gap-4">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0"
+              style={{ background: r.color }}
+            >
+              {r.label[0]}
+            </div>
+            <div className="flex-1">
+              <div className="font-semibold text-sm mb-1" style={{ color: 'var(--t-text)' }}>{r.label}</div>
+              <div className="text-xs mb-3" style={{ color: 'var(--t-muted)' }}>{r.desc}</div>
+              <div className="flex flex-col gap-2.5">
+                {/* Publish toggle */}
+                <label className="flex items-center justify-between gap-4 cursor-pointer">
+                  <span className="text-sm" style={{ color: 'var(--t-text)' }}>Can publish blogs</span>
+                  <button
+                    onClick={() => toggle(r.publishKey)}
+                    className="relative w-11 h-6 rounded-full transition-all duration-200 shrink-0"
+                    style={{ background: perms[r.publishKey] ? 'var(--t-primary)' : 'var(--t-border)' }}
+                  >
+                    <span
+                      className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"
+                      style={{ transform: perms[r.publishKey] ? 'translateX(20px)' : 'translateX(0)' }}
+                    />
+                  </button>
+                </label>
+                {/* Approval toggle (not for admin) */}
+                {r.approvalKey && (
+                  <label className={`flex items-center justify-between gap-4 cursor-pointer ${!perms[r.publishKey] ? 'opacity-40 pointer-events-none' : ''}`}>
+                    <span className="text-sm" style={{ color: 'var(--t-text)' }}>Require admin approval before publish</span>
+                    <button
+                      onClick={() => toggle(r.approvalKey)}
+                      className="relative w-11 h-6 rounded-full transition-all duration-200 shrink-0"
+                      style={{ background: perms[r.approvalKey] ? 'var(--t-primary)' : 'var(--t-border)' }}
+                    >
+                      <span
+                        className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200"
+                        style={{ transform: perms[r.approvalKey] ? 'translateX(20px)' : 'translateX(0)' }}
+                      />
+                    </button>
+                  </label>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <div className="pt-2">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all"
+          style={{ background: 'var(--t-primary)' }}
+        >
+          {saving ? 'Saving…' : 'Save Permissions'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Invoices Tab ─────────────────────────────────────────────
+const INR_FMT = (n) =>
+  `₹${(+(n ?? 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const fmtDate = (d) =>
+  d ? new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
+
+function InvoicesTab() {
+  const [invoices, setInvoices]     = useState([]);
+  const [total,    setTotal]        = useState(0);
+  const [pages,    setPages]        = useState(1);
+  const [page,     setPage]         = useState(1);
+  const [stats,    setStats]        = useState([]);
+  const [monthRev, setMonthRev]     = useState(0);
+  const [loading,  setLoading]      = useState(true);
+  const [search,   setSearch]       = useState('');
+  const [status,   setStatus]       = useState('');
+  const [payType,  setPayType]      = useState('');
+  const [dateFrom, setDateFrom]     = useState('');
+  const [dateTo,   setDateTo]       = useState('');
+  const [cancelModal, setCancelModal] = useState(null); // invoice object
+  const [cancelReason, setCancelReason] = useState('');
+  const [actioning, setActioning]   = useState(false);
+
+  const load = useCallback(async (p = 1) => {
+    setLoading(true);
+    try {
+      const params = { page: p, limit: 50 };
+      if (search)   params.search      = search;
+      if (status)   params.status      = status;
+      if (payType)  params.paymentType = payType;
+      if (dateFrom) params.dateFrom    = dateFrom;
+      if (dateTo)   params.dateTo      = dateTo;
+
+      const { data } = await API.get('/admin/invoices', { params });
+      setInvoices(data.invoices || []);
+      setTotal(data.total || 0);
+      setPages(data.pages || 1);
+      setPage(p);
+      setStats(data.stats || []);
+      setMonthRev(data.monthRevenue || 0);
+    } catch { toast.error('Failed to load invoices'); }
+    finally  { setLoading(false); }
+  }, [search, status, payType, dateFrom, dateTo]);
+
+  useEffect(() => { load(1); }, [load]);
+
+  const exportCSV = async () => {
+    try {
+      const params = {};
+      if (status)   params.status      = status;
+      if (payType)  params.paymentType = payType;
+      if (dateFrom) params.dateFrom    = dateFrom;
+      if (dateTo)   params.dateTo      = dateTo;
+      const { data } = await API.get('/admin/invoices/export', { params, responseType: 'blob' });
+      const url  = URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url; link.download = `zutsav_invoices_${Date.now()}.csv`;
+      link.click(); URL.revokeObjectURL(url);
+    } catch { toast.error('Export failed'); }
+  };
+
+  const cancelInvoice = async () => {
+    if (!cancelModal) return;
+    setActioning(true);
+    try {
+      await API.patch(`/admin/invoices/${cancelModal._id}/cancel`, { reason: cancelReason });
+      toast.success('Invoice cancelled');
+      setCancelModal(null); setCancelReason('');
+      load(page);
+    } catch { toast.error('Failed to cancel invoice'); }
+    finally { setActioning(false); }
+  };
+
+  const archiveInvoice = async (inv) => {
+    try {
+      await API.patch(`/admin/invoices/${inv._id}/archive`);
+      toast.success('Invoice archived');
+      load(page);
+    } catch { toast.error('Failed to archive invoice'); }
+  };
+
+  // Aggregate stats
+  const activeStats  = stats.find(s => s._id === 'active');
+  const totalRevenue = activeStats?.totalAmount || 0;
+  const totalCount   = activeStats?.count || 0;
+
+  const STAT_CARDS = [
+    { label: 'Total Revenue',    value: INR_FMT(totalRevenue), icon: IndianRupee, bg:'#f0fdf4', border:'#bbf7d0', color:'#15803d' },
+    { label: 'This Month',       value: INR_FMT(monthRev),     icon: Clock,       bg:'#f0f4ff', border:'#c7d2fe', color:'#4338ca' },
+    { label: 'Total Invoices',   value: totalCount,            icon: Receipt,     bg:'#fff7ed', border:'#fed7aa', color:'#c2410c' },
+    { label: 'Active Invoices',  value: total,                 icon: CheckCircle, bg:'#f8f9ff', border:'#e0e7ff', color:'#1B1F3B' },
+  ];
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold" style={{ color:'var(--t-text)' }}>Invoice Register</h2>
+          <p className="text-sm mt-0.5" style={{ color:'var(--t-muted)' }}>
+            Immutable accounting records — {total} result{total !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <button
+          onClick={exportCSV}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+          style={{ background:'var(--t-primary)' }}
+        >
+          <Download size={15} /> Export CSV
+        </button>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {STAT_CARDS.map(c => (
+          <div key={c.label} className="rounded-2xl p-4 border"
+            style={{ background:c.bg, borderColor:c.border }}>
+            <div className="flex items-center gap-2 mb-2">
+              <c.icon size={16} style={{ color:c.color }} />
+              <span className="text-xs font-semibold uppercase tracking-wider"
+                style={{ color:c.color }}>{c.label}</span>
+            </div>
+            <div className="text-xl font-black" style={{ color:c.color }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="rounded-2xl border p-4 mb-5 flex flex-wrap gap-3"
+        style={{ background:'var(--t-card)', borderColor:'var(--t-border)' }}>
+        <input
+          type="text" placeholder="Search invoice#, order#, name, phone, txn…"
+          value={search} onChange={e => setSearch(e.target.value)}
+          className="flex-1 min-w-[200px] px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }}
+        />
+        <select value={status} onChange={e => setStatus(e.target.value)}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }}>
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="archived">Archived</option>
+        </select>
+        <select value={payType} onChange={e => setPayType(e.target.value)}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }}>
+          <option value="">All Types</option>
+          <option value="FULL">Full</option>
+          <option value="PARTIAL">Advance</option>
+          <option value="REMAINING">Final</option>
+        </select>
+        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }} />
+        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }} />
+        <button onClick={() => load(1)}
+          className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
+          style={{ background:'var(--t-primary)' }}>
+          <Search size={14} />
+        </button>
+        <button onClick={() => { setSearch(''); setStatus(''); setPayType(''); setDateFrom(''); setDateTo(''); }}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-muted)' }}>
+          Clear
+        </button>
+      </div>
+
+      {/* Table */}
+      {loading ? (
+        <div className="flex justify-center py-16"><ZutsavLoaderInline size={40} /></div>
+      ) : invoices.length === 0 ? (
+        <div className="text-center py-16 text-sm" style={{ color:'var(--t-muted)' }}>
+          No invoices found matching your filters.
+        </div>
+      ) : (
+        <div className="rounded-2xl border overflow-hidden"
+          style={{ background:'var(--t-card)', borderColor:'var(--t-border)' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background:'var(--t-primary)', color:'white' }}>
+                  {['Invoice #','Order #','Customer','Type','Date','Amount Paid','Status',''].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((inv, idx) => (
+                  <tr key={inv._id}
+                    style={{ background: idx % 2 === 0 ? 'var(--t-card)' : 'var(--t-bg)',
+                      borderBottom:'1px solid var(--t-border)' }}>
+                    <td className="px-4 py-3 font-mono font-semibold text-xs"
+                      style={{ color:'var(--t-primary)' }}>{inv.invoiceNumber}</td>
+                    <td className="px-4 py-3 text-xs font-mono"
+                      style={{ color:'var(--t-muted)' }}>{inv.bookingNumber}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-sm" style={{ color:'var(--t-text)' }}>{inv.customerName}</div>
+                      <div className="text-xs" style={{ color:'var(--t-muted)' }}>{inv.customerPhone}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{
+                          background: inv.paymentType === 'PARTIAL' ? '#fef3c7' : inv.paymentType === 'REMAINING' ? '#f0fdf4' : '#f0f4ff',
+                          color:      inv.paymentType === 'PARTIAL' ? '#b45309' : inv.paymentType === 'REMAINING' ? '#15803d' : '#4338ca',
+                        }}>
+                        { inv.paymentType === 'PARTIAL' ? 'Advance' : inv.paymentType === 'REMAINING' ? 'Final' : 'Full' }
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color:'var(--t-muted)' }}>
+                      {fmtDate(inv.invoiceDate)}
+                    </td>
+                    <td className="px-4 py-3 font-bold text-sm" style={{ color:'#15803d' }}>
+                      {INR_FMT(inv.amountPaid)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{
+                          background: inv.status === 'active' ? '#dcfce7' : inv.status === 'cancelled' ? '#fee2e2' : '#f3f4f6',
+                          color:      inv.status === 'active' ? '#15803d' : inv.status === 'cancelled' ? '#b91c1c' : '#374151',
+                        }}>
+                        {inv.status.toUpperCase()}
+                        {inv.isLegacy && ' · Legacy'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <a href={`/invoice/view/${inv.invoiceNumber}`} target="_blank" rel="noreferrer"
+                          className="p-1.5 rounded-lg border transition-colors"
+                          style={{ borderColor:'var(--t-border)', color:'var(--t-muted)' }}
+                          title="View Invoice">
+                          <Eye size={14} />
+                        </a>
+                        {inv.status === 'active' && (
+                          <>
+                            <button
+                              onClick={() => { setCancelModal(inv); setCancelReason(''); }}
+                              className="p-1.5 rounded-lg border transition-colors"
+                              style={{ borderColor:'#fca5a5', color:'#b91c1c' }}
+                              title="Cancel Invoice">
+                              <Ban size={14} />
+                            </button>
+                            <button
+                              onClick={() => archiveInvoice(inv)}
+                              className="p-1.5 rounded-lg border transition-colors"
+                              style={{ borderColor:'var(--t-border)', color:'var(--t-muted)' }}
+                              title="Archive Invoice">
+                              <Archive size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Pagination */}
+          {pages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t"
+              style={{ borderColor:'var(--t-border)' }}>
+              <span className="text-xs" style={{ color:'var(--t-muted)' }}>
+                Page {page} of {pages} · {total} invoices
+              </span>
+              <div className="flex gap-2">
+                <button disabled={page <= 1} onClick={() => load(page - 1)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border disabled:opacity-40"
+                  style={{ borderColor:'var(--t-border)', color:'var(--t-text)' }}>
+                  Prev
+                </button>
+                <button disabled={page >= pages} onClick={() => load(page + 1)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border disabled:opacity-40"
+                  style={{ borderColor:'var(--t-border)', color:'var(--t-text)' }}>
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cancel Modal */}
+      {cancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background:'rgba(0,0,0,0.5)' }}>
+          <div className="rounded-2xl p-6 max-w-md w-full shadow-2xl"
+            style={{ background:'var(--t-card)' }}>
+            <h3 className="text-lg font-bold mb-1" style={{ color:'var(--t-text)' }}>
+              Cancel Invoice
+            </h3>
+            <p className="text-sm mb-4" style={{ color:'var(--t-muted)' }}>
+              {cancelModal.invoiceNumber} · {cancelModal.customerName}
+            </p>
+            <p className="text-xs mb-3 p-3 rounded-xl"
+              style={{ background:'#fef2f2', color:'#b91c1c' }}>
+              Invoices are never deleted — this marks the invoice as cancelled in the audit trail.
+            </p>
+            <textarea
+              value={cancelReason}
+              onChange={e => setCancelReason(e.target.value)}
+              placeholder="Reason for cancellation (required)…"
+              rows={3}
+              className="w-full px-3 py-2 rounded-xl text-sm border mb-4"
+              style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)', resize:'none' }}
+            />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setCancelModal(null)}
+                className="px-4 py-2 rounded-xl text-sm border font-semibold"
+                style={{ borderColor:'var(--t-border)', color:'var(--t-muted)' }}>
+                Back
+              </button>
+              <button onClick={cancelInvoice} disabled={actioning || !cancelReason.trim()}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background:'#b91c1c' }}>
+                {actioning ? 'Cancelling…' : 'Cancel Invoice'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -7,6 +7,8 @@ const orderItemSchema = new mongoose.Schema({
   variantLabel: { type: String, default: null },
   price:        { type: Number, required: true },
   quantity:     { type: Number, required: true, min: 1 },
+  taxRate:      { type: Number, default: 0 },
+  taxAmount:    { type: Number, default: 0 },
   total:        { type: Number, required: true },
 }, { _id: false });
 
@@ -65,6 +67,21 @@ const orderSchema = new mongoose.Schema({
 
   trackingId: { type: String },
   courier:    { type: String },
+
+  // Reference to the Shipment record created for this order (null = no shipment yet)
+  shipmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shipment', default: null },
+
+  // ── Delivery OTP (for Out-For-Delivery confirmation) ─────────
+  deliveryOTP: {
+    hash:        { type: String,  default: null },   // bcrypt hash — never store plain OTP
+    expiry:      { type: Date,    default: null },
+    verified:    { type: Boolean, default: false },
+    verifiedAt:  { type: Date,    default: null },
+    verifiedBy:  { type: String,  default: null },   // admin name / delivery exec name
+    attempts:    { type: Number,  default: 0 },
+    generatedAt: { type: Date,    default: null },
+    sentAt:      { type: Date,    default: null },
+  },
 }, { timestamps: true });
 
 orderSchema.pre('save', async function (next) {

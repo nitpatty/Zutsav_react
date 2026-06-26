@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { CheckCircle, Clock, AlertCircle, XCircle, Ban, Upload, RefreshCw } from 'lucide-react';
 import API from '../api/axios';
 import { useAuth } from '../context/AuthContext';
+import ZutsavLoader from '../components/shared/ZutsavLoader';
 
 const STATUS_MAP = {
   pending: {
@@ -83,11 +84,7 @@ export default function PanditStatus() {
 
   useEffect(() => { load(); }, []);
 
-  if (loading) return (
-    <div className="min-h-screen bg-spiritual-light flex items-center justify-center">
-      <div className="animate-spin text-4xl">🪔</div>
-    </div>
-  );
+  if (loading) return <ZutsavLoader fullscreen size={64} message="Loading your application status…" />;
 
   if (!pandit) return (
     <div className="min-h-screen bg-spiritual-light flex items-center justify-center text-center px-4">

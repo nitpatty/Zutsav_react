@@ -1,6 +1,7 @@
 const axios           = require('axios');
 const settings        = require('./settingsService');
 const WhatsAppTemplate = require('../models/WhatsAppTemplate');
+const NotificationLog  = require('../models/NotificationLog');
 
 async function _cfg() {
   const phoneNumberId = await settings.get('whatsappPhoneNumberId', process.env.WHATSAPP_PHONE_NUMBER_ID);
@@ -22,10 +23,13 @@ function normalizePhone(to) {
 
 /**
  * Send an approved WhatsApp template message.
+ * Automatically logs to NotificationLog unless meta._noInternalLog = true.
  * Throws on Meta API error so callers can log the failure properly.
  * Returns null (without throwing) only when WhatsApp is not configured.
+ *
+ * meta: { event, recipientId, recipientName, _noInternalLog }
  */
-const sendWhatsApp = async (to, templateName, components = [], languageCode = 'en') => {
+const sendWhatsApp = async (to, templateName, components = [], languageCode = 'en', meta = {}) => {
   const { phoneNumberId, accessToken, apiVersion } = await _cfg();
   if (!accessToken || !phoneNumberId) {
     console.warn('[WhatsApp] Not configured — skipping send for template:', templateName);
@@ -115,6 +119,20 @@ const sendWhatsApp = async (to, templateName, components = [], languageCode = 'e
     }
   }
 
+  // Create a log entry unless the caller (commLogger) is handling its own logging
+  let logEntry = null;
+  if (!meta._noInternalLog) {
+    logEntry = await NotificationLog.create({
+      type:           'whatsapp',
+      event:          meta.event || 'system',
+      templateName,
+      recipientPhone: phone,
+      recipientId:    meta.recipientId || null,
+      recipientName:  meta.recipientName || '',
+      status:         'processing',
+    }).catch(() => null);
+  }
+
   let res;
   try {
     res = await axios.post(
@@ -137,6 +155,12 @@ const sendWhatsApp = async (to, templateName, components = [], languageCode = 'e
     const e = new Error(metaMsg);
     e.meta       = metaBody;
     e.autoFilled = autoFillInfo || null;
+    if (logEntry) {
+      logEntry.status = 'failed';
+      logEntry.error  = metaMsg;
+      if (metaBody) logEntry.metadata = { metaError: metaBody };
+      await logEntry.save().catch(() => {});
+    }
     throw e;
   }
 
@@ -146,11 +170,23 @@ const sendWhatsApp = async (to, templateName, components = [], languageCode = 'e
     const e = new Error(`Meta API error ${metaErr.code}: ${metaErr.message || JSON.stringify(metaErr)}`);
     e.meta       = metaErr;
     e.autoFilled = autoFillInfo || null;
+    if (logEntry) {
+      logEntry.status = 'failed';
+      logEntry.error  = e.message;
+      logEntry.metadata = { metaError: metaErr };
+      await logEntry.save().catch(() => {});
+    }
     throw e;
   }
 
   if (autoFillInfo) {
     try { res.data._autoFilled = autoFillInfo; } catch (e) { /* ignore */ }
+  }
+
+  if (logEntry) {
+    logEntry.status   = 'delivered';
+    logEntry.response = { msgId: res.data?.messages?.[0]?.id };
+    await logEntry.save().catch(() => {});
   }
 
   console.log(`[WhatsApp] Sent template "${templateName}" to ${phone} — msgId: ${res.data?.messages?.[0]?.id}`);
@@ -243,9 +279,23 @@ const sendCompletionOtpWhatsApp = (booking, poojaName, otp) => _safe('sendComple
   ], 'en_US')
 );
 
-// KYC / Payment templates — no matching approved templates in Meta yet; fail silently
-const sendKycApprovedWhatsApp    = (phone, panditName)         => _safe('sendKycApprovedWhatsApp',    () => null);
-const sendKycRejectedWhatsApp    = (phone, panditName, reason) => _safe('sendKycRejectedWhatsApp',    () => null);
+const sendKycApprovedWhatsApp = (phone, panditName) => _safe('sendKycApprovedWhatsApp', () => {
+  if (!phone) return null;
+  return sendWhatsAppForEvent('kyc_approved', phone, [
+    { type: 'body', parameters: [{ type: 'text', text: panditName || 'Pandit' }] },
+  ]);
+});
+
+const sendKycRejectedWhatsApp = (phone, panditName, reason) => _safe('sendKycRejectedWhatsApp', () => {
+  if (!phone) return null;
+  return sendWhatsAppForEvent('kyc_rejected', phone, [
+    { type: 'body', parameters: [
+      { type: 'text', text: panditName || 'Pandit' },
+      { type: 'text', text: reason || 'Documents did not meet requirements' },
+    ]},
+  ]);
+});
+
 const sendPaymentReleasedWhatsApp = (phone, panditName, amount, batchId) => _safe('sendPaymentReleasedWhatsApp', () => null);
 
 /**
@@ -282,10 +332,10 @@ const getTemplateForEvent = async (eventName) => {
  * Looks up the active template from the database — no hardcoded template names.
  * Returns null if no template is configured (does not throw).
  */
-const sendWhatsAppForEvent = async (eventName, phone, components = []) => {
+const sendWhatsAppForEvent = async (eventName, phone, components = [], meta = {}) => {
   const tmpl = await getTemplateForEvent(eventName);
   if (!tmpl) return null;
-  return sendWhatsApp(phone, tmpl.name, components, tmpl.language || 'en');
+  return sendWhatsApp(phone, tmpl.name, components, tmpl.language || 'en', { event: eventName, ...meta });
 };
 
 module.exports = {

@@ -14,7 +14,7 @@ const productSchema = new mongoose.Schema({
   name:        { type: String, required: true, trim: true },
   slug:        { type: String, required: true, unique: true, lowercase: true },
   sku:         { type: String, unique: true, sparse: true },
-  category:    { type: String, required: true, enum: ['samagri', 'rudraksha', 'yantra', 'incense', 'idol', 'books', 'pooja_essentials', 'other'] },
+  category:    { type: String, required: true },
   description: { type: String },
   price:       { type: Number, default: 0, min: 0 },
   salePrice:   { type: Number, default: null },

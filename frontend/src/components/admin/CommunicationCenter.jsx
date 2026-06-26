@@ -442,18 +442,35 @@ function TriggerRulesTab() {
   useEffect(() => { load(); }, [load]);
 
   const saveRule = async (rule) => {
-    await API.put(`/comm/trigger-rules/${rule._id}`, {
-      channels:    rule.channels,
-      isActive:    rule.isActive,
-      description: rule.description,
-    });
-    toast.success('Rule saved');
-    load();
+    try {
+      const cleanChannels = (rule.channels || []).map((ch) => ({
+        ...ch,
+        emailTemplateId:    ch.emailTemplateId    || null,
+        whatsAppTemplateName: ch.whatsAppTemplateName || '',
+      }));
+      await API.put(`/comm/trigger-rules/${rule._id}`, {
+        channels:    cleanChannels,
+        isActive:    rule.isActive,
+        description: rule.description,
+      });
+      toast.success('Rule saved');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to save rule');
+    }
   };
 
   const toggleRule = async (rule) => {
-    await API.put(`/comm/trigger-rules/${rule._id}`, { ...rule, isActive: !rule.isActive });
-    load();
+    try {
+      await API.put(`/comm/trigger-rules/${rule._id}`, {
+        channels:    rule.channels,
+        isActive:    !rule.isActive,
+        description: rule.description,
+      });
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to update rule');
+    }
   };
 
   // Group by event category
@@ -567,14 +584,102 @@ function RuleEditor({ rule, emailTemplates, waTemplates = [], onSave }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// LOG DETAIL MODAL
+// ═══════════════════════════════════════════════════════════════
+function LogDetailModal({ log, onClose, onRetry }) {
+  if (!log) return null;
+
+  const Field = ({ label, value, mono = false, red = false }) => (
+    <div className="grid grid-cols-3 gap-2 py-2 border-b border-gray-50 last:border-0">
+      <span className="text-xs font-semibold text-gray-400 col-span-1">{label}</span>
+      <span className={`text-sm col-span-2 break-all ${mono ? 'font-mono text-xs' : ''} ${red ? 'text-red-500' : 'text-gray-700'}`}>
+        {value !== undefined && value !== null && value !== '' ? String(value) : <span className="text-gray-300">—</span>}
+      </span>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between p-5 border-b border-gray-100">
+          <div>
+            <h2 className="font-bold text-gray-900 text-lg">Log Detail</h2>
+            <p className="text-xs text-gray-400 font-mono mt-0.5">{log._id}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {log.status === 'failed' && (
+              <button
+                onClick={() => { onRetry(log._id); onClose(); }}
+                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+              >
+                <RefreshCw size={12} /> Retry
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors p-1">
+              <XCircle size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Status banner */}
+        <div className={`px-5 py-3 flex items-center gap-2 text-sm font-semibold ${
+          log.status === 'delivered' ? 'bg-green-50 text-green-700' :
+          log.status === 'failed'    ? 'bg-red-50 text-red-700' :
+          'bg-yellow-50 text-yellow-700'
+        }`}>
+          {log.status === 'delivered' ? <CheckCircle size={15} /> : log.status === 'failed' ? <XCircle size={15} /> : <Clock size={15} />}
+          {log.status.charAt(0).toUpperCase() + log.status.slice(1)}
+          {log.retryCount > 0 && <span className="ml-auto text-xs font-normal opacity-70">{log.retryCount} retry attempt{log.retryCount !== 1 ? 's' : ''}</span>}
+        </div>
+
+        {/* Fields */}
+        <div className="p-5 space-y-0">
+          <Field label="Channel"    value={log.type}          />
+          <Field label="Event"      value={log.event}    mono />
+          <Field label="Template"   value={log.templateName}  mono />
+          <Field label="Recipient"  value={log.recipientEmail || log.recipientPhone || log.recipientName} />
+          {log.recipientName && <Field label="Name"      value={log.recipientName} />}
+          {log.subject       && <Field label="Subject"   value={log.subject}       />}
+          <Field label="Time"       value={new Date(log.createdAt).toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'medium' })} />
+          {log.error && (
+            <Field label="Error" value={log.error} red />
+          )}
+          {log.response && (
+            <div className="py-2">
+              <p className="text-xs font-semibold text-gray-400 mb-1">Response</p>
+              <pre className="bg-gray-50 rounded-xl p-3 text-xs text-gray-600 overflow-x-auto whitespace-pre-wrap">
+                {JSON.stringify(log.response, null, 2)}
+              </pre>
+            </div>
+          )}
+          {log.metadata && Object.keys(log.metadata).length > 0 && (
+            <div className="py-2">
+              <p className="text-xs font-semibold text-gray-400 mb-1">Metadata</p>
+              <pre className="bg-gray-50 rounded-xl p-3 text-xs text-gray-600 overflow-x-auto whitespace-pre-wrap">
+                {JSON.stringify(log.metadata, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // LOGS
 // ═══════════════════════════════════════════════════════════════
 function LogsTab({ failedOnly = false }) {
-  const [logs,   setLogs]   = useState([]);
-  const [total,  setTotal]  = useState(0);
-  const [page,   setPage]   = useState(1);
-  const [filter, setFilter] = useState({ status: failedOnly ? 'failed' : '', type: '', event: '' });
-  const [loading, setLoading] = useState(false);
+  const [logs,        setLogs]        = useState([]);
+  const [total,       setTotal]       = useState(0);
+  const [page,        setPage]        = useState(1);
+  const [filter,      setFilter]      = useState({ status: failedOnly ? 'failed' : '', type: '', event: '' });
+  const [loading,     setLoading]     = useState(false);
+  const [selectedLog, setSelectedLog] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -605,16 +710,19 @@ function LogsTab({ failedOnly = false }) {
 
   return (
     <div className="space-y-5">
+      {/* Detail modal */}
+      <LogDetailModal log={selectedLog} onClose={() => setSelectedLog(null)} onRetry={retry} />
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <SectionTitle>{failedOnly ? 'Failed Deliveries' : 'Notification Logs'}</SectionTitle>
         <div className="flex items-center gap-2 flex-wrap">
           {!failedOnly && (
             <>
-              <select value={filter.type} onChange={(e) => setFilter((f) => ({ ...f, type: e.target.value }))} className="input-std text-sm w-32">
+              <select value={filter.type} onChange={(e) => { setPage(1); setFilter((f) => ({ ...f, type: e.target.value })); }} className="input-std text-sm w-32">
                 <option value="">All types</option>
                 {['email','whatsapp','in-app','sms'].map((t) => <option key={t}>{t}</option>)}
               </select>
-              <select value={filter.status} onChange={(e) => setFilter((f) => ({ ...f, status: e.target.value }))} className="input-std text-sm w-36">
+              <select value={filter.status} onChange={(e) => { setPage(1); setFilter((f) => ({ ...f, status: e.target.value })); }} className="input-std text-sm w-36">
                 <option value="">All status</option>
                 {['queued','processing','delivered','failed','retrying'].map((s) => <option key={s}>{s}</option>)}
               </select>
@@ -651,7 +759,11 @@ function LogsTab({ failedOnly = false }) {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {logs.map((log) => (
-                <tr key={log._id} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={log._id}
+                  className="hover:bg-saffron-50/40 transition-colors cursor-pointer"
+                  onClick={() => setSelectedLog(log)}
+                >
                   <td className="px-4 py-3 font-medium text-gray-700 max-w-[150px] truncate">
                     {log.recipientEmail || log.recipientPhone || log.recipientName || '—'}
                   </td>
@@ -660,7 +772,7 @@ function LogsTab({ failedOnly = false }) {
                   <td className="px-4 py-3 text-gray-500 font-mono text-xs max-w-[130px] truncate">{log.templateName || '—'}</td>
                   <td className="px-4 py-3"><Pill label={log.status} /></td>
                   <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{new Date(log.createdAt).toLocaleString('en-IN')}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     {log.status === 'failed' && (
                       <button onClick={() => retry(log._id)} className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
                         <RefreshCw size={12} /> Retry

@@ -3,12 +3,21 @@ const Pandit               = require('../models/Pandit');
 const Booking              = require('../models/Booking');
 const PayoutBatch          = require('../models/PayoutBatch');
 const Order                = require('../models/Order');
+const Shipment             = require('../models/Shipment');
 const Product              = require('../models/Product');
 const Notification         = require('../models/Notification');
 const AdminAuditLog        = require('../models/AdminAuditLog');
 const EducationMaster      = require('../models/EducationMaster');
 const SpecializationMaster = require('../models/SpecializationMaster');
-const { notifyPanditOfNewBooking, sendWhatsAppForEvent } = require('../utils/whatsapp');
+const {
+  COURIER_PROVIDERS,
+  LOCAL_DELIVERY_PARTNERS,
+  TEKIPOST_STATUS_MAP,
+  SHIPMENT_STATUS_LABELS,
+  SHIPMENT_TO_ORDER_STATUS,
+} = require('../config/shipping.config');
+const { notifyPanditOfNewBooking, notifyPanditAssigned, sendWhatsAppForEvent, sendKycApprovedWhatsApp, sendKycRejectedWhatsApp } = require('../utils/whatsapp');
+const { dispatchTriggerEvent } = require('../utils/triggerDispatch');
 const {
   notifyPanditApproved,
   notifyPanditAssignmentPending,
@@ -28,8 +37,26 @@ const {
   notifyBookingRefunded,
   notifyKitShipped,
   notifyKitDelivered,
+  notifyOrderShipmentCreated,
+  notifyOrderShipmentStatusChanged,
+  notifyDeliveryOTPSent,
+  notifyDeliveryOTPVerified,
 } = require('../utils/notificationService');
-const { sendBookingCancelledEmail, sendBookingRefundedEmail, sendInvoiceEmail, sendFeedbackRequestEmail } = require('../utils/email');
+const { sendBookingCancelledEmail, sendBookingRefundedEmail, sendInvoiceEmail, sendFeedbackRequestEmail, sendKYCApprovedEmail, sendKYCRejectedEmail, sendKYCReuploadEmail, sendPanditBookingAssignedEmail, sendOrderShippedEmail, sendOrderStatusEmail, sendOrderInvoiceEmail, sendDeliveryOTPEmail } = require('../utils/email');
+const bcrypt = require('bcryptjs');
+const { restoreStock } = require('../utils/inventoryUtils');
+
+const BOOKING_STATUS_LABEL = {
+  pending_payment:      'Pending Payment',
+  paid:                 'New Booking',
+  pandit_assigned:      'Pandit Assigned',
+  pandit_accepted:      'Pandit Accepted',
+  pending_reassignment: 'Needs Reassignment',
+  completion_requested: 'Completion Pending',
+  completed:            'Completed',
+  cancelled:            'Cancelled',
+  refunded:             'Refunded',
+};
 
 // GET /api/admin/dashboard
 exports.getDashboard = async (req, res, next) => {
@@ -161,6 +188,8 @@ exports.updateKYCStatus = async (req, res, next) => {
       updates.canReceiveBookings = true;
       updates.kycRejectionReason = '';
       notifyKYCApproved(pandit.userId._id || pandit.userId).catch(() => {});
+      sendKYCApprovedEmail(pandit).catch(() => {});
+      sendKycApprovedWhatsApp(pandit.phone, pandit.name).catch(() => {});
     } else if (kycAction === 'reject') {
       if (!reason || reason.trim().length < 5) {
         return res.status(400).json({ success: false, message: 'Rejection reason is required (min 5 characters)' });
@@ -169,6 +198,8 @@ exports.updateKYCStatus = async (req, res, next) => {
       updates.canReceiveBookings = false;
       updates.kycRejectionReason = reason.trim();
       notifyKYCRejected(pandit.userId._id || pandit.userId, reason.trim()).catch(() => {});
+      sendKYCRejectedEmail(pandit, reason.trim()).catch(() => {});
+      sendKycRejectedWhatsApp(pandit.phone, pandit.name, reason.trim()).catch(() => {});
     } else if (kycAction === 'reupload') {
       if (!reason || reason.trim().length < 5) {
         return res.status(400).json({ success: false, message: 'Re-upload reason is required (min 5 characters)' });
@@ -177,6 +208,7 @@ exports.updateKYCStatus = async (req, res, next) => {
       updates.canReceiveBookings = false;
       updates.kycRejectionReason = reason.trim();
       notifyKYCReuploadRequired(pandit.userId._id || pandit.userId, reason.trim()).catch(() => {});
+      sendKYCReuploadEmail(pandit, reason.trim()).catch(() => {});
     } else {
       return res.status(400).json({ success: false, message: 'kycAction must be approve, reject, or reupload' });
     }
@@ -371,14 +403,26 @@ exports.adminDeleteUser = async (req, res, next) => {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    // Clean up notifications
+    // Clean up notifications only — bookings/orders are intentionally preserved for audit/history
     await Notification.deleteMany({ userId: user._id });
 
-    // If pandit — cascade to Pandit document
+    // Stamp deletedUser info onto all their bookings so admin can still identify them
+    await Booking.updateMany(
+      { userId: user._id },
+      { $set: {
+          'userDetails._deletedAt': new Date(),
+          'userDetails._deletedName': user.name || '',
+          'userDetails._deletedEmail': user.email || '',
+          'userDetails._deletedPhone': user.phone || '',
+        }
+      }
+    );
+
+    // If pandit — cascade to Pandit document but keep completed booking history
     if (user.role === 'pandit') {
       const pandit = await Pandit.findOne({ userId: user._id });
       if (pandit) {
-        // Release any active booking assignments
+        // Release only active/pending assignments so admin can reassign
         await Booking.updateMany(
           { panditId: pandit._id, status: { $in: ['pandit_assigned', 'pandit_accepted', 'pending_reassignment'] } },
           { $set: { panditId: null, status: 'paid' } }
@@ -421,12 +465,281 @@ exports.getBookings = async (req, res, next) => {
       .populate('userId',   'name phone email')
       .populate('poojaId',  'name price image')
       .populate('panditId', 'name phone profilePhoto bankDetails upiDetails')
+      .populate({ path: 'kitId', select: 'name totalCost discountPrice description items', populate: { path: 'items.productId', select: 'name' } })
       .sort({ createdAt: -1 })
       .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .skip((page - 1) * limit)
+      .lean();
+
+    // Attach linked marketplace order for cart-checkout bookings (ZUT_CART_ prefix)
+    const cartTxnIds = bookings
+      .filter((b) => b.phonePeMerchantTransactionId?.startsWith('ZUT_CART_'))
+      .map((b) => b.phonePeMerchantTransactionId);
+
+    if (cartTxnIds.length > 0) {
+      const linkedOrders = await Order.find({ phonePeMerchantTransactionId: { $in: cartTxnIds } })
+        .populate('items.productId', 'name images price category')
+        .lean();
+      const orderMap = {};
+      linkedOrders.forEach((o) => { orderMap[o.phonePeMerchantTransactionId] = o; });
+      bookings.forEach((b) => {
+        if (b.phonePeMerchantTransactionId?.startsWith('ZUT_CART_')) {
+          b.linkedOrder = orderMap[b.phonePeMerchantTransactionId] || null;
+        }
+      });
+    }
 
     const total = await Booking.countDocuments(query);
     res.json({ success: true, bookings, total });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/admin/bookings/:id/payments — payment ledger entries for a booking
+exports.getBookingPayments = async (req, res, next) => {
+  try {
+    const PaymentLedger = require('../models/PaymentLedger');
+    const payments = await PaymentLedger.find({ bookingId: req.params.id })
+      .sort({ createdAt: 1 })
+      .lean();
+    res.json({ success: true, payments });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/admin/bookings/export  — server-side Excel export
+exports.exportBookings = async (req, res, next) => {
+  try {
+    const { status, withKit, startDate, endDate } = req.query;
+    const query = {};
+    if (status)           query.status  = status;
+    if (withKit === 'true') query.withKit = true;
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate)   query.createdAt.$lte = new Date(endDate + 'T23:59:59.999Z');
+    }
+
+    const PaymentLedger = require('../models/PaymentLedger');
+
+    const bookings = await Booking.find(query)
+      .populate('userId',   'name phone email')
+      .populate('poojaId',  'name price')
+      .populate('panditId', 'name phone')
+      .populate({ path: 'kitId', select: 'name totalCost discountPrice description items', populate: { path: 'items.productId', select: 'name' } })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Build payment ledger map indexed by bookingId for O(1) lookup
+    const bookingIds = bookings.map((b) => b._id);
+    const ledgerEntries = await PaymentLedger.find({ bookingId: { $in: bookingIds } })
+      .sort({ createdAt: 1 }).lean();
+    const ledgerMap = {};
+    for (const entry of ledgerEntries) {
+      const key = String(entry.bookingId);
+      if (!ledgerMap[key]) ledgerMap[key] = [];
+      ledgerMap[key].push(entry);
+    }
+
+    // Attach linked marketplace orders
+    const cartTxnIds = bookings
+      .filter((b) => b.phonePeMerchantTransactionId?.startsWith('ZUT_CART_'))
+      .map((b) => b.phonePeMerchantTransactionId);
+    if (cartTxnIds.length > 0) {
+      const linkedOrders = await Order.find({ phonePeMerchantTransactionId: { $in: cartTxnIds } })
+        .populate('items.productId', 'name')
+        .lean();
+      const orderMap = {};
+      linkedOrders.forEach((o) => { orderMap[o.phonePeMerchantTransactionId] = o; });
+      bookings.forEach((b) => {
+        if (b.phonePeMerchantTransactionId?.startsWith('ZUT_CART_')) {
+          b.linkedOrder = orderMap[b.phonePeMerchantTransactionId] || null;
+        }
+      });
+    }
+
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Zutsav Admin';
+    wb.created = new Date();
+
+    // ── Sheet 1: Bookings ──────────────────────────────────────
+    const ws = wb.addWorksheet('Bookings');
+    ws.columns = [
+      { header: 'Booking #',            key: 'bookingNumber',   width: 16 },
+      { header: 'Booked On',            key: 'bookedOn',        width: 14 },
+      { header: 'Status',               key: 'status',          width: 22 },
+      { header: 'Type',                 key: 'bookingType',     width: 10 },
+      { header: 'Pooja',                key: 'pooja',           width: 30 },
+      { header: 'Language',             key: 'language',        width: 10 },
+      { header: 'Ceremony Date',        key: 'ceremonyDate',    width: 14 },
+      { header: 'Ceremony Time',        key: 'ceremonyTime',    width: 12 },
+      { header: 'Customer Name',        key: 'customerName',    width: 22 },
+      { header: 'Customer Phone',       key: 'customerPhone',   width: 14 },
+      { header: 'Customer Email',       key: 'customerEmail',   width: 28 },
+      { header: 'Address',              key: 'address',         width: 32 },
+      { header: 'City',                 key: 'city',            width: 14 },
+      { header: 'State',                key: 'state',           width: 14 },
+      { header: 'PIN',                  key: 'pin',             width: 10 },
+      { header: 'Pandit Name',          key: 'panditName',      width: 22 },
+      { header: 'Pandit Phone',         key: 'panditPhone',     width: 14 },
+      { header: 'Payout Assigned (₹)',  key: 'payoutAssigned',  width: 16 },
+      { header: 'Payout Status',        key: 'payoutStatus',    width: 14 },
+      { header: 'Payout Date',          key: 'payoutDate',      width: 14 },
+      { header: 'Payout Ref',           key: 'payoutRef',       width: 24 },
+      { header: 'With Kit',             key: 'withKit',         width: 8  },
+      { header: 'Kit Name',             key: 'kitName',         width: 24 },
+      { header: 'Kit Items',            key: 'kitItems',        width: 36 },
+      { header: 'Kit Delivery Status',  key: 'kitDeliveryStatus', width: 18 },
+      { header: 'Tracking ID',          key: 'trackingId',      width: 22 },
+      { header: 'Products',             key: 'products',        width: 45 },
+      { header: 'Product Total (₹)',    key: 'productTotal',    width: 16 },
+      { header: 'Pooja Amount (₹)',     key: 'poojaAmount',     width: 14 },
+      { header: 'Kit Amount (₹)',       key: 'kitAmount',       width: 12 },
+      { header: 'Platform Fee (₹)',     key: 'platformFee',     width: 14 },
+      { header: 'Platform GST (₹)',     key: 'platformGST',     width: 14 },
+      { header: 'Kit GST (₹)',          key: 'kitGST',          width: 10 },
+      { header: 'Product GST (₹)',      key: 'productGST',      width: 14 },
+      { header: 'Grand Total (₹)',      key: 'grandTotal',      width: 14 },
+      { header: 'Payment Mode',         key: 'paymentMode',     width: 12 },
+      { header: 'Payment Status',       key: 'paymentStatus',   width: 16 },
+      { header: 'Paid Amount (₹)',      key: 'amountPaid',      width: 14 },
+      { header: 'Pending Amount (₹)',   key: 'pendingAmount',   width: 16 },
+      { header: 'Payment Method',       key: 'paymentMethod',   width: 14 },
+      { header: 'Transaction ID',       key: 'transactionId',   width: 30 },
+      { header: 'All Txn IDs',          key: 'allTxnIds',       width: 38 },
+      { header: 'Merchant Ref',         key: 'merchantRef',     width: 36 },
+      { header: 'Special Note',         key: 'specialNote',     width: 30 },
+    ];
+
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B1F3B' } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+
+    let totalRevenue = 0;
+    let totalProductRevenue = 0;
+    let totalPlatformFee = 0;
+    let totalGST = 0;
+    const statusCounts = {};
+
+    for (const b of bookings) {
+      const productItems  = b.linkedOrder?.items || [];
+      const productTotal  = b.linkedOrder?.totalAmount || 0;
+      const productGST    = productItems.reduce((s, i) => s + (i.taxAmount || 0), 0);
+      const kitItems      = (b.kitId?.items || []).map((ki) => `${ki.productId?.name || 'Item'} ×${ki.quantity || 1}`).join(', ');
+      const productsStr   = productItems.map((item) =>
+        `${item.name || 'Product'}${item.variantLabel ? ` (${item.variantLabel})` : ''} ×${item.quantity} = ₹${item.total}`
+      ).join('\n');
+      const bookingAmount = b.grandTotal || b.amount || 0;
+      const grandTotal    = bookingAmount + productTotal;
+
+      totalRevenue        += grandTotal;
+      totalProductRevenue += productTotal;
+      totalPlatformFee    += b.platformFee || 0;
+      totalGST            += (b.platformGST || 0) + (b.kitGST || 0) + productGST;
+      statusCounts[b.status] = (statusCounts[b.status] || 0) + 1;
+
+      const row = ws.addRow({
+        bookingNumber:    b.bookingNumber || String(b._id),
+        bookedOn:         b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN') : '',
+        status:           BOOKING_STATUS_LABEL[b.status] || b.status,
+        bookingType:      b.isUrgent ? 'Urgent' : 'Normal',
+        pooja:            b.poojaId?.name || '',
+        language:         b.language || '',
+        ceremonyDate:     b.scheduledDate ? new Date(b.scheduledDate).toLocaleDateString('en-IN') : '',
+        ceremonyTime:     b.scheduledTime || '',
+        customerName:     b.userId?.name  || b.userDetails?.name  || '',
+        customerPhone:    b.userId?.phone || b.userDetails?.phone || '',
+        customerEmail:    b.userId?.email || b.userDetails?.email || '',
+        address:          b.userDetails?.address || '',
+        city:             b.userDetails?.city    || '',
+        state:            b.userDetails?.state   || '',
+        pin:              b.userDetails?.pincode || '',
+        panditName:       b.panditId?.name  || '',
+        panditPhone:      b.panditId?.phone || '',
+        payoutAssigned:   b.payout?.amount  || '',
+        payoutStatus:     b.payout?.status  || 'none',
+        payoutDate:       b.payout?.paidAt  ? new Date(b.payout.paidAt).toLocaleDateString('en-IN') : '',
+        payoutRef:        b.payout?.transactionRef || '',
+        withKit:          b.withKit ? 'Yes' : 'No',
+        kitName:          b.kitId?.name || '',
+        kitItems:         kitItems,
+        kitDeliveryStatus: b.kitDelivery?.status || '',
+        trackingId:       b.kitDelivery?.trackingId || '',
+        products:         productsStr,
+        productTotal:     productTotal,
+        poojaAmount:      b.poojaAmount  || 0,
+        kitAmount:        b.kitAmount    || 0,
+        platformFee:      b.platformFee  || 0,
+        platformGST:      b.platformGST  || 0,
+        kitGST:           b.kitGST       || 0,
+        productGST:       productGST,
+        grandTotal:       grandTotal,
+        paymentMode:      b.paymentMode   || 'FULL',
+        paymentStatus:    b.paymentStatus || (b.status === 'paid' ? 'FULLY_PAID' : 'PENDING'),
+        amountPaid:       b.amountPaid    ?? (b.status === 'paid' ? (b.grandTotal || b.amount || 0) : 0),
+        pendingAmount:    b.remainingAmount ?? 0,
+        paymentMethod:    b.paymentProvider || 'phonepe',
+        transactionId:    b.phonePeTransactionId || '',
+        allTxnIds:        (ledgerMap[String(b._id)] || [])
+                            .filter((e) => e.paymentStatus === 'SUCCESS')
+                            .map((e) => `${e.paymentType}: ${e.phonePeTransactionId || e.merchantTransactionId} (₹${e.amount})`)
+                            .join('\n') || (b.phonePeTransactionId || ''),
+        merchantRef:      b.phonePeMerchantTransactionId || '',
+        specialNote:      b.specialNote || '',
+      });
+      row.alignment = { wrapText: true, vertical: 'top' };
+    }
+
+    // Alternate row shading
+    ws.eachRow((row, rowNum) => {
+      if (rowNum > 1 && rowNum % 2 === 0) {
+        row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FC' } };
+      }
+    });
+
+    // ── Sheet 2: Summary ───────────────────────────────────────
+    const sw = wb.addWorksheet('Summary');
+    sw.columns = [
+      { header: 'Metric', key: 'metric', width: 34 },
+      { header: 'Value',  key: 'value',  width: 22 },
+    ];
+    const sh = sw.getRow(1);
+    sh.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    sh.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B1F3B' } };
+
+    const summaryData = [
+      ['Report Generated',       new Date().toLocaleString('en-IN')],
+      ['Filter: Status',         status || 'All'],
+      ['Filter: Date Range',     startDate ? `${startDate} → ${endDate || 'today'}` : 'All time'],
+      ['', ''],
+      ['Total Bookings',         bookings.length],
+      ['Total Revenue (₹)',      totalRevenue],
+      ['Booking Revenue (₹)',    totalRevenue - totalProductRevenue],
+      ['Product Revenue (₹)',    totalProductRevenue],
+      ['Platform Fee (₹)',       totalPlatformFee],
+      ['Total GST Collected (₹)',totalGST],
+      ['', ''],
+      ['Status Breakdown', ''],
+      ...Object.entries(statusCounts).map(([s, c]) => [BOOKING_STATUS_LABEL[s] || s, c]),
+    ];
+
+    summaryData.forEach(([metric, value]) => {
+      const row = sw.addRow({ metric, value });
+      if (metric === 'Status Breakdown' || metric === '') {
+        row.font = { bold: true };
+      }
+    });
+
+    // Stream response
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="bookings_export_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
   } catch (err) {
     next(err);
   }
@@ -642,12 +955,13 @@ exports.assignPandit = async (req, res, next) => {
     // Update pandit total bookings
     await Pandit.findByIdAndUpdate(panditId, { $inc: { totalBookings: 1 } });
 
-    // Send WhatsApp notification to pandit (pandit_puja_assigned template)
-    notifyPanditOfNewBooking(booking, pandit, booking.poojaId?.name || 'Pooja').catch(() => {});
+    const poojaNameForNotif = booking.poojaId?.name || 'Pooja';
 
-    // In-app: ask pandit to accept or reject
+    // Notify PANDIT (WhatsApp + email + in-app) — do NOT notify user yet; user gets notified only when pandit accepts
+    notifyPanditOfNewBooking(booking, pandit, poojaNameForNotif).catch(() => {});
+    sendPanditBookingAssignedEmail(pandit, booking, poojaNameForNotif).catch(() => {});
     if (pandit.userId) {
-      notifyPanditAssignmentPending(pandit.userId, booking.bookingNumber, booking.poojaId?.name || 'Pooja').catch(() => {});
+      notifyPanditAssignmentPending(pandit.userId, booking.bookingNumber, poojaNameForNotif).catch(() => {});
     }
 
     res.json({ success: true, booking });
@@ -714,25 +1028,35 @@ exports.updateBookingStatus = async (req, res, next) => {
     const phone = booking.userDetails?.phone;
 
     if (status === 'cancelled') {
+      const ud = booking.userDetails || {};
       notifyBookingCancelled(uid, booking.bookingNumber, cancelNote).catch(() => {});
       sendBookingCancelledEmail(booking, poojaName, cancelNote).catch(() => {});
-      if (phone) sendWhatsAppForEvent('booking_cancelled', phone, [
-        { type: 'body', parameters: [
-          { type: 'text', text: booking.userDetails?.name || 'Customer' },
-          { type: 'text', text: booking.bookingNumber },
-        ]},
-      ]).catch(() => {});
+      const cancelComponents = [{ type: 'body', parameters: [
+        { type: 'text', text: ud.name || 'Customer' },
+        { type: 'text', text: booking.bookingNumber },
+      ]}];
+      const cancelDispatched = await dispatchTriggerEvent('booking_cancelled', {
+        user: { phone, email: ud.email, name: ud.name, id: String(uid || '') },
+        components: cancelComponents,
+        emailVars: { 'user.name': ud.name, 'booking.number': booking.bookingNumber, 'pooja.name': poojaName },
+      }).catch(() => false);
+      if (!cancelDispatched && phone) sendWhatsAppForEvent('booking_cancelled', phone, cancelComponents).catch(() => {});
     }
 
     if (status === 'refunded') {
+      const ud = booking.userDetails || {};
       notifyBookingRefunded(uid, booking.bookingNumber).catch(() => {});
       sendBookingRefundedEmail(booking, poojaName).catch(() => {});
-      if (phone) sendWhatsAppForEvent('booking_refunded', phone, [
-        { type: 'body', parameters: [
-          { type: 'text', text: String(booking.amount || 0) },
-          { type: 'text', text: booking.bookingNumber },
-        ]},
-      ]).catch(() => {});
+      const refundComponents = [{ type: 'body', parameters: [
+        { type: 'text', text: String(booking.amount || 0) },
+        { type: 'text', text: booking.bookingNumber },
+      ]}];
+      const refundDispatched = await dispatchTriggerEvent('booking_refunded', {
+        user: { phone, email: ud.email, name: ud.name, id: String(uid || '') },
+        components: refundComponents,
+        emailVars: { 'user.name': ud.name, 'booking.number': booking.bookingNumber, 'booking.amount': booking.amount },
+      }).catch(() => false);
+      if (!refundDispatched && phone) sendWhatsAppForEvent('booking_refunded', phone, refundComponents).catch(() => {});
     }
 
     if (status === 'completed') {
@@ -946,7 +1270,7 @@ exports.getOrderById = async (req, res, next) => {
 exports.updateOrderStatus = async (req, res, next) => {
   try {
     const { status, note, cancelReason } = req.body;
-    const order = await Order.findById(req.params.id).populate('userId', '_id name');
+    const order = await Order.findById(req.params.id).populate('userId', '_id name email phone');
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
     const prevStatus = order.status;
@@ -960,11 +1284,18 @@ exports.updateOrderStatus = async (req, res, next) => {
     const uid = order.userId?._id || order.userId;
     const orderNum = order.orderNumber;
 
-    // Restore stock when cancelling a paid/in-progress order
-    if (status === 'cancelled' && ['paid', 'confirmed', 'packed', 'processing'].includes(prevStatus)) {
-      for (const item of order.items) {
-        await Product.findByIdAndUpdate(item.productId, { $inc: { stock: item.quantity } });
-      }
+    // Restore stock when cancelling a paid/in-progress order (variant-aware)
+    const PAID_STATUSES = ['paid', 'confirmed', 'packed', 'processing', 'shipped', 'out_for_delivery'];
+    if (status === 'cancelled' && PAID_STATUSES.includes(prevStatus)) {
+      restoreStock(order.items, 'order_cancelled', order._id, req.user?.name || 'admin').catch((e) =>
+        console.error('[Stock] Restore on cancel failed:', e.message)
+      );
+    }
+    // Restore stock on refund only if cancellation didn't already do it, and payment was confirmed
+    if (status === 'refunded' && prevStatus !== 'cancelled' && order.phonePeTransactionId) {
+      restoreStock(order.items, 'order_refunded', order._id, req.user?.name || 'admin').catch((e) =>
+        console.error('[Stock] Restore on refund failed:', e.message)
+      );
     }
 
     const notifyMap = {
@@ -978,13 +1309,20 @@ exports.updateOrderStatus = async (req, res, next) => {
     };
     if (notifyMap[status]) notifyMap[status]().catch(() => {});
 
+    // Auto-generate delivery OTP when status changes to out_for_delivery
+    if (status === 'out_for_delivery' && prevStatus !== 'out_for_delivery') {
+      _generateAndSendDeliveryOTP(order, req.user?.name).catch((e) =>
+        console.error('[DeliveryOTP] Auto-generate failed:', e.message)
+      );
+    }
+
     res.json({ success: true, order });
   } catch (err) {
     next(err);
   }
 };
 
-// PATCH /api/admin/orders/:id/shipment
+// PATCH /api/admin/orders/:id/shipment  (legacy — kept for backward compatibility)
 exports.updateOrderShipment = async (req, res, next) => {
   try {
     const { trackingId, courier } = req.body;
@@ -996,6 +1334,344 @@ exports.updateOrderShipment = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+// ─── Shipment Management ──────────────────────────────────────
+
+// GET /api/admin/shipping-config
+exports.getShippingConfig = async (req, res) => {
+  res.json({ success: true, couriers: COURIER_PROVIDERS, localPartners: LOCAL_DELIVERY_PARTNERS });
+};
+
+// GET /api/admin/orders/:id/shipment
+exports.getOrderShipment = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id).populate('userId', 'name email phone');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    const shipment = await Shipment.findOne({ orderId: req.params.id });
+    res.json({ success: true, order, shipment: shipment || null });
+  } catch (err) { next(err); }
+};
+
+// POST /api/admin/orders/:id/shipment/tekipost
+exports.createTekipostOrderShipment = async (req, res, next) => {
+  try {
+    const { createShipment } = require('../services/tackipost.service');
+
+    const order = await Order.findById(req.params.id).populate('userId', 'name email phone');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    const existing = await Shipment.findOne({ orderId: order._id });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Shipment already created for this order. Use Refresh Status to sync.' });
+    }
+
+    const addr = order.shippingAddress || {};
+
+    // ── Pre-flight validation ─────────────────────────────────────────────────
+    const missing = [];
+    const recipientName  = addr.name  || order.userId?.name  || '';
+    const recipientPhone = addr.phone || order.userId?.phone || '';
+    if (!recipientName)       missing.push('Customer name');
+    if (!recipientPhone)      missing.push('Customer phone');
+    if (!addr.address?.trim()) missing.push('Delivery address');
+    if (!addr.city?.trim())    missing.push('City');
+    if (!addr.state?.trim())   missing.push('State');
+    if (!addr.pincode?.trim()) missing.push('Pincode');
+    if (!order.totalAmount)    missing.push('Order value');
+
+    if (missing.length) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot create shipment — missing required fields: ${missing.join(', ')}`,
+      });
+    }
+
+    const pinStr = String(addr.pincode).replace(/\D/g, '');
+    if (pinStr.length !== 6) {
+      return res.status(400).json({ success: false, message: `Invalid pincode "${addr.pincode}" — must be 6 digits.` });
+    }
+
+    const phoneStr = String(recipientPhone).replace(/\D/g, '');
+    if (phoneStr.length < 10) {
+      return res.status(400).json({ success: false, message: `Invalid phone number "${recipientPhone}" — must be at least 10 digits.` });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    const totalQty = order.items.reduce((s, it) => s + (it.quantity || 1), 0);
+    const itemVal  = Math.round(order.totalAmount / Math.max(order.items.length, 1));
+
+    // Weight: 0.5 kg per item quantity, minimum 0.5 kg, maximum 30 kg
+    const computedWeight = Math.min(Math.max(totalQty * 0.5, 0.5), 30);
+
+    const result = await createShipment({
+      bookingNumber:  order.orderNumber,
+      recipientName,
+      recipientPhone,
+      recipientEmail: order.userId?.email || '',
+      address:        addr.address,
+      city:           addr.city,
+      state:          addr.state,
+      pincode:        addr.pincode,
+      orderValue:     order.totalAmount,
+      weight:         computedWeight,
+      items: order.items.map((it) => ({ name: it.name, qty: it.quantity, value: itemVal })),
+    });
+
+    if (!result.success) {
+      return res.status(503).json({
+        success:          false,
+        message:          result.error || 'TekiPost shipment creation failed',
+        tekipostResponse: result.tekipostResponse || null,
+      });
+    }
+
+    const awb = result.awbNumber || result.trackingId || '';
+
+    const shipment = await Shipment.create({
+      orderId:           order._id,
+      shippingMethod:    'tekipost',
+      courierName:       result.courier   || 'TekiPost',
+      trackingNumber:    awb,
+      awbNumber:         awb,
+      labelUrl:          result.labelUrl      || '',
+      trackingUrl:       result.trackingUrl   || '',
+      estimatedDelivery: result.estimatedDelivery ? new Date(result.estimatedDelivery) : null,
+      remarks:           result.tekipostOrderNo !== order.orderNumber
+        ? `TekiPost order ref: ${result.tekipostOrderNo}` : '',
+      shipmentStatus:  'created',
+      shipmentHistory: [{ status: 'created', timestamp: new Date(), note: `TekiPost AWB: ${awb}`, updatedBy: req.user?.name || 'Admin' }],
+      tekipostData:    result,
+      createdBy:       req.user?.name || 'Admin',
+    });
+
+    order.shipmentId  = shipment._id;
+    order.trackingId  = awb;
+    order.courier     = result.courier || 'TekiPost';
+    order.status      = 'shipped';
+    order.statusTimeline = order.statusTimeline || [];
+    order.statusTimeline.push({ status: 'shipped', timestamp: new Date(), note: `Shipped via TekiPost. AWB: ${awb}` });
+    await order.save();
+
+    const uid = order.userId?._id || order.userId;
+    notifyOrderShipmentCreated(uid, order.orderNumber, result.courier || 'TekiPost', awb).catch(() => {});
+    notifyOrderShipped(uid, order.orderNumber, awb, result.courier).catch(() => {});
+    sendWhatsAppForEvent('order_shipped', order.userId?.phone || addr.phone, [
+      { type: 'body', parameters: [
+        { type: 'text', text: addr.name || order.userId?.name || 'Customer' },
+        { type: 'text', text: order.orderNumber },
+        { type: 'text', text: result.courier || 'TekiPost' },
+        { type: 'text', text: awb },
+      ]},
+    ]).catch(() => {});
+    sendOrderShippedEmail(order, shipment).catch(() => {});
+
+    res.status(201).json({ success: true, shipment, order });
+  } catch (err) { next(err); }
+};
+
+// POST /api/admin/orders/:id/shipment/manual
+exports.createManualOrderShipment = async (req, res, next) => {
+  try {
+    const {
+      manualType, courierName, trackingNumber, estimatedDelivery,
+      remarks, deliveryPartner, driverName, driverPhone, vehicleNumber, expectedTime,
+    } = req.body;
+
+    if (!manualType || !['courier', 'local_delivery'].includes(manualType)) {
+      return res.status(400).json({ success: false, message: 'manualType must be "courier" or "local_delivery"' });
+    }
+
+    const order = await Order.findById(req.params.id).populate('userId', 'name email phone');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    const existing = await Shipment.findOne({ orderId: order._id });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Shipment already created for this order.' });
+    }
+
+    const shipment = await Shipment.create({
+      orderId:           order._id,
+      shippingMethod:    'manual',
+      manualType,
+      courierName:       manualType === 'courier'         ? (courierName    || '') : '',
+      deliveryPartner:   manualType === 'local_delivery'  ? (deliveryPartner || '') : '',
+      trackingNumber:    trackingNumber    || '',
+      awbNumber:         trackingNumber    || '',
+      driverName:        driverName        || '',
+      driverPhone:       driverPhone       || '',
+      vehicleNumber:     vehicleNumber     || '',
+      expectedTime:      expectedTime      || '',
+      estimatedDelivery: estimatedDelivery ? new Date(estimatedDelivery) : null,
+      remarks:           remarks           || '',
+      shipmentStatus:    'created',
+      shipmentHistory: [{ status: 'created', timestamp: new Date(), note: 'Manual shipment created', updatedBy: req.user?.name || 'Admin' }],
+      createdBy:         req.user?.name || 'Admin',
+    });
+
+    order.shipmentId  = shipment._id;
+    order.trackingId  = trackingNumber || '';
+    order.courier     = manualType === 'courier' ? courierName : (deliveryPartner || 'Local Delivery');
+    order.status      = 'shipped';
+    order.statusTimeline = order.statusTimeline || [];
+    order.statusTimeline.push({ status: 'shipped', timestamp: new Date(), note: `Manual shipment — ${manualType === 'courier' ? courierName : deliveryPartner}` });
+    await order.save();
+
+    const uid      = order.userId?._id || order.userId;
+    const addr     = order.shippingAddress || {};
+    const dispName = manualType === 'courier' ? courierName : (deliveryPartner || 'Local Delivery');
+    notifyOrderShipmentCreated(uid, order.orderNumber, dispName, trackingNumber).catch(() => {});
+    notifyOrderShipped(uid, order.orderNumber, trackingNumber, dispName).catch(() => {});
+    sendWhatsAppForEvent('order_shipped', order.userId?.phone || addr.phone, [
+      { type: 'body', parameters: [
+        { type: 'text', text: addr.name || order.userId?.name || 'Customer' },
+        { type: 'text', text: order.orderNumber },
+        { type: 'text', text: dispName || '' },
+        { type: 'text', text: trackingNumber || '' },
+      ]},
+    ]).catch(() => {});
+    sendOrderShippedEmail(order, shipment).catch(() => {});
+
+    res.status(201).json({ success: true, shipment, order });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/orders/:id/shipment/status
+exports.updateOrderShipmentStatus = async (req, res, next) => {
+  try {
+    const { status, note } = req.body;
+    const validStatuses = ['created', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed_delivery', 'cancelled', 'returned'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: `Invalid status. Valid: ${validStatuses.join(', ')}` });
+    }
+
+    const shipment = await Shipment.findOne({ orderId: req.params.id });
+    if (!shipment) return res.status(404).json({ success: false, message: 'No shipment found for this order' });
+
+    const order = await Order.findById(req.params.id).populate('userId', 'name email phone');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    shipment.shipmentStatus = status;
+    shipment.shipmentHistory.push({ status, timestamp: new Date(), note: note || '', updatedBy: req.user?.name || 'Admin' });
+    await shipment.save();
+
+    // Mirror key statuses onto the order
+    const mappedOrderStatus = SHIPMENT_TO_ORDER_STATUS[status];
+    if (mappedOrderStatus && order.status !== mappedOrderStatus) {
+      order.status = mappedOrderStatus;
+      order.statusTimeline = order.statusTimeline || [];
+      order.statusTimeline.push({ status: mappedOrderStatus, timestamp: new Date(), note: note || SHIPMENT_STATUS_LABELS[status] || status });
+      await order.save();
+    }
+
+    const uid  = order.userId?._id || order.userId;
+    const addr = order.shippingAddress || {};
+    const phone = order.userId?.phone || addr.phone || '';
+
+    notifyOrderShipmentStatusChanged(uid, order.orderNumber, SHIPMENT_STATUS_LABELS[status] || status).catch(() => {});
+
+    if (status === 'out_for_delivery') {
+      notifyOrderOutForDelivery(uid, order.orderNumber).catch(() => {});
+      sendWhatsAppForEvent('order_out_for_delivery', phone, [
+        { type: 'body', parameters: [
+          { type: 'text', text: addr.name || order.userId?.name || 'Customer' },
+          { type: 'text', text: order.orderNumber },
+        ]},
+      ]).catch(() => {});
+      sendOrderStatusEmail(order, 'out_for_delivery').catch(() => {});
+      // Auto-generate delivery OTP when shipment moves to out_for_delivery
+      if (!order.deliveryOTP?.hash) {
+        _generateAndSendDeliveryOTP(order, req.user?.name).catch((e) =>
+          console.error('[DeliveryOTP] Auto-generate failed:', e.message)
+        );
+      }
+    } else if (status === 'delivered') {
+      notifyOrderDelivered(uid, order.orderNumber).catch(() => {});
+      dispatchTriggerEvent('order_delivered', { phone, name: addr.name || '', orderNumber: order.orderNumber }).catch(() => {});
+      sendOrderStatusEmail(order, 'delivered').catch(() => {});
+    } else if (status === 'cancelled') {
+      notifyOrderCancelled(uid, order.orderNumber, note || '').catch(() => {});
+      sendWhatsAppForEvent('order_cancelled', phone, [
+        { type: 'body', parameters: [
+          { type: 'text', text: addr.name || order.userId?.name || 'Customer' },
+          { type: 'text', text: order.orderNumber },
+          { type: 'text', text: note || 'Cancelled' },
+        ]},
+      ]).catch(() => {});
+      sendOrderStatusEmail(order, 'cancelled').catch(() => {});
+    } else if (status === 'returned') {
+      notifyOrderShipmentStatusChanged(uid, order.orderNumber, 'Returned').catch(() => {});
+      sendOrderStatusEmail(order, 'returned').catch(() => {});
+    }
+
+    res.json({ success: true, shipment, order });
+  } catch (err) { next(err); }
+};
+
+// POST /api/admin/orders/:id/shipment/sync  — re-fetch TekiPost status
+exports.syncTekipostOrderStatus = async (req, res, next) => {
+  try {
+    const { trackShipment } = require('../services/tackipost.service');
+
+    const shipment = await Shipment.findOne({ orderId: req.params.id });
+    if (!shipment) return res.status(404).json({ success: false, message: 'No shipment found for this order' });
+    if (shipment.shippingMethod !== 'tekipost') {
+      return res.status(400).json({ success: false, message: 'Status sync is only available for TekiPost shipments' });
+    }
+
+    const trackingId = shipment.trackingNumber || shipment.awbNumber;
+    if (!trackingId) return res.status(400).json({ success: false, message: 'No tracking number stored for this shipment' });
+
+    const result = await trackShipment(trackingId);
+    if (!result.success) {
+      return res.status(503).json({ success: false, message: result.error || 'TekiPost tracking failed' });
+    }
+
+    const rawStatus     = result.status || '';
+    const mappedStatus  = TEKIPOST_STATUS_MAP[rawStatus] || shipment.shipmentStatus;
+    const order         = await Order.findById(req.params.id).populate('userId', 'name email phone');
+
+    if (mappedStatus !== shipment.shipmentStatus) {
+      const prevStatus = shipment.shipmentStatus;
+      shipment.shipmentStatus = mappedStatus;
+      shipment.shipmentHistory.push({
+        status:    mappedStatus,
+        timestamp: new Date(),
+        note:      `TekiPost: ${rawStatus}`,
+        updatedBy: 'TekiPost Sync',
+      });
+      if (result.deliveryDate) shipment.estimatedDelivery = new Date(result.deliveryDate);
+
+      // Mirror to order
+      const mappedOrderStatus = SHIPMENT_TO_ORDER_STATUS[mappedStatus];
+      if (order && mappedOrderStatus && order.status !== mappedOrderStatus) {
+        order.status = mappedOrderStatus;
+        order.statusTimeline = order.statusTimeline || [];
+        order.statusTimeline.push({ status: mappedOrderStatus, timestamp: new Date(), note: `TekiPost: ${rawStatus}` });
+        await order.save();
+      }
+
+      const uid   = order?.userId?._id || order?.userId;
+      const addr  = order?.shippingAddress || {};
+      const phone = order?.userId?.phone || addr.phone || '';
+      if (uid) {
+        notifyOrderShipmentStatusChanged(uid, order.orderNumber, SHIPMENT_STATUS_LABELS[mappedStatus] || mappedStatus).catch(() => {});
+        if (mappedStatus === 'delivered') {
+          notifyOrderDelivered(uid, order.orderNumber).catch(() => {});
+          sendOrderStatusEmail(order, 'delivered').catch(() => {});
+          dispatchTriggerEvent('order_delivered', { phone, name: addr.name || '', orderNumber: order.orderNumber }).catch(() => {});
+        } else if (mappedStatus === 'out_for_delivery') {
+          notifyOrderOutForDelivery(uid, order.orderNumber).catch(() => {});
+          sendOrderStatusEmail(order, 'out_for_delivery').catch(() => {});
+        }
+      }
+    }
+
+    shipment.lastSyncedAt = new Date();
+    await shipment.save();
+
+    res.json({ success: true, shipment, rawStatus, mappedStatus, events: result.events || [] });
+  } catch (err) { next(err); }
 };
 
 // ─── Education Masters ────────────────────────────────────────
@@ -1438,5 +2114,397 @@ exports.updateKitDelivery = async (req, res, next) => {
     });
 
     res.json({ success: true, booking });
+  } catch (err) { next(err); }
+};
+
+// ─── Delivery OTP ─────────────────────────────────────────────
+
+const OTP_EXPIRY_MINUTES = 30;
+const OTP_MAX_ATTEMPTS   = 5;
+
+async function _generateAndSendDeliveryOTP(order, adminName) {
+  const plain  = String(Math.floor(100000 + Math.random() * 900000));
+  const hash   = await bcrypt.hash(plain, 10);
+  const expiry = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  order.deliveryOTP = {
+    hash,
+    expiry,
+    verified:    false,
+    verifiedAt:  null,
+    verifiedBy:  null,
+    attempts:    0,
+    generatedAt: new Date(),
+    sentAt:      new Date(),
+  };
+  order.statusTimeline = order.statusTimeline || [];
+  order.statusTimeline.push({ status: 'out_for_delivery', timestamp: new Date(), note: 'Delivery OTP generated and sent to customer' });
+  await order.save();
+
+  const uid   = order.userId?._id || order.userId;
+  const user  = await require('../models/User').findById(uid).lean();
+  const phone = order.shippingAddress?.phone || user?.phone || '';
+
+  if (phone) {
+    sendWhatsAppForEvent('delivery_otp', phone, [
+      { type: 'body', parameters: [
+        { type: 'text', text: order.shippingAddress?.name || user?.name || 'Customer' },
+        { type: 'text', text: order.orderNumber },
+        { type: 'text', text: plain },
+        { type: 'text', text: String(OTP_EXPIRY_MINUTES) },
+      ]},
+    ]).catch(() => {});
+  }
+
+  sendDeliveryOTPEmail(order, user, plain).catch(() => {});
+  if (uid) notifyDeliveryOTPSent(uid, order.orderNumber).catch(() => {});
+}
+
+// POST /api/admin/orders/:id/delivery-otp/generate
+exports.generateDeliveryOTP = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id).populate('userId', 'name email phone');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    if (order.status !== 'out_for_delivery') {
+      return res.status(400).json({ success: false, message: 'OTP can only be generated when order status is Out for Delivery.' });
+    }
+    if (order.deliveryOTP?.verified) {
+      return res.status(400).json({ success: false, message: 'This order has already been delivered and OTP verified.' });
+    }
+
+    await _generateAndSendDeliveryOTP(order, req.user?.name);
+    res.json({ success: true, message: 'OTP generated and sent to customer via WhatsApp and email.' });
+  } catch (err) { next(err); }
+};
+
+// POST /api/admin/orders/:id/delivery-otp/resend
+exports.resendDeliveryOTP = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id).populate('userId', 'name email phone');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    if (order.status === 'delivered') {
+      return res.status(400).json({ success: false, message: 'Order is already delivered.' });
+    }
+    if (order.deliveryOTP?.verified) {
+      return res.status(400).json({ success: false, message: 'OTP already verified — order is delivered.' });
+    }
+
+    await _generateAndSendDeliveryOTP(order, req.user?.name);
+    res.json({ success: true, message: 'New OTP generated and sent to customer.' });
+  } catch (err) { next(err); }
+};
+
+// POST /api/admin/orders/:id/delivery-otp/verify
+exports.verifyDeliveryOTP = async (req, res, next) => {
+  try {
+    const { otp } = req.body;
+    if (!otp) return res.status(400).json({ success: false, message: 'OTP is required.' });
+
+    const order = await Order.findById(req.params.id).populate('userId', 'name email phone');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    if (['delivered', 'cancelled', 'refunded'].includes(order.status)) {
+      return res.status(400).json({ success: false, message: `Cannot verify OTP — order is already ${order.status}.` });
+    }
+    if (!order.deliveryOTP?.hash) {
+      return res.status(400).json({ success: false, message: 'No OTP generated for this order. Generate one first.' });
+    }
+    if (order.deliveryOTP.verified) {
+      return res.status(400).json({ success: false, message: 'OTP already verified — order is delivered.' });
+    }
+    if (new Date() > new Date(order.deliveryOTP.expiry)) {
+      return res.status(400).json({ success: false, message: 'OTP has expired. Please resend a new OTP.' });
+    }
+    if (order.deliveryOTP.attempts >= OTP_MAX_ATTEMPTS) {
+      return res.status(429).json({ success: false, message: `Too many failed attempts. Please resend a new OTP.` });
+    }
+
+    const isValid = await bcrypt.compare(String(otp).trim(), order.deliveryOTP.hash);
+
+    if (!isValid) {
+      order.deliveryOTP.attempts += 1;
+      await order.save();
+      const remaining = OTP_MAX_ATTEMPTS - order.deliveryOTP.attempts;
+      return res.status(400).json({
+        success: false,
+        message: remaining > 0
+          ? `Invalid OTP. ${remaining} attempt${remaining > 1 ? 's' : ''} remaining.`
+          : 'Too many failed attempts. Please resend a new OTP.',
+      });
+    }
+
+    // OTP correct — mark delivered
+    const verifiedBy = req.user?.name || 'Admin';
+    order.deliveryOTP.verified   = true;
+    order.deliveryOTP.verifiedAt = new Date();
+    order.deliveryOTP.verifiedBy = verifiedBy;
+    order.status = 'delivered';
+    order.statusTimeline.push({ status: 'delivered', timestamp: new Date(), note: `OTP verified by ${verifiedBy} — delivery confirmed` });
+    await order.save();
+
+    // Mirror to shipment
+    const Shipment = require('../models/Shipment');
+    const shipment = await Shipment.findOne({ orderId: order._id });
+    if (shipment && shipment.shipmentStatus !== 'delivered') {
+      shipment.shipmentStatus = 'delivered';
+      shipment.shipmentHistory.push({ status: 'delivered', timestamp: new Date(), note: 'Delivery confirmed via OTP', updatedBy: verifiedBy });
+      await shipment.save();
+    }
+
+    const uid   = order.userId?._id || order.userId;
+    const user  = order.userId;
+    const addr  = order.shippingAddress || {};
+    const phone = user?.phone || addr.phone || '';
+
+    notifyDeliveryOTPVerified(uid, order.orderNumber).catch(() => {});
+    notifyOrderDelivered(uid, order.orderNumber).catch(() => {});
+    sendOrderStatusEmail(order, 'delivered').catch(() => {});
+    dispatchTriggerEvent('order_delivered', { phone, name: addr.name || user?.name || '', orderNumber: order.orderNumber }).catch(() => {});
+    sendOrderInvoiceEmail(order, user).catch(() => {});
+
+    await AdminAuditLog.create({
+      action: 'delivery_otp_verified', performedByName: verifiedBy,
+      targetId: order._id, targetType: 'order', targetName: order.orderNumber,
+      note: 'OTP verified. Order marked as Delivered.',
+    }).catch(() => {});
+
+    res.json({ success: true, message: 'OTP verified. Order marked as Delivered.', order });
+  } catch (err) { next(err); }
+};
+
+// GET /api/admin/orders/:id/invoice
+exports.getAdminOrderInvoice = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id).populate('userId', 'name email phone');
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    const Shipment = require('../models/Shipment');
+    const shipment = await Shipment.findOne({ orderId: order._id }).lean();
+    res.json({ success: true, order: order.toObject(), shipment: shipment || null });
+  } catch (err) { next(err); }
+};
+
+// ─── Blog Administration ─────────────────────────────────────────────────────
+
+const Blog         = require('../models/Blog');
+const BlogCategory = require('../models/BlogCategory');
+const BlogComment  = require('../models/BlogComment');
+const BlogLike     = require('../models/BlogLike');
+const BlogBookmark = require('../models/BlogBookmark');
+const SystemSettings = require('../models/SystemSettings');
+
+// GET /api/admin/blogs
+exports.adminGetBlogs = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, status, authorRole, category, search } = req.query;
+    const query = {};
+    if (status)     query.status     = status;
+    if (authorRole) query.authorRole = authorRole;
+    if (category)   query.category   = category;
+    if (search) query.$or = [
+      { title:      new RegExp(search, 'i') },
+      { authorName: new RegExp(search, 'i') },
+    ];
+
+    const [blogs, total] = await Promise.all([
+      Blog.find(query)
+        .populate('category', 'name slug icon color')
+        .select('-content')
+        .sort({ createdAt: -1 })
+        .limit(+limit)
+        .skip((+page - 1) * +limit)
+        .lean(),
+      Blog.countDocuments(query),
+    ]);
+
+    const stats = await Blog.aggregate([
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]);
+    const statusCounts = {};
+    stats.forEach((s) => { statusCounts[s._id] = s.count; });
+
+    res.json({ success: true, blogs, total, statusCounts });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blogs/:id/approve
+exports.adminApproveBlog = async (req, res, next) => {
+  try {
+    const blog = await Blog.findById(req.params.id);
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    blog.status       = 'published';
+    blog.publishedAt  = blog.publishedAt || new Date();
+    blog.publishedBy  = req.user._id;
+    blog.reviewedAt   = new Date();
+    blog.reviewerName = req.user.name || 'Admin';
+    blog.rejectionReason = '';
+    await blog.save();
+
+    // In-app notification
+    createNotification({
+      userId:  blog.authorId,
+      type:    'blog_approved',
+      title:   'Blog Published!',
+      message: `Your blog "${blog.title}" has been approved and published.`,
+      data:    { blogId: blog._id, slug: blog.slug },
+    }).catch(() => {});
+
+    res.json({ success: true, blog, message: 'Blog approved and published.' });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blogs/:id/reject
+exports.adminRejectBlog = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+    if (!reason || reason.trim().length < 5) {
+      return res.status(400).json({ success: false, message: 'Rejection reason is required (min 5 chars)' });
+    }
+
+    const blog = await Blog.findById(req.params.id);
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    blog.status          = 'rejected';
+    blog.rejectionReason = reason.trim();
+    blog.reviewedAt      = new Date();
+    blog.reviewerName    = req.user.name || 'Admin';
+    await blog.save();
+
+    createNotification({
+      userId:  blog.authorId,
+      type:    'blog_rejected',
+      title:   'Blog Needs Revision',
+      message: `Your blog "${blog.title}" was not approved. Reason: ${reason.trim()}`,
+      data:    { blogId: blog._id },
+    }).catch(() => {});
+
+    res.json({ success: true, blog, message: 'Blog rejected.' });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blogs/:id/feature
+exports.adminFeatureBlog = async (req, res, next) => {
+  try {
+    const { isFeatured, isTrending, isEditorsPick, isHomepageHero } = req.body;
+    const updates = {};
+    if (isFeatured     !== undefined) updates.isFeatured     = isFeatured;
+    if (isTrending     !== undefined) updates.isTrending     = isTrending;
+    if (isEditorsPick  !== undefined) updates.isEditorsPick  = isEditorsPick;
+    if (isHomepageHero !== undefined) updates.isHomepageHero = isHomepageHero;
+
+    const blog = await Blog.findByIdAndUpdate(req.params.id, updates, { new: true });
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    if (isFeatured === true || isEditorsPick === true) {
+      createNotification({
+        userId:  blog.authorId,
+        type:    'blog_featured',
+        title:   "You're Featured! 🌟",
+        message: `Your blog "${blog.title}" has been featured on Zutsav.`,
+        data:    { blogId: blog._id, slug: blog.slug },
+      }).catch(() => {});
+    }
+
+    res.json({ success: true, blog });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blogs/:id/archive
+exports.adminArchiveBlog = async (req, res, next) => {
+  try {
+    const blog = await Blog.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+    res.json({ success: true, blog });
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/admin/blogs/:id
+exports.adminDeleteBlog = async (req, res, next) => {
+  try {
+    const blog = await Blog.findById(req.params.id);
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    await Promise.all([
+      Blog.deleteOne({ _id: blog._id }),
+      BlogComment.deleteMany({ blogId: blog._id }),
+      BlogLike.deleteMany({ blogId: blog._id }),
+      BlogBookmark.deleteMany({ blogId: blog._id }),
+    ]);
+
+    res.json({ success: true, message: 'Blog permanently deleted.' });
+  } catch (err) { next(err); }
+};
+
+// ─── Blog Categories ─────────────────────────────────────────────────────────
+
+// GET /api/admin/blog-categories
+exports.getBlogCategories = async (req, res, next) => {
+  try {
+    const categories = await BlogCategory.find().sort({ order: 1, name: 1 }).lean();
+    res.json({ success: true, categories });
+  } catch (err) { next(err); }
+};
+
+// POST /api/admin/blog-categories
+exports.createBlogCategory = async (req, res, next) => {
+  try {
+    const { name, description, icon, color, order } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'Name is required' });
+    const cat = await BlogCategory.create({ name, description, icon, color, order });
+    res.status(201).json({ success: true, category: cat });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blog-categories/:id
+exports.updateBlogCategory = async (req, res, next) => {
+  try {
+    const { name, description, icon, color, order, isActive } = req.body;
+    const cat = await BlogCategory.findByIdAndUpdate(
+      req.params.id, { name, description, icon, color, order, isActive }, { new: true }
+    );
+    if (!cat) return res.status(404).json({ success: false, message: 'Category not found' });
+    res.json({ success: true, category: cat });
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/admin/blog-categories/:id
+exports.deleteBlogCategory = async (req, res, next) => {
+  try {
+    await BlogCategory.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Category deleted' });
+  } catch (err) { next(err); }
+};
+
+// ─── Blog Permission Settings ─────────────────────────────────────────────────
+
+// GET /api/admin/blog-permissions
+exports.getBlogPermissions = async (req, res, next) => {
+  try {
+    const settings = await SystemSettings.findOne().select(
+      'blogAdminPublish blogPanditPublish blogUserPublish blogPanditRequireApproval blogUserRequireApproval'
+    ).lean();
+    res.json({ success: true, permissions: settings || {} });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/blog-permissions
+exports.updateBlogPermissions = async (req, res, next) => {
+  try {
+    const {
+      blogAdminPublish, blogPanditPublish, blogUserPublish,
+      blogPanditRequireApproval, blogUserRequireApproval,
+    } = req.body;
+
+    const updates = {};
+    if (blogAdminPublish          !== undefined) updates.blogAdminPublish          = Boolean(blogAdminPublish);
+    if (blogPanditPublish         !== undefined) updates.blogPanditPublish         = Boolean(blogPanditPublish);
+    if (blogUserPublish           !== undefined) updates.blogUserPublish           = Boolean(blogUserPublish);
+    if (blogPanditRequireApproval !== undefined) updates.blogPanditRequireApproval = Boolean(blogPanditRequireApproval);
+    if (blogUserRequireApproval   !== undefined) updates.blogUserRequireApproval   = Boolean(blogUserRequireApproval);
+
+    const settings = await SystemSettings.findOneAndUpdate({}, updates, { new: true, upsert: true });
+    res.json({ success: true, message: 'Blog permissions updated', permissions: settings });
   } catch (err) { next(err); }
 };

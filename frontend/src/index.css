@@ -388,3 +388,43 @@
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
+/* ══════════════════════════════════════════════════════════════
+   GLASS DARK — for dark-background glass cards
+══════════════════════════════════════════════════════════════ */
+.glass-dark {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HIDE SCROLLBAR — horizontal scroll strips
+══════════════════════════════════════════════════════════════ */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ZUTSAV LOGO LOADER ANIMATION
+══════════════════════════════════════════════════════════════ */
+@keyframes zutsav-spin {
+  0%   { transform: rotate(0deg)   scale(1);    }
+  50%  { transform: rotate(180deg) scale(1.07); }
+  100% { transform: rotate(360deg) scale(1);    }
+}
+.zutsav-loader-spin {
+  animation: zutsav-spin 2.4s ease-in-out infinite;
+  transform-origin: center center;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .zutsav-loader-spin {
+    animation: none;
+  }
+}
+

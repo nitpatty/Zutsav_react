@@ -4,6 +4,7 @@ import {
   Save, Upload, Plus, Trash2, Search, CheckCircle, Clock, XCircle, FileText,
   BadgeCheck, AlertTriangle, RefreshCw, Info, Loader, Languages,
 } from 'lucide-react';
+import ZutsavLoader, { ZutsavLoaderInline } from '../components/shared/ZutsavLoader';
 import { Link, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
@@ -310,7 +311,7 @@ function LanguagesAddressTab({ pandit, reload }) {
           <p className="text-xs text-gray-400 mb-2">Drag the pin or click on the map to set your exact location</p>
           {geoStatus === 'loading' && (
             <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl mb-2">
-              <Loader size={12} className="animate-spin shrink-0" /> Updating map location...
+              <ZutsavLoaderInline size={14} /> Updating map location...
             </div>
           )}
           {geoStatus === 'notfound' && (
@@ -1279,11 +1280,7 @@ export default function PanditMyProfile() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24">
-      <div className="animate-spin text-4xl">🪔</div>
-    </div>
-  );
+  if (loading) return <ZutsavLoader size={60} message="Loading your profile…" />;
 
   if (!pandit) return (
     <div className="flex items-center justify-center py-24 text-center px-4">

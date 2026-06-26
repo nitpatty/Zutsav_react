@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Trash2, ShoppingBag, Calendar, Clock, MapPin, Package, ArrowRight, Shield, Minus, Plus, Zap } from 'lucide-react';
+import { Trash2, ShoppingBag, Calendar, Clock, MapPin, Package, ArrowRight, Shield, Minus, Plus, Zap, Truck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import { formatINR } from '../utils/priceEngine';
 import API from '../api/axios';
+import AddressPicker from '../components/shared/AddressPicker';
 
 function fmtDate(d) {
   if (!d) return '—';
@@ -20,12 +22,48 @@ function fmtTime(t) {
 const fadeUp = (d = 0) => ({ initial:{ opacity:0, y:16 }, animate:{ opacity:1, y:0, transition:{ duration:0.35, delay:d } } });
 
 export default function CartPage() {
-  const { items, poojaItems, productItems, grandTotal, removeItem, updateProductQty, clearCart, cartType } = useCart();
+  const { items, poojaItems, productItems, poojaTotal, productSubtotal, productTaxTotal, grandTotal, removeItem, updateProductQty, clearCart, cartType } = useCart();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [paying, setPaying] = useState(false);
 
+  // name/phone: pre-filled from profile; address fields managed by AddressPicker
+  const [shipping, setShipping] = useState({
+    name:     '',
+    phone:    '',
+    address:  '',
+    pincode:  '',
+    state:    '',
+    city:     '',
+    district: '',
+  });
+  const setField = (f) => (e) => setShipping((p) => ({ ...p, [f]: e.target.value }));
+
+  // Pre-fill name/phone from auth context
+  useEffect(() => {
+    setShipping((p) => ({
+      ...p,
+      name:  p.name  || user?.name  || '',
+      phone: p.phone || user?.phone || '',
+    }));
+  }, [user]);
+
+  // Also pre-fill from first pooja booking's userDetails if available
+  useEffect(() => {
+    const ud = poojaItems[0]?.bookingDetails?.userDetails;
+    if (ud) setShipping((p) => ({
+      name:  p.name  || ud.name  || '',
+      phone: p.phone || ud.phone || '',
+    }));
+  }, [poojaItems.length]);
+
+  const hasProducts = productItems.length > 0;
+
   const handleCheckout = async () => {
     if (items.length === 0) return;
+    if (hasProducts && (!shipping.name || !shipping.phone || !shipping.address || !shipping.pincode)) {
+      toast.error('Please fill delivery address details'); return;
+    }
     setPaying(true);
     try {
       const bookingPayload = poojaItems.map(item => ({
@@ -49,6 +87,7 @@ export default function CartPage() {
       const { data } = await API.post('/checkout/cart', {
         bookings: bookingPayload,
         products: productPayload,
+        shippingAddress: hasProducts ? shipping : undefined,
       });
 
       clearCart();
@@ -143,9 +182,10 @@ export default function CartPage() {
                   <div className="px-5 py-3 bg-orange-50 border-t border-orange-100 flex items-center justify-between">
                     <div className="text-xs text-gray-500 space-y-0.5">
                       <p>Pooja: {formatINR(item.pricing?.poojaAmount)}</p>
-                      {item.pricing?.platformFee > 0 && <p>Fee: {formatINR(item.pricing?.platformFee)}</p>}
+                      {item.pricing?.platformFee > 0 && <p>Platform fee: {formatINR(item.pricing?.platformFee)}</p>}
+                      {item.pricing?.platformGST > 0 && <p>GST on fee: {formatINR(item.pricing?.platformGST)}</p>}
                       {item.pricing?.kitAmount > 0 && <p>Kit: {formatINR(item.pricing?.kitAmount)}</p>}
-                      {item.pricing?.taxAmount > 0 && <p>Tax: {formatINR(item.pricing?.taxAmount)}</p>}
+                      {item.pricing?.kitGST > 0 && <p>GST on kit: {formatINR(item.pricing?.kitGST)}</p>}
                     </div>
                     <span className="font-bold text-orange-600 text-lg" style={{ fontFamily: "'Cormorant Garamond',serif" }}>
                       {formatINR(item.pricing?.grandTotal)}
@@ -193,25 +233,105 @@ export default function CartPage() {
           </motion.div>
         )}
 
+        {/* ── Shipping address (only when products in cart) ── */}
+        {hasProducts && (
+          <motion.div {...fadeUp(0.12)} className="mb-4">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+              <Truck size={11} /> Delivery Address
+            </p>
+            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm space-y-3">
+              {/* Name + Phone — pre-filled from profile */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Full Name *</label>
+                  <input className="input text-sm" placeholder="Your name" value={shipping.name} onChange={setField('name')} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 mb-1 block">Phone *</label>
+                  <input className="input text-sm" placeholder="10-digit number" value={shipping.phone} onChange={setField('phone')} />
+                </div>
+              </div>
+
+              {/* Saved address picker — reuses same API as Pooja Booking */}
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                  <MapPin size={11} /> Select Delivery Address *
+                </label>
+                <AddressPicker
+                  value={{ address: shipping.address, pincode: shipping.pincode, state: shipping.state, city: shipping.city, district: shipping.district }}
+                  onChange={(fields) => setShipping((p) => ({ ...p, ...fields }))}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {/* ── Order summary ─────────────────────────── */}
         <motion.div {...fadeUp(0.15)} className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm mb-4">
           <div className="px-5 py-3 border-b border-gray-100 bg-gray-50">
             <p className="text-xs font-bold text-gray-600 uppercase tracking-wide">Order Summary</p>
           </div>
           <div className="px-5 py-4 space-y-2">
-            {poojaItems.length > 0 && (
-              <div className="flex justify-between text-sm text-gray-600">
-                <span>Pooja Bookings ({poojaItems.length})</span>
-                <span className="font-medium">{formatINR(poojaItems.reduce((s, i) => s + (i.pricing?.grandTotal || 0), 0))}</span>
+
+            {/* Pooja bookings breakdown */}
+            {poojaItems.map((item) => (
+              <div key={item.id} className="space-y-1 pb-2 border-b border-gray-50 last:border-0">
+                <div className="flex justify-between text-sm text-gray-700 font-medium">
+                  <span className="truncate max-w-[200px]">🪔 {item.poojaName}</span>
+                  <span>{formatINR(item.pricing?.grandTotal)}</span>
+                </div>
+                <div className="pl-4 space-y-0.5">
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>Pooja service</span><span>{formatINR(item.pricing?.poojaAmount)}</span>
+                  </div>
+                  {(item.pricing?.platformFee || 0) > 0 && (
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Platform fee</span><span>{formatINR(item.pricing?.platformFee)}</span>
+                    </div>
+                  )}
+                  {(item.pricing?.platformGST || 0) > 0 && (
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>GST on platform fee ({item.pricing?.gstPercent}%)</span><span>{formatINR(item.pricing?.platformGST)}</span>
+                    </div>
+                  )}
+                  {(item.pricing?.kitAmount || 0) > 0 && (
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Kit — {item.kitName}</span><span>{formatINR(item.pricing?.kitAmount)}</span>
+                    </div>
+                  )}
+                  {(item.pricing?.kitGST || 0) > 0 && (
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>GST on kit ({item.pricing?.gstPercent}%)</span><span>{formatINR(item.pricing?.kitGST)}</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
+            ))}
+
+            {/* Products breakdown */}
             {productItems.length > 0 && (
-              <div className="flex justify-between text-sm text-gray-600">
-                <span>Products ({productItems.reduce((s, i) => s + i.quantity, 0)} items)</span>
-                <span className="font-medium">{formatINR(productItems.reduce((s, i) => s + i.price * i.quantity, 0))}</span>
+              <div className="space-y-1 pb-2 border-b border-gray-50">
+                {productItems.map((item) => (
+                  <div key={item.id} className="flex justify-between text-xs text-gray-500">
+                    <span className="truncate max-w-[200px]">{item.name}{item.variantLabel ? ` · ${item.variantLabel}` : ''} ×{item.quantity}</span>
+                    <span>{formatINR(item.price * item.quantity)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-sm text-gray-700 font-medium mt-1">
+                  <span>Products subtotal</span>
+                  <span>{formatINR(productSubtotal)}</span>
+                </div>
+                {productTaxTotal > 0 && (
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>Product GST</span>
+                    <span>{formatINR(productTaxTotal)}</span>
+                  </div>
+                )}
               </div>
             )}
-            <div className="border-t border-gray-100 pt-3 flex justify-between items-center">
+
+            {/* Grand total */}
+            <div className="pt-2 flex justify-between items-center">
               <span className="font-bold text-gray-800">Grand Total</span>
               <span className="font-bold text-orange-600 text-xl" style={{ fontFamily: "'Cormorant Garamond',serif" }}>
                 {formatINR(grandTotal)}

@@ -30,10 +30,12 @@ const bookingSchema = new mongoose.Schema({
   bookingType: { type: String, enum: ['normal', 'urgent'], default: 'normal' },
 
   // Accounting fields (required for GST reporting)
-  poojaAmount:  { type: Number, default: 0 },  // pooja service price (tax-exempt)
-  kitAmount:    { type: Number, default: 0 },  // samagri kit price (taxable)
-  platformFee:  { type: Number, default: 0 },  // convenience fee (tax-exempt)
-  taxAmount:    { type: Number, default: 0 },  // GST on kit ONLY
+  poojaAmount:  { type: Number, default: 0 },  // pooja service price (always GST-exempt)
+  kitAmount:    { type: Number, default: 0 },  // samagri kit price
+  kitGST:       { type: Number, default: 0 },  // GST on kit (platformGstPercent%)
+  platformFee:  { type: Number, default: 0 },  // platform commission
+  platformGST:  { type: Number, default: 0 },  // GST on platform fee (platformGstPercent%)
+  taxAmount:    { type: Number, default: 0 },  // alias for kitGST (backward compat)
   grandTotal:   { type: Number, default: 0 },  // total charged to user
 
   // Legacy pricing fields (kept for backward compatibility)
@@ -42,6 +44,12 @@ const bookingSchema = new mongoose.Schema({
   commissionAmount:  { type: Number, default: 0 },
   gstPercent:        { type: Number, default: 0 },
   gstAmount:         { type: Number, default: 0 },
+
+  // Partial payment tracking
+  paymentMode:      { type: String, enum: ['FULL', 'PARTIAL'], default: 'FULL' },
+  paymentStatus:    { type: String, enum: ['PENDING', 'PARTIALLY_PAID', 'FULLY_PAID', 'REFUNDED', 'FAILED'], default: 'PENDING' },
+  amountPaid:       { type: Number, default: 0 },
+  remainingAmount:  { type: Number, default: 0 },
 
   // Payment (final amount charged to user)
   amount:              { type: Number, required: true },

@@ -26,6 +26,16 @@ const userSchema = new mongoose.Schema({
   referredBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   referralCount: { type: Number, default: 0 },
 
+  savedAddresses: [{
+    label:    { type: String, default: 'Home' },
+    address:  { type: String, required: true },
+    pincode:  { type: String },
+    state:    { type: String },
+    city:     { type: String },
+    district: { type: String },
+    isDefault:{ type: Boolean, default: false },
+  }],
+
   // 30-day safe deletion
   accountStatus:         { type: String, enum: ['active', 'deletion_pending'], default: 'active' },
   deletionRequestedAt:   { type: Date, default: null },

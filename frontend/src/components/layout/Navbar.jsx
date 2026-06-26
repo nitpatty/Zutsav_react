@@ -5,10 +5,12 @@ import {
   Menu, X, User, LogOut, LayoutDashboard, BookOpen, ShoppingBag,
   Bell, Moon, Sparkles, Home, CalendarDays, MapPin, Tv,
   ChevronDown, Package, Users, Settings, Star, Flame, ShoppingCart,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { useCart } from '../../context/CartContext';
+import { useSettings } from '../../context/SettingsContext';
 import ThemeToggle from '../ui/ThemeSwitcher';
 
 const PUBLIC_NAV = [
@@ -17,6 +19,7 @@ const PUBLIC_NAV = [
   { to: '/marketplace', label: 'Marketplace' },
   { to: '/temples',     label: 'Temples'     },
   { to: '/panchang',    label: 'Panchang'    },
+  { to: '/blog',        label: 'Blog'        },
 ];
 
 const USER_NAV = [
@@ -25,6 +28,7 @@ const USER_NAV = [
   { to: '/festivals',    label: 'Festivals',  icon: CalendarDays },
   { to: '/panchang',     label: 'Panchang',   icon: Moon         },
   { to: '/marketplace',  label: 'Shop',       icon: ShoppingBag  },
+  { to: '/blog',         label: 'Blog',       icon: FileText     },
   { to: '/ai-assistant', label: 'AI Guide',   icon: Sparkles     },
 ];
 
@@ -58,6 +62,7 @@ export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const { cartCount } = useCart();
+  const { logoUrl, platformName } = useSettings();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -114,8 +119,8 @@ export default function Navbar() {
             {/* ── Logo ─────────────────────────────────────────── */}
             <Link to="/" className="flex items-center shrink-0 group">
               <img
-                src="https://zutsav.com/storage/settings/admin_logo_1778665731.png"
-                alt="Zutsav"
+                src={logoUrl || 'https://zutsav.com/storage/settings/admin_logo_1778665731.png'}
+                alt={platformName || 'Zutsav'}
                 className="h-9 w-auto object-contain group-hover:opacity-90 transition-opacity duration-200"
               />
             </Link>

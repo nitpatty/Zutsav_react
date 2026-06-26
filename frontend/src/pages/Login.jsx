@@ -3,10 +3,12 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertTriangle, RotateCcw, LogOut } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import API from '../api/axios';
 
 export default function Login() {
   const { login, logout, loading } = useAuth();
+  const { logoUrl, platformName } = useSettings();
   const navigate = useNavigate();
   const location = useLocation();
   const from = location.state?.from?.pathname || '/';
@@ -75,9 +77,11 @@ export default function Login() {
       <div className="w-full max-w-md">
 
         <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2 mb-6">
-            <span className="text-3xl">🪔</span>
-            <span className="font-serif text-3xl font-bold text-maroon-600">Zutsav</span>
+          <Link to="/" className="inline-flex items-center justify-center mb-6">
+            {logoUrl
+              ? <img src={logoUrl} alt={platformName || 'Zutsav'} className="h-14 w-auto object-contain" />
+              : <span className="font-serif text-3xl font-bold text-maroon-600">{platformName || 'Zutsav'}</span>
+            }
           </Link>
           <h1 className="text-2xl font-bold text-gray-800">Welcome Back</h1>
           <p className="text-gray-500 mt-1 text-sm">Sign in to your spiritual journey</p>

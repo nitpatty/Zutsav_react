@@ -1,34 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShoppingCart, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Minus, Plus, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
 import { useAuth } from '../context/AuthContext';
+import { useCart } from '../context/CartContext';
 import LoginModal from '../components/shared/LoginModal';
-
-const CART_KEY = 'zutsav_cart';
-const makeCartKey = (productId, variantId) => variantId ? `${productId}::${variantId}` : productId;
-
-function loadCart() {
-  try { return JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch { return []; }
-}
-function saveCart(cart) {
-  try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch { /* noop */ }
-}
+import ZutsavLoader from '../components/shared/ZutsavLoader';
 
 export default function ProductDetail() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const { addProduct, productItems } = useCart();
 
-  const [product,  setProduct]  = useState(null);
-  const [loading,  setLoading]  = useState(true);
+  const [product,    setProduct]    = useState(null);
+  const [loading,    setLoading]    = useState(true);
   const [selVariant, setSelVariant] = useState(null);
-  const [qty,      setQty]      = useState(1);
-  const [mainImg,  setMainImg]  = useState(0);
-  const [cart,     setCart]     = useState(() => loadCart());
-  const [showLogin, setShowLogin] = useState(false);
-  const [loginMsg,  setLoginMsg]  = useState('');
+  const [qty,        setQty]        = useState(1);
+  const [mainImg,    setMainImg]    = useState(0);
+  const [showLogin,  setShowLogin]  = useState(false);
+  const [loginMsg,   setLoginMsg]   = useState('');
 
   useEffect(() => {
     setLoading(true);
@@ -42,14 +34,7 @@ export default function ProductDetail() {
       .finally(() => setLoading(false));
   }, [slug, navigate]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--t-bg)' }}>
-        <div className="w-10 h-10 border-4 border-saffron-200 border-t-saffron-500 rounded-full animate-spin" />
-      </div>
-    );
-  }
-
+  if (loading) return <ZutsavLoader fullscreen size={60} />;
   if (!product) return null;
 
   const hasVariants  = product.variants?.length > 0;
@@ -59,53 +44,28 @@ export default function ProductDetail() {
     : (product.salePrice ? product.price : null);
   const currentStock = hasVariants ? (selVariant?.stock ?? 0) : product.stock;
   const isOOS        = currentStock === 0 || (hasVariants && selVariant?.isActive === false);
-  const cKey         = makeCartKey(product._id, hasVariants ? selVariant?.variantId : null);
-  const cartQty      = cart.find((i) => i.cartKey === cKey)?.quantity || 0;
+  const cartKey      = `${product._id}::${(hasVariants ? selVariant?.variantId : null) || ''}`;
+  const cartItem     = productItems.find((i) => i.key === cartKey);
+  const cartQty      = cartItem?.quantity || 0;
   const discountPct  = slashedPrice ? Math.round((1 - displayPrice / slashedPrice) * 100) : 0;
 
-  const updateAndPersist = (fn) => {
-    const next = fn(cart);
-    setCart(next);
-    if (isAuthenticated) saveCart(next);
-  };
-
-  const addToCart = () => {
-    if (!isAuthenticated) { setLoginMsg('Please login to add items to your cart.'); setShowLogin(true); return; }
+  const handleAddToCart = () => {
+    if (!isAuthenticated) {
+      setLoginMsg('Please login to add items to your cart.');
+      setShowLogin(true);
+      return;
+    }
     if (isOOS) return;
-    updateAndPersist((prev) => {
-      const existing = prev.find((i) => i.cartKey === cKey);
-      const addQty   = qty;
-      if (existing) {
-        if (existing.quantity + addQty > currentStock) {
-          toast.error(`Only ${currentStock} available`); return prev;
-        }
-        return prev.map((i) => i.cartKey === cKey ? { ...i, quantity: i.quantity + addQty } : i);
-      }
-      if (addQty > currentStock) { toast.error(`Only ${currentStock} available`); return prev; }
-      return [...prev, {
-        cartKey:      cKey,
-        productId:    product._id,
-        variantId:    hasVariants ? selVariant?.variantId : null,
-        variantLabel: hasVariants ? selVariant?.quantity  : null,
-        name:         product.name,
-        price:        displayPrice,
-        quantity:     addQty,
-        image:        product.images?.[0],
-        stock:        currentStock,
-      }];
+    if (qty > currentStock) { toast.error(`Only ${currentStock} available`); return; }
+    addProduct({
+      product,
+      variantId:    hasVariants ? selVariant?.variantId    : null,
+      variantLabel: hasVariants ? selVariant?.quantity     : null,
+      quantity:     qty,
+      price:        displayPrice,
+      taxRate:      product.taxRate ?? 0,
     });
     toast.success(`${product.name}${selVariant ? ` (${selVariant.quantity})` : ''} added to cart`);
-  };
-
-  const updateCartQty = (delta) => {
-    updateAndPersist((prev) => {
-      const item = prev.find((i) => i.cartKey === cKey);
-      if (!item) return prev;
-      const newQty = item.quantity + delta;
-      if (newQty < 1) return prev.filter((i) => i.cartKey !== cKey);
-      if (item.stock && newQty > item.stock) { toast.error(`Only ${item.stock} available`); return prev; }
-      return prev.map((i) => i.cartKey === cKey ? { ...i, quantity: newQty } : i);
-    });
   };
 
   const images = product.images?.length ? product.images : [];
@@ -115,7 +75,7 @@ export default function ProductDetail() {
       <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} message={loginMsg} />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back button */}
+        {/* Back */}
         <button onClick={() => navigate('/marketplace')}
           className="flex items-center gap-2 text-sm font-semibold mb-8 hover:opacity-70 transition-opacity font-sans"
           style={{ color: 'var(--t-muted)' }}>
@@ -208,43 +168,42 @@ export default function ProductDetail() {
               <p className="text-xs text-orange-600 font-sans">Only {product.stock} left in stock</p>
             )}
 
-            {/* Qty selector + Add to Cart */}
+            {/* ── Single purchase flow: qty picker + one CTA ── */}
             <div className="flex items-center gap-4 flex-wrap">
-              {/* Quantity picker */}
-              <div className="flex items-center gap-2 border rounded-xl px-1 py-1" style={{ borderColor: 'var(--t-border)', background: 'var(--t-card)' }}>
-                <button onClick={() => setQty((q) => Math.max(1, q - 1))}
-                  disabled={qty <= 1}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-30 transition-colors">
-                  <Minus size={14} />
-                </button>
-                <span className="min-w-[32px] text-center font-semibold font-sans" style={{ color: 'var(--t-text)' }}>{qty}</span>
-                <button onClick={() => setQty((q) => Math.min(currentStock || 99, q + 1))}
-                  disabled={qty >= (currentStock || 99)}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-30 transition-colors">
-                  <Plus size={14} />
-                </button>
-              </div>
+              {/* Quantity picker — only shown before item is in cart */}
+              {cartQty === 0 && !isOOS && (
+                <div className="flex items-center gap-2 border rounded-xl px-1 py-1"
+                  style={{ borderColor: 'var(--t-border)', background: 'var(--t-card)' }}>
+                  <button onClick={() => setQty((q) => Math.max(1, q - 1))}
+                    disabled={qty <= 1}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-30 transition-colors">
+                    <Minus size={14} />
+                  </button>
+                  <span className="min-w-[32px] text-center font-semibold font-sans" style={{ color: 'var(--t-text)' }}>{qty}</span>
+                  <button onClick={() => setQty((q) => Math.min(currentStock || 99, q + 1))}
+                    disabled={qty >= (currentStock || 99)}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-30 transition-colors">
+                    <Plus size={14} />
+                  </button>
+                </div>
+              )}
 
-              {/* Add to Cart / counter */}
+              {/* Single CTA — state-driven */}
               {isOOS ? (
-                <button disabled className="btn-primary px-8 py-3 opacity-50 cursor-not-allowed flex-1 sm:flex-none">
+                <button disabled className="btn-primary flex-1 sm:flex-none px-8 py-3 opacity-50 cursor-not-allowed font-sans">
                   Out of Stock
                 </button>
               ) : cartQty > 0 ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center rounded-xl overflow-hidden" style={{ background: 'var(--t-primary)' }}>
-                    <button onClick={() => updateCartQty(-1)} className="px-4 py-3 text-white hover:opacity-80 font-bold text-lg">−</button>
-                    <span className="text-white font-bold px-2 font-sans">{cartQty}</span>
-                    <button onClick={() => updateCartQty(+1)} className="px-4 py-3 text-white hover:opacity-80 font-bold text-lg">+</button>
-                  </div>
-                  <button onClick={() => navigate('/marketplace')}
-                    className="flex items-center gap-2 text-sm font-semibold px-4 py-3 rounded-xl border transition-colors font-sans"
-                    style={{ borderColor: 'var(--t-primary)', color: 'var(--t-primary)' }}>
-                    <ShoppingCart size={16} /> View Cart
-                  </button>
-                </div>
+                <button onClick={() => navigate('/cart')}
+                  className="flex-1 sm:flex-none px-8 py-3 rounded-2xl flex items-center justify-center gap-2 font-semibold font-sans text-white transition-all"
+                  style={{ background: 'var(--t-primary)' }}>
+                  <ShoppingCart size={18} />
+                  Go to Cart
+                  <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{cartQty} in cart</span>
+                  <ArrowRight size={16} />
+                </button>
               ) : (
-                <button onClick={addToCart}
+                <button onClick={handleAddToCart}
                   className="btn-primary flex-1 sm:flex-none px-8 py-3 flex items-center justify-center gap-2 font-sans">
                   <ShoppingCart size={18} /> Add to Cart
                 </button>

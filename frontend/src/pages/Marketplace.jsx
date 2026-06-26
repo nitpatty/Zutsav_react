@@ -1,22 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingCart, Plus, Minus, X, Search, Package, ArrowRight, Flame, ChevronDown } from 'lucide-react';
+import { ShoppingCart, X, Search, Flame, ChevronDown, ArrowRight, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
 import { useAuth } from '../context/AuthContext';
-import PincodeInput from '../components/shared/PincodeInput';
+import { useCart } from '../context/CartContext';
 import LoginModal from '../components/shared/LoginModal';
 
-const CATEGORIES = ['all', 'samagri', 'rudraksha', 'yantra', 'incense', 'idol', 'books', 'pooja_essentials', 'other'];
-const CAT_LABELS = {
-  all: 'All', samagri: 'Samagri', rudraksha: 'Rudraksha',
-  yantra: 'Yantra', incense: 'Incense', idol: 'Idols',
-  books: 'Books', pooja_essentials: 'Pooja Essentials', other: 'Other',
-};
-const CAT_ICONS = {
-  all: '✨', samagri: '🪔', rudraksha: '📿', yantra: '🔯',
-  incense: '🌿', idol: '🛕', books: '📚', pooja_essentials: '🧿', other: '🎁',
-};
+const ALL_TAB = { slug: 'all', name: 'All', icon: '✨' };
 
 const SORT_OPTIONS = [
   { value: '', label: 'Featured' },
@@ -25,36 +16,21 @@ const SORT_OPTIONS = [
   { value: 'name_asc', label: 'Name: A–Z' },
 ];
 
-const CART_KEY = 'zutsav_cart';
-
-// ── Cart key helpers ──────────────────────────────────────────
-const makeCartKey = (productId, variantId) => variantId ? `${productId}::${variantId}` : productId;
-
-function loadCart() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(CART_KEY)) || [];
-    // Migrate old cart items that don't have cartKey
-    return raw.map((item) => ({ ...item, cartKey: item.cartKey || item.productId }));
-  } catch { return []; }
-}
-function saveCart(cart) {
-  try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch { /* ignore */ }
-}
+// Cart key must match CartContext format: `${productId}::${variantId || ''}`
+const makeCKey = (productId, variantId) => `${productId}::${variantId || ''}`;
 
 export default function Marketplace() {
   const { isAuthenticated } = useAuth();
+  const { addProduct, productItems, updateProductQty, removeItem, cartCount } = useCart();
   const navigate = useNavigate();
 
   const [products,        setProducts]        = useState([]);
+  const [categories,      setCategories]      = useState([]);
   const [loading,         setLoading]         = useState(true);
   const [error,           setError]           = useState(null);
   const [category,        setCategory]        = useState('all');
   const [search,          setSearch]          = useState('');
   const [sort,            setSort]            = useState('');
-  const [cart,            setCart]            = useState(() => isAuthenticated ? loadCart() : []);
-  const [showCart,        setShowCart]        = useState(false);
-  const [showCheckout,    setShowCheckout]    = useState(false);
-  const [paying,          setPaying]          = useState(false);
   const [showLogin,       setShowLogin]       = useState(false);
   const [loginMsg,        setLoginMsg]        = useState('');
 
@@ -63,8 +39,11 @@ export default function Marketplace() {
   const [openVariant,      setOpenVariant]      = useState(null);
   const variantRef = useRef(null);
 
-  const [address, setAddress] = useState({ name:'', phone:'', address:'', pincode:'', state:'', city:'', district:'' });
-  const setAddr = (f) => (e) => setAddress((prev) => ({ ...prev, [f]: e.target.value }));
+  useEffect(() => {
+    API.get('/marketplace/categories')
+      .then(({ data }) => setCategories(data.categories || []))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -103,93 +82,15 @@ export default function Marketplace() {
   }, [openVariant]);
 
   // ── Cart helpers ─────────────────────────────────────────────
-  const requireAuth = (message) => { setLoginMsg(message); setShowLogin(true); return false; };
+  const requireAuth = (message) => { setLoginMsg(message); setShowLogin(true); };
 
-  const updateAndPersistCart = (updaterFn) => {
-    setCart((prev) => {
-      const next = updaterFn(prev);
-      if (isAuthenticated) saveCart(next);
-      return next;
-    });
-  };
-
-  const addToCart = (product, selectedVariant = null) => {
+  const handleAddToCart = (product, selectedVariant = null) => {
     if (!isAuthenticated) { requireAuth('Please login to add items to your cart.'); return; }
     const variantId    = selectedVariant?.variantId || null;
     const variantLabel = selectedVariant?.quantity  || null;
-    const price        = selectedVariant ? selectedVariant.price : (product.salePrice || product.price);
-    const stock        = selectedVariant ? selectedVariant.stock  : product.stock;
-    const cartKey      = makeCartKey(product._id, variantId);
-
-    updateAndPersistCart((prev) => {
-      const existing = prev.find((i) => i.cartKey === cartKey);
-      if (existing) {
-        if (existing.quantity >= stock) {
-          toast.error(`Only ${stock} item${stock !== 1 ? 's' : ''} available`);
-          return prev;
-        }
-        return prev.map((i) => i.cartKey === cartKey ? { ...i, quantity: i.quantity + 1 } : i);
-      }
-      return [...prev, {
-        cartKey,
-        productId:    product._id,
-        variantId,
-        variantLabel,
-        name:         product.name,
-        price,
-        quantity:     1,
-        image:        product.images?.[0],
-        stock,
-      }];
-    });
+    const price        = selectedVariant ? (selectedVariant.salePrice || selectedVariant.price) : undefined;
+    addProduct({ product, variantId, variantLabel, price, taxRate: product.taxRate || 0 });
     toast.success(`${product.name}${variantLabel ? ` (${variantLabel})` : ''} added to cart`);
-  };
-
-  const openCart = () => {
-    if (!isAuthenticated) { requireAuth('Please login to view your cart.'); return; }
-    setShowCart(true);
-  };
-
-  const updateQty = (cartKey, delta) => {
-    updateAndPersistCart((prev) => prev.map((i) => {
-      if (i.cartKey !== cartKey) return i;
-      const newQty = i.quantity + delta;
-      if (newQty < 1) return i;
-      if (i.stock && newQty > i.stock) {
-        toast.error(`Only ${i.stock} item${i.stock !== 1 ? 's' : ''} available`);
-        return i;
-      }
-      return { ...i, quantity: newQty };
-    }));
-  };
-
-  const removeFromCart = (cartKey) => updateAndPersistCart((prev) => prev.filter((i) => i.cartKey !== cartKey));
-  const cartItemCount  = cart.reduce((s, i) => s + i.quantity, 0);
-  const cartTotal      = cart.reduce((s, i) => s + i.price * i.quantity, 0);
-
-  // ── PhonePe checkout ─────────────────────────────────────────
-  const handleCheckout = async () => {
-    if (!isAuthenticated) { requireAuth('Please login to place your order.'); return; }
-    if (!address.name || !address.phone || !address.address || !address.pincode) {
-      toast.error('Please fill all address fields'); return;
-    }
-    setPaying(true);
-    try {
-      const { data } = await API.post('/marketplace/orders/create', {
-        items: cart.map(({ productId, variantId, quantity }) => ({
-          productId,
-          quantity,
-          ...(variantId ? { variantId } : {}),
-        })),
-        shippingAddress: address,
-      });
-      localStorage.removeItem(CART_KEY);
-      setCart([]);
-      window.location.href = data.redirectUrl;
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Checkout failed');
-      setPaying(false);
-    }
   };
 
   // ── Product card renderer ─────────────────────────────────────
@@ -203,15 +104,19 @@ export default function Marketplace() {
     const currentStock = hasVariants ? (selVariant?.stock ?? 0) : p.stock;
     const isOOS        = currentStock === 0 || (hasVariants && selVariant?.isActive === false);
     const discountPct  = slashedPrice ? Math.round((1 - displayPrice / slashedPrice) * 100) : 0;
-    const cKey         = makeCartKey(p._id, hasVariants ? selVariant?.variantId : null);
-    const qty          = cart.find((i) => i.cartKey === cKey)?.quantity || 0;
+    const cKey      = makeCKey(p._id, hasVariants ? selVariant?.variantId : null);
+    const cartItem  = productItems.find((i) => i.key === cKey);
+    const qty       = cartItem?.quantity || 0;
 
     const CounterBtn = ({ onAdd }) => (
       qty > 0 ? (
         <div className="flex items-center rounded-xl overflow-hidden shrink-0" style={{ background: 'var(--t-primary)' }}>
-          <button onClick={() => updateQty(cKey, -1)} className="px-2.5 py-1.5 text-white hover:opacity-80 font-bold text-base leading-none">−</button>
+          <button onClick={() => updateProductQty(cartItem.id, qty - 1)} className="px-2.5 py-1.5 text-white hover:opacity-80 font-bold text-base leading-none">−</button>
           <span className="text-white text-xs font-bold min-w-[20px] text-center font-sans">{qty}</span>
-          <button onClick={() => updateQty(cKey, +1)} className="px-2.5 py-1.5 text-white hover:opacity-80 font-bold text-base leading-none">+</button>
+          <button onClick={() => {
+            if (currentStock && qty >= currentStock) { toast.error(`Only ${currentStock} in stock`); return; }
+            updateProductQty(cartItem.id, qty + 1);
+          }} className="px-2.5 py-1.5 text-white hover:opacity-80 font-bold text-base leading-none">+</button>
         </div>
       ) : (
         <button onClick={onAdd} disabled={isOOS}
@@ -290,7 +195,7 @@ export default function Marketplace() {
                   {slashedPrice && <span className="text-xs text-gray-400 line-through font-sans">₹{slashedPrice.toLocaleString('en-IN')}</span>}
                 </div>
               </div>
-              <CounterBtn onAdd={() => addToCart(p, selVariant)} />
+              <CounterBtn onAdd={() => handleAddToCart(p, selVariant)} />
             </div>
           ) : (
             <div className="flex items-center justify-between gap-2">
@@ -298,7 +203,7 @@ export default function Marketplace() {
                 <span className="font-display text-lg font-bold text-saffron-600">₹{displayPrice?.toLocaleString('en-IN')}</span>
                 {slashedPrice && <span className="text-xs text-gray-400 line-through font-sans">₹{slashedPrice.toLocaleString('en-IN')}</span>}
               </div>
-              <CounterBtn onAdd={() => addToCart(p)} />
+              <CounterBtn onAdd={() => handleAddToCart(p)} />
             </div>
           )}
         </div>
@@ -324,14 +229,14 @@ export default function Marketplace() {
               <p className="text-sm mt-1.5" style={{ color: 'var(--t-muted)' }}>Authentic samagri, rudraksha &amp; sacred items</p>
             </div>
 
-            <button onClick={openCart}
+            <button onClick={() => navigate('/cart')}
               className="relative flex items-center gap-2.5 font-semibold px-5 py-3 rounded-2xl transition-all duration-200 border"
               style={{ background: 'var(--t-card)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}>
               <ShoppingCart size={18} style={{ color: 'var(--t-primary)' }} />
               <span>Cart</span>
-              {cartItemCount > 0 && (
+              {cartCount > 0 && (
                 <span className="absolute -top-2 -right-2 w-5 h-5 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-sm" style={{ background: 'var(--t-primary)' }}>
-                  {cartItemCount}
+                  {cartCount}
                 </span>
               )}
             </button>
@@ -353,19 +258,19 @@ export default function Marketplace() {
             </select>
           </div>
 
-          {/* Category grid */}
-          <div className="mt-5 grid grid-cols-5 sm:grid-cols-9 gap-2">
-            {CATEGORIES.map((c) => (
-              <button key={c} onClick={() => setCategory(c)}
-                className="flex flex-col items-center gap-1.5 py-2.5 px-2 rounded-2xl transition-all duration-200 border"
+          {/* Category grid — dynamic from DB */}
+          <div className="mt-5 flex flex-wrap gap-2">
+            {[ALL_TAB, ...categories].map((c) => (
+              <button key={c.slug} onClick={() => setCategory(c.slug)}
+                className="flex flex-col items-center gap-1.5 py-2.5 px-3 rounded-2xl transition-all duration-200 border"
                 style={{
-                  background:   category === c ? 'var(--t-primary)' : 'var(--t-card)',
-                  color:        category === c ? 'var(--t-text-inv)' : 'var(--t-muted)',
-                  borderColor:  category === c ? 'var(--t-primary)' : 'var(--t-border)',
-                  boxShadow:    category === c ? '0 2px 8px rgba(27,31,59,0.2)' : 'none',
+                  background:   category === c.slug ? 'var(--t-primary)' : 'var(--t-card)',
+                  color:        category === c.slug ? 'var(--t-text-inv)' : 'var(--t-muted)',
+                  borderColor:  category === c.slug ? 'var(--t-primary)' : 'var(--t-border)',
+                  boxShadow:    category === c.slug ? '0 2px 8px rgba(27,31,59,0.2)' : 'none',
                 }}>
-                <span className="text-xl leading-none">{CAT_ICONS[c]}</span>
-                <span className="text-[10px] font-semibold font-sans leading-tight text-center whitespace-nowrap">{CAT_LABELS[c] || c}</span>
+                <span className="text-xl leading-none">{c.icon}</span>
+                <span className="text-[10px] font-semibold font-sans leading-tight text-center whitespace-nowrap">{c.name}</span>
               </button>
             ))}
           </div>
@@ -416,18 +321,18 @@ export default function Marketplace() {
             </button>
           </div>
         ) : category === 'all' ? (
-          /* ── Blinkit-style: category sections ── */
+          /* ── Blinkit-style: category sections (DB-driven) ── */
           <div className="space-y-10">
-            {CATEGORIES.filter((c) => c !== 'all').map((cat) => {
-              const catProds = products.filter((p) => p.category === cat);
+            {categories.map((cat) => {
+              const catProds = products.filter((p) => p.category === cat.slug);
               if (catProds.length === 0) return null;
               return (
-                <section key={cat}>
+                <section key={cat.slug}>
                   <div className="flex items-center justify-between mb-5">
                     <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--t-text)', fontFamily: "'Cormorant Garamond', serif" }}>
-                      <span>{CAT_ICONS[cat]}</span>{CAT_LABELS[cat]}
+                      <span>{cat.icon}</span>{cat.name}
                     </h2>
-                    <button onClick={() => setCategory(cat)}
+                    <button onClick={() => setCategory(cat.slug)}
                       className="text-xs font-semibold flex items-center gap-1 hover:underline font-sans" style={{ color: 'var(--t-primary)' }}>
                       See all <ArrowRight size={12} />
                     </button>
@@ -447,154 +352,6 @@ export default function Marketplace() {
         )}
       </div>
 
-      {/* ── Cart Drawer ──────────────────────────────────── */}
-      {showCart && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowCart(false)} />
-          <div className="w-full max-w-sm h-full overflow-y-auto shadow-2xl flex flex-col" style={{ background: 'var(--t-card)', borderLeft: '1px solid var(--t-border)' }}>
-
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between z-10">
-              <div>
-                <h2 className="font-display font-bold text-gray-900 text-xl">Your Cart</h2>
-                {cart.length > 0 && <p className="text-xs text-gray-400 font-sans">{cartItemCount} item{cartItemCount !== 1 ? 's' : ''}</p>}
-              </div>
-              <button onClick={() => setShowCart(false)} className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
-                <X size={18} />
-              </button>
-            </div>
-
-            {cart.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                <div className="w-20 h-20 bg-saffron-50 rounded-3xl flex items-center justify-center mb-5">
-                  <ShoppingCart size={32} className="text-saffron-300" />
-                </div>
-                <p className="font-display font-bold text-gray-700 text-xl mb-1">Cart is Empty</p>
-                <p className="text-sm text-gray-400 mb-6 font-sans">Add some spiritual items to get started</p>
-                <button onClick={() => setShowCart(false)} className="btn-outline text-sm font-sans">Browse Products</button>
-              </div>
-            ) : (
-              <>
-                <div className="flex-1 p-5 space-y-4">
-                  {cart.map((item) => (
-                    <div key={item.cartKey} className="flex gap-3 items-start bg-gray-50 rounded-2xl p-3">
-                      <div className="w-14 h-14 bg-saffron-50 rounded-xl overflow-hidden shrink-0">
-                        {item.image
-                          ? <img src={`http://localhost:5000/${item.image}`} alt="" className="w-full h-full object-cover" />
-                          : <div className="w-full h-full flex items-center justify-center text-xl">🪔</div>
-                        }
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 line-clamp-1 font-sans">
-                          {item.name}{item.variantLabel ? <span className="text-saffron-600"> ({item.variantLabel})</span> : ''}
-                        </p>
-                        <p className="font-display font-bold text-saffron-600 text-sm mt-0.5">
-                          ₹{(item.price * item.quantity).toLocaleString('en-IN')}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button onClick={() => updateQty(item.cartKey, -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-gray-200 hover:border-saffron-300 hover:bg-saffron-50 flex items-center justify-center transition-colors">
-                          <Minus size={11} />
-                        </button>
-                        <span className="w-7 text-center text-sm font-semibold font-sans">{item.quantity}</span>
-                        <button onClick={() => updateQty(item.cartKey, +1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-gray-200 hover:border-saffron-300 hover:bg-saffron-50 flex items-center justify-center transition-colors">
-                          <Plus size={11} />
-                        </button>
-                        <button onClick={() => removeFromCart(item.cartKey)}
-                          className="w-7 h-7 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 flex items-center justify-center ml-0.5 transition-colors">
-                          <X size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="sticky bottom-0 bg-white border-t border-gray-100 p-5 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500 font-sans">Subtotal ({cartItemCount} items)</span>
-                    <span className="font-display font-bold text-gray-900 text-xl">₹{cartTotal.toLocaleString('en-IN')}</span>
-                  </div>
-                  <button onClick={() => { setShowCart(false); setShowCheckout(true); }}
-                    className="btn-primary w-full py-3.5 flex items-center justify-center gap-2 font-sans">
-                    Proceed to Checkout <ArrowRight size={16} />
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Checkout Modal ───────────────────────────────── */}
-      {showCheckout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/50 backdrop-blur-sm">
-          <div className="rounded-3xl shadow-premium w-full max-w-md max-h-[90vh] overflow-y-auto" style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-5 flex items-center justify-between rounded-t-3xl z-10">
-              <div>
-                <h2 className="font-display font-bold text-gray-900 text-2xl">Shipping Details</h2>
-                <p className="text-xs text-gray-400 mt-0.5 font-sans">Where should we deliver?</p>
-              </div>
-              <button onClick={() => setShowCheckout(false)} className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 transition-colors">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Full Name</label>
-                  <input className="input font-sans" placeholder="Your name" value={address.name} onChange={setAddr('name')} />
-                </div>
-                <div>
-                  <label className="label">Phone</label>
-                  <input className="input font-sans" placeholder="10-digit number" value={address.phone} onChange={setAddr('phone')} />
-                </div>
-              </div>
-              <div>
-                <label className="label">Delivery Address</label>
-                <textarea rows={2} className="input resize-none font-sans" placeholder="House/flat no., street, area" value={address.address} onChange={setAddr('address')} />
-              </div>
-              <div>
-                <label className="label">Pincode</label>
-                <PincodeInput
-                  value={address.pincode}
-                  onChange={(v) => setAddress((p) => ({ ...p, pincode: v }))}
-                  onFill={({ state, city, district }) => setAddress((p) => ({ ...p, state, city, district }))}
-                />
-              </div>
-              {address.state && (
-                <div className="grid grid-cols-3 gap-2">
-                  {[['state','State'],['city','City'],['district','District']].map(([f, l]) => (
-                    <div key={f}>
-                      <label className="label text-xs">{l}</label>
-                      <input className="input text-sm bg-gray-50 font-sans" value={address[f]} onChange={setAddr(f)} />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="rounded-2xl p-4 flex justify-between items-center border border-saffron-100"
-                style={{ background: 'linear-gradient(135deg, #fff8f0, #FAF6EE)' }}>
-                <div>
-                  <span className="font-semibold text-gray-700 font-sans">Order Total</span>
-                  <p className="text-xs text-gray-400 font-sans mt-0.5">{cartItemCount} item{cartItemCount !== 1 ? 's' : ''}</p>
-                </div>
-                <span className="font-display text-2xl font-bold text-saffron-600">₹{cartTotal.toLocaleString('en-IN')}</span>
-              </div>
-
-              <button onClick={handleCheckout} disabled={paying}
-                className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2 font-sans">
-                {paying ? <>Processing <span className="animate-pulse-soft">...</span></> : <>Pay ₹{cartTotal.toLocaleString('en-IN')} <span>🙏</span></>}
-              </button>
-
-              <p className="text-xs text-center text-gray-400 font-sans">
-                🔒 Secured by PhonePe · UPI, Cards, Net Banking accepted
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

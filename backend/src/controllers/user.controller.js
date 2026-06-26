@@ -66,6 +66,39 @@ exports.removePhoto = async (req, res, next) => {
   }
 };
 
+// GET /api/users/addresses
+exports.getAddresses = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id).select('savedAddresses');
+    res.json({ success: true, addresses: user.savedAddresses || [] });
+  } catch (err) { next(err); }
+};
+
+// POST /api/users/addresses
+exports.addAddress = async (req, res, next) => {
+  try {
+    const { label = 'Home', address, pincode, state, city, district, setDefault = false } = req.body;
+    if (!address) return res.status(400).json({ success: false, message: 'Address is required' });
+
+    const user = await User.findById(req.user._id);
+    if (setDefault) user.savedAddresses.forEach(a => { a.isDefault = false; });
+
+    user.savedAddresses.push({ label, address, pincode, state, city, district, isDefault: setDefault || user.savedAddresses.length === 0 });
+    await user.save();
+    res.json({ success: true, addresses: user.savedAddresses });
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/users/addresses/:addrId
+exports.deleteAddress = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+    user.savedAddresses = user.savedAddresses.filter(a => String(a._id) !== req.params.addrId);
+    await user.save();
+    res.json({ success: true, addresses: user.savedAddresses });
+  } catch (err) { next(err); }
+};
+
 // PATCH /api/users/change-password
 exports.changePassword = async (req, res, next) => {
   try {

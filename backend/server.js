@@ -1,68 +1,78 @@
 require('dotenv').config();
-const http      = require('http');
+const http = require('http');
 const { Server } = require('socket.io');
-const jwt        = require('jsonwebtoken');
-const app        = require('./src/app');
-const connectDB  = require('./src/config/database');
-const seedAdmin  = require('./src/utils/seedAdmin');
-const { setIO }  = require('./src/utils/notificationService');
-const { startDeletionCleanupJob, startBookingReminderJobs } = require('./src/utils/cleanupJobs');
+const jwt = require('jsonwebtoken');
+
+const app = require('./src/app');
+const connectDB = require('./src/config/database');
+const seedAdmin = require('./src/utils/seedAdmin');
+const { setIO } = require('./src/utils/notificationService');
+const {
+  startDeletionCleanupJob,
+  startBookingReminderJobs
+} = require('./src/utils/cleanupJobs');
 
 const PORT = 3000;
+
+// ✅ Allowed frontend origins
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://app.zutsav.com",
+  "https://app.zutsav.com",
+  "https://frontend.zutsav.com"
+];
 
 connectDB().then(async () => {
   await seedAdmin();
 
   const server = http.createServer(app);
 
-  // ── Socket.IO setup ─────────────────────────────────────────
+  // ✅ ✅ Fixed Socket.IO config
   const io = new Server(server, {
     cors: {
-      origin:      process.env.CLIENT_URL || 'http://localhost:3000',
+      origin: allowedOrigins,
       credentials: true,
+      methods: ["GET", "POST", "PATCH"]
     },
+    transports: ["websocket", "polling"], // ✅ important
+    allowEIO3: true                       // ✅ important
   });
 
-  // Auth middleware: validate JWT on socket connection
+  // ✅ Auth middleware
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
-    if (!token) return next(new Error('Authentication required'));
+    const token =
+      socket.handshake.auth?.token ||
+      socket.handshake.query?.token;
+
+    if (!token) return next(new Error("Authentication required"));
+
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       socket.userId = decoded.id;
       next();
     } catch {
-      next(new Error('Invalid token'));
+      next(new Error("Invalid token"));
     }
   });
 
-  io.on('connection', (socket) => {
+  // ✅ Connection
+  io.on("connection", (socket) => {
     const userId = socket.userId;
-    socket.join(`user_${userId}`);
-    console.log(`[Socket.IO] User ${userId} connected (socket: ${socket.id})`);
 
-    socket.on('disconnect', () => {
-      console.log(`[Socket.IO] User ${userId} disconnected`);
+    socket.join(`user_${userId}`);
+    console.log(`[Socket.IO] Connected: ${userId}`);
+
+    socket.on("disconnect", () => {
+      console.log(`[Socket.IO] Disconnected: ${userId}`);
     });
   });
 
-  // Make io available to notification service
   setIO(io);
 
-  // Start scheduled cleanup jobs
   startDeletionCleanupJob();
   startBookingReminderJobs();
 
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Zutsav server running on Port ${PORT}`);
-  });
-
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`❌ Port ${PORT} is already in use. Change PORT in .env or stop the other process.`);
-    } else {
-      console.error('❌ Server error:', err.message);
-    }
-    process.exit(1);
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server running on port ${PORT}`);
   });
 });
