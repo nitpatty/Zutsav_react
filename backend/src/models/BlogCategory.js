@@ -20,7 +20,6 @@ blogCategorySchema.pre('validate', function (next) {
   next();
 });
 
-blogCategorySchema.index({ slug: 1 }, { unique: true });
 blogCategorySchema.index({ isActive: 1, order: 1 });
 
 module.exports = mongoose.model('BlogCategory', blogCategorySchema);

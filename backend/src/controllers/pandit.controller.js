@@ -5,14 +5,7 @@ const Booking     = require('../models/Booking');
 const PayoutBatch = require('../models/PayoutBatch');
 const path    = require('path');
 const fs      = require('fs');
-const {
-  notifyUserPanditAccepted,
-  notifyAdminPanditAccepted,
-  notifyAdminPanditRejected,
-  notifyKYCSubmitted,
-} = require('../utils/notificationService');
-const { notifyPanditAssigned } = require('../utils/whatsapp');
-const { sendPanditAssignedEmail } = require('../utils/email');
+const { NotificationEngine } = require('../../notification-engine');
 
 // Fields a pandit must never see (financial & payment internals)
 const PANDIT_BOOKING_EXCLUDE = '-amount -razorpayOrderId -razorpayPaymentId -razorpaySignature -phonePeMerchantTransactionId -phonePeTransactionId -paymentProvider -panditRejections';
@@ -111,11 +104,10 @@ exports.submitKYC = async (req, res, next) => {
 
     const updated = await Pandit.findOneAndUpdate({ userId: req.user._id }, updates, { new: true });
 
-    // Notify admins
-    const admins = await User.find({ role: 'admin' }).select('_id');
-    for (const admin of admins) {
-      notifyKYCSubmitted(admin._id, pandit.name).catch(() => {});
-    }
+    NotificationEngine.emit('KYC_SUBMITTED', {
+      pandit: { id: String(pandit._id), userId: String(pandit.userId || req.user._id), name: pandit.name, phone: pandit.phone, email: pandit.email },
+      _pandit: pandit,
+    }).catch(() => {});
 
     res.json({ success: true, message: 'KYC submitted successfully. Awaiting admin verification.', pandit: updated });
   } catch (err) {
@@ -395,16 +387,13 @@ exports.acceptBooking = async (req, res, next) => {
     });
     await booking.save();
 
-    // Notify the user their pandit confirmed (in-app + WhatsApp + email)
-    notifyUserPanditAccepted(booking.userId, pandit.name, booking.bookingNumber).catch(() => {});
-    notifyPanditAssigned(booking, pandit).catch(() => {});
-    sendPanditAssignedEmail(booking, pandit).catch(() => {});
-
-    // Notify all admins
-    const admins = await User.find({ role: 'admin' }).select('_id');
-    for (const admin of admins) {
-      notifyAdminPanditAccepted(admin._id, pandit.name, booking.bookingNumber).catch(() => {});
-    }
+    const ud = booking.userDetails || {};
+    NotificationEngine.emit('PANDIT_ACCEPTED', {
+      user:    { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+      pandit:  { id: String(pandit._id), userId: String(req.user._id), name: pandit.name, phone: pandit.phone },
+      booking: { bookingNumber: booking.bookingNumber, poojaName: booking.poojaId?.name || '', scheduledDate: booking.scheduledDate, scheduledTime: booking.scheduledTime },
+      _booking: booking, _pandit: pandit,
+    }).catch(() => {});
 
     res.json({ success: true, booking });
   } catch (err) {
@@ -449,11 +438,12 @@ exports.rejectBooking = async (req, res, next) => {
     });
     await booking.save();
 
-    // Notify all admins to reassign
-    const admins = await User.find({ role: 'admin' }).select('_id');
-    for (const admin of admins) {
-      notifyAdminPanditRejected(admin._id, pandit.name, booking.bookingNumber, trimmedReason).catch(() => {});
-    }
+    NotificationEngine.emit('PANDIT_REJECTED', {
+      pandit:  { id: String(pandit._id), userId: String(req.user._id), name: pandit.name },
+      booking: { bookingNumber: booking.bookingNumber },
+      reason:  trimmedReason,
+      _booking: booking, _pandit: pandit,
+    }).catch(() => {});
 
     res.json({ success: true, booking });
   } catch (err) {
@@ -776,6 +766,8 @@ exports.getMyBookings = async (req, res, next) => {
     next(err);
   }
 };
+
+// Referral endpoints have moved to /api/referrals — see referral.routes.js
 
 // ─── Payout Endpoints (pandit's own view) ────────────────────
 

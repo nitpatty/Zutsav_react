@@ -28,26 +28,54 @@ const shipmentSchema = new mongoose.Schema({
     default: null,
   },
 
-  // Courier / TekiPost fields
+  // ── TekiPost Single Order fields ─────────────────────────────────────────
+  tekipostOrderId:     { type: String, default: '' },   // from Step 1; persisted so courier selection can resume on page refresh
+  availableCouriers:   { type: mongoose.Schema.Types.Mixed, default: null },
+  selectedCourierCode: { type: String, default: '' },
+  freightCharges:      { type: Number, default: 0 },
+  pickupDate:          { type: Date,   default: null },
+
+  // ── AWB Cancellation ─────────────────────────────────────────────────────
+  isCancelled:        { type: Boolean, default: false },
+  cancelledAt:        { type: Date,    default: null },
+  cancellationReason: { type: String,  default: '' },
+  walletRefundStatus: {
+    type:    String,
+    enum:    ['not_applicable', 'pending', 'refunded'],
+    default: 'not_applicable',
+  },
+  walletRefundAmount: { type: Number, default: 0 },
+
+  // ── Courier / TekiPost fields ─────────────────────────────────────────────
   courierName:    { type: String, default: '' },
   trackingNumber: { type: String, default: '' },
   awbNumber:      { type: String, default: '' },
   labelUrl:       { type: String, default: '' },
   trackingUrl:    { type: String, default: '' },
 
-  // Local delivery fields
+  // ── Local delivery fields ─────────────────────────────────────────────────
   deliveryPartner: { type: String, default: '' },
   driverName:      { type: String, default: '' },
   driverPhone:     { type: String, default: '' },
   vehicleNumber:   { type: String, default: '' },
-  expectedTime:    { type: String, default: '' }, // e.g. "3:00 PM"
+  expectedTime:    { type: String, default: '' },
 
   estimatedDelivery: { type: Date, default: null },
   remarks:           { type: String, default: '' },
 
   shipmentStatus: {
     type:    String,
-    enum:    ['created', 'picked_up', 'in_transit', 'out_for_delivery', 'delivered', 'failed_delivery', 'cancelled', 'returned'],
+    enum:    [
+      'pending_courier_selection',  // TekiPost order created; awaiting admin courier selection
+      'created',                    // AWB generated — shipment confirmed
+      'picked_up',
+      'in_transit',
+      'out_for_delivery',
+      'delivered',
+      'failed_delivery',
+      'cancelled',
+      'returned',
+    ],
     default: 'created',
   },
 

@@ -359,6 +359,68 @@ const notifyAccountRestored = (userId) =>
     message: 'Your account has been successfully restored. No data was deleted. Namaste!',
   });
 
+// ── Pandit referral notifications (new link-based system) ────────────────────────────
+
+const notifyPanditReferralBooking = (panditUserId, bookingNumber, poojaName, customerName) =>
+  createNotification({
+    userId:  panditUserId,
+    type:    'referral_booking',
+    title:   'New Booking via Your Referral!',
+    message: `${customerName || 'A customer'} booked ${poojaName} (#${bookingNumber}) after being referred by you. The admin will review the assignment.`,
+    data:    { bookingNumber },
+  });
+
+const notifyAdminReferralBooking = (adminUserIds, panditName, bookingNumber, poojaName) =>
+  Promise.all(
+    adminUserIds.map((uid) =>
+      createNotification({
+        userId:  uid,
+        type:    'referral_booking',
+        title:   'Referral Booking Received',
+        message: `Booking #${bookingNumber} for ${poojaName} was referred by ${panditName}. Please review assignment.`,
+        data:    { bookingNumber, panditName },
+      })
+    )
+  );
+
+// Notify admins when a pandit submits a review/remark on a referral booking
+const notifyAdminPanditReferralReview = (adminUserIds, panditName, bookingNumber, reviewStatus) =>
+  Promise.all(
+    adminUserIds.map((uid) =>
+      createNotification({
+        userId:  uid,
+        type:    'pandit_referral_review',
+        title:   'New Pandit Review Received',
+        message: `${panditName} submitted a review on booking #${bookingNumber} — Status: ${reviewStatus}. Click to view details.`,
+        data:    { bookingNumber, panditName, reviewStatus },
+      })
+    )
+  );
+
+// Notify pandit — their referral was booked and remark is now required
+const notifyPanditReferralPendingRemark = (panditUserId, bookingNumber) =>
+  createNotification({
+    userId:  panditUserId,
+    type:    'referral_pending_remark',
+    title:   'Action Required — Submit Referral Remark',
+    message: `Your referred customer has successfully booked (#${bookingNumber}). You must submit your mandatory remark from the dashboard before this referral proceeds to admin review.`,
+    data:    { bookingNumber },
+  });
+
+// Notify admins when pandit submits the mandatory remark
+const notifyAdminReferralRemarkSubmitted = (adminUserIds, panditName, referralId) =>
+  Promise.all(
+    adminUserIds.map((uid) =>
+      createNotification({
+        userId:  uid,
+        type:    'referral_remark_submitted',
+        title:   'Referral Remark Submitted',
+        message: `${panditName} has submitted the mandatory remark for their referral. The referral is now ready for admin review.`,
+        data:    { panditName, referralId },
+      })
+    )
+  );
+
 module.exports = {
   setIO,
   createNotification,
@@ -398,4 +460,9 @@ module.exports = {
   notifyPayoutReleased,
   notifyDeliveryOTPSent,
   notifyDeliveryOTPVerified,
+  notifyPanditReferralBooking,
+  notifyAdminReferralBooking,
+  notifyAdminPanditReferralReview,
+  notifyPanditReferralPendingRemark,
+  notifyAdminReferralRemarkSubmitted,
 };

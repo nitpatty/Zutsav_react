@@ -76,7 +76,6 @@ const invoiceSchema = new mongoose.Schema({
   cancelReason: { type: String, default: '' },
 }, { timestamps: true });
 
-invoiceSchema.index({ invoiceNumber: 1 },            { unique: true });
 invoiceSchema.index({ bookingId: 1 });
 invoiceSchema.index({ customerId: 1, createdAt: -1 });
 invoiceSchema.index({ paymentLedgerId: 1 });

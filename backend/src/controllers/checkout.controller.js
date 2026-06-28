@@ -6,9 +6,7 @@ const Order    = require('../models/Order');
 const settings = require('../utils/settingsService');
 const { deductStock } = require('../utils/inventoryUtils');
 const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum } = require('../utils/phonepe');
-const { notifyBookingCreated } = require('../utils/notificationService');
-const { sendBookingConfirmedEmail } = require('../utils/email');
-const { notifyBookingConfirmed }    = require('../utils/whatsapp');
+const { NotificationEngine } = require('../../notification-engine');
 
 // Mirrors calculatePricing in booking.controller — accepts Pooja document or plain number
 async function computePricing(pooja, kitPrice = 0) {
@@ -216,9 +214,12 @@ exports.verifyCartPayment = async (req, res, next) => {
           booking.remainingAmount      = 0;
           await booking.save();
           await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
-          notifyBookingCreated(booking.userId, booking.bookingNumber, booking.poojaId?.name || '').catch(() => {});
-          sendBookingConfirmedEmail(booking, booking.poojaId?.name || '').catch(() => {});
-          notifyBookingConfirmed(booking, booking.poojaId?.name || '').catch(() => {});
+          const ud = booking.userDetails || {};
+          NotificationEngine.emit('BOOKING_CONFIRMED', {
+            user:    { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+            booking: { bookingNumber: booking.bookingNumber, poojaName: booking.poojaId?.name || '', grandTotal: booking.grandTotal, amountPaid: booking.amountPaid },
+            _booking: booking, _poojaName: booking.poojaId?.name || '',
+          }).catch(() => {});
         }
       }
       if (order && order.status === 'pending_payment') {
@@ -259,9 +260,12 @@ exports.cartWebhook = async (req, res) => {
           booking.remainingAmount      = 0;
           await booking.save();
           await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
-          notifyBookingCreated(booking.userId, booking.bookingNumber, booking.poojaId?.name || '').catch(() => {});
-          sendBookingConfirmedEmail(booking, booking.poojaId?.name || '').catch(() => {});
-          notifyBookingConfirmed(booking, booking.poojaId?.name || '').catch(() => {});
+          const ud = booking.userDetails || {};
+          NotificationEngine.emit('BOOKING_CONFIRMED', {
+            user:    { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+            booking: { bookingNumber: booking.bookingNumber, poojaName: booking.poojaId?.name || '', grandTotal: booking.grandTotal, amountPaid: booking.amountPaid },
+            _booking: booking, _poojaName: booking.poojaId?.name || '',
+          }).catch(() => {});
         }
       }
       if (order && order.status === 'pending_payment') {

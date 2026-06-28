@@ -93,7 +93,6 @@ blogSchema.pre('validate', async function (next) {
   next();
 });
 
-blogSchema.index({ slug: 1 }, { unique: true });
 blogSchema.index({ status: 1, publishedAt: -1 });
 blogSchema.index({ authorId: 1 });
 blogSchema.index({ category: 1, status: 1 });

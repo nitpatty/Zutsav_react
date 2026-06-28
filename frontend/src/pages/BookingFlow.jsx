@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Clock, CheckCircle, ArrowRight, ArrowLeft, Shield, Sparkles,
   Package, ChevronLeft, ChevronRight, Zap, Calendar, X, ShoppingCart,
-  Eye, Tag, Info, MapPin, Plus, Trash2,
+  Eye, Tag, Info, MapPin, Plus, Trash2, UserCheck, BadgeCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
@@ -239,8 +239,27 @@ function PriceLine({ label, amount, muted = false, highlight = false, sub }) {
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────
 
+// Read referral token from sessionStorage and validate it hasn't expired.
+function getStoredReferralToken() {
+  try {
+    const raw = sessionStorage.getItem('zutsav_referral');
+    if (!raw) return '';
+    const stored = JSON.parse(raw);
+    if (stored?.token && stored.expiresAt && new Date(stored.expiresAt) > new Date()) {
+      return stored.token;
+    }
+    sessionStorage.removeItem('zutsav_referral');
+  } catch { /* storage unavailable */ }
+  return '';
+}
+
 export default function BookingFlow() {
   const { poojaSlug } = useParams();
+  const [searchParams]   = useSearchParams();
+  // URL param takes priority; sessionStorage is the fallback for flows where the
+  // user navigated away from the referral URL (e.g. browsed pooja catalogue first
+  // or was redirected through login/registration).
+  const referralToken = searchParams.get('referralToken') || getStoredReferralToken();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { addPooja } = useCart();
@@ -279,6 +298,9 @@ export default function BookingFlow() {
     specialNote: '',
   });
   const [errors, setErrors] = useState({});
+
+  // Referral info loaded from token (if referralToken in URL)
+  const [referralInfo, setReferralInfo] = useState(null);
 
   // Kit view-items modal
   const [viewItemsKit, setViewItemsKit] = useState(null);
@@ -319,6 +341,14 @@ export default function BookingFlow() {
       })
       .catch(() => setSelectedAddrId('new'));
   }, [user]);
+
+  // ── Fetch referral info if referralToken is in URL ──────────
+  useEffect(() => {
+    if (!referralToken) return;
+    API.get(`/referral/validate/${referralToken}`)
+      .then(({ data }) => setReferralInfo(data.referral))
+      .catch(() => {}); // silently ignore — booking still works without referral
+  }, [referralToken]);
 
   // ── Load pooja ───────────────────────────────────────────────
   useEffect(() => {
@@ -463,7 +493,10 @@ export default function BookingFlow() {
           city:     userDetails.city,
           district: userDetails.district,
         },
+        ...(referralToken ? { referralToken } : {}),
       });
+      // Booking created — referral context consumed, clear the sessionStorage entry
+      try { sessionStorage.removeItem('zutsav_referral'); } catch { /* non-fatal */ }
       window.location.href = data.redirectUrl;
     } catch (err) {
       toast.error(err.response?.data?.message || 'Booking failed. Please try again.');
@@ -507,6 +540,23 @@ export default function BookingFlow() {
   return (
     <div className="min-h-screen py-8" style={{ background:'#FAF6EE' }}>
       <div className="max-w-xl mx-auto px-4">
+
+        {/* ── Referral banner (if booking via referral link) ─── */}
+        {referralToken && referralInfo?.panditId && (
+          <div className="mb-4 rounded-2xl bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full overflow-hidden bg-green-100 shrink-0">
+              {referralInfo.panditId.profilePhoto
+                ? <img src={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/${referralInfo.panditId.profilePhoto}`} alt={referralInfo.panditId.name} className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center">🙏</div>
+              }
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-green-800">Booking via referral from {referralInfo.panditId.name}</p>
+              <p className="text-xs text-green-600">Your referral is securely attached to this booking.</p>
+            </div>
+            <BadgeCheck size={18} className="text-green-600 shrink-0" />
+          </div>
+        )}
 
         {/* ── Progress bar (hidden on overview) ──────────────── */}
         {stepId !== STEP_IDS.OVERVIEW && (
@@ -1231,7 +1281,7 @@ export default function BookingFlow() {
         )}
 
         {/* ────────────────────────────────────────────────────── */}
-        {/* STEP 8: REVIEW & PAY                                   */}
+        {/* STEP: REVIEW & PAY                                      */}
         {/* ────────────────────────────────────────────────────── */}
         {stepId === STEP_IDS.REVIEW && (
           <div className="bg-white rounded-3xl shadow-lg p-6">
@@ -1266,6 +1316,25 @@ export default function BookingFlow() {
                 ))}
               </div>
             </div>
+
+            {/* Referral banner — shown only when booking came via referral link */}
+            {referralToken && referralInfo?.panditId && (
+              <div className="mb-4 rounded-2xl p-3 border border-green-200 bg-green-50 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full overflow-hidden bg-orange-100 shrink-0">
+                  {referralInfo.panditId.profilePhoto
+                    ? <img src={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/${referralInfo.panditId.profilePhoto}`} alt={referralInfo.panditId.name} className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex items-center justify-center text-lg">🙏</div>
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-green-800">Referred by {referralInfo.panditId.name}</p>
+                  <p className="text-xs text-green-600">Secure Referral Link · Verified Pandit</p>
+                </div>
+                <span className="inline-flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-0.5 rounded-full font-semibold shrink-0">
+                  <BadgeCheck size={10} /> Referral
+                </span>
+              </div>
+            )}
 
             {/* Kit summary */}
             {withKit && selectedKit && !isUrgent && (

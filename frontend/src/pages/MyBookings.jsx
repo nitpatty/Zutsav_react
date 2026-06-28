@@ -393,6 +393,8 @@ export default function MyBookings() {
   const [cancelTarget,    setCancelTarget]    = useState(null);
   const [cancelReason,    setCancelReason]    = useState('');
   const [cancelling,      setCancelling]      = useState(false);
+  const [refundPreview,   setRefundPreview]   = useState(null);
+  const [previewLoading,  setPreviewLoading]  = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -403,6 +405,24 @@ export default function MyBookings() {
 
   useEffect(() => { load(); }, [filter]);
 
+  const openCancelModal = async (booking) => {
+    setCancelTarget(booking);
+    setCancelReason('');
+    setRefundPreview(null);
+    // Only fetch refund preview if the customer has paid something
+    if (booking.amountPaid > 0) {
+      setPreviewLoading(true);
+      try {
+        const { data } = await API.get(`/bookings/${booking._id}/refund-preview`);
+        setRefundPreview(data.refundPreview);
+      } catch {
+        // Non-fatal — modal still works without preview
+      } finally {
+        setPreviewLoading(false);
+      }
+    }
+  };
+
   const handleCancelConfirm = async () => {
     if (!cancelTarget) return;
     setCancelling(true);
@@ -411,6 +431,7 @@ export default function MyBookings() {
       toast.success('Booking cancelled successfully');
       setCancelTarget(null);
       setCancelReason('');
+      setRefundPreview(null);
       load();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Could not cancel booking');
@@ -480,7 +501,7 @@ export default function MyBookings() {
         ) : (
           <div className="space-y-4">
             {bookings.map((b) => (
-              <BookingCard key={b._id} b={b} onReload={load} onCancel={setCancelTarget} />
+              <BookingCard key={b._id} b={b} onReload={load} onCancel={openCancelModal} />
             ))}
           </div>
         )}
@@ -504,6 +525,54 @@ export default function MyBookings() {
               </div>
             </div>
 
+            {/* Refund Summary */}
+            {cancelTarget.amountPaid > 0 && (
+              <div className="mb-4 rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb' }}>
+                <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: '#f0fdf4', borderBottom: '1px solid #dcfce7' }}>
+                  <IndianRupee size={13} className="text-green-600" />
+                  <span className="text-xs font-bold text-green-700 uppercase tracking-wide">Refund Summary</span>
+                </div>
+                {previewLoading ? (
+                  <div className="px-4 py-4 text-center text-sm text-gray-400">Calculating refund…</div>
+                ) : refundPreview ? (
+                  <div className="px-4 py-3 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Amount You Paid</span>
+                      <span className="font-semibold text-gray-800">₹{refundPreview.amountPaid.toLocaleString('en-IN')}</span>
+                    </div>
+                    {refundPreview.platformFee > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-red-600">Less: Platform Fee</span>
+                        <span className="font-semibold text-red-600">− ₹{refundPreview.platformFee.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    {refundPreview.platformGST > 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-red-600">Less: GST on Platform Fee</span>
+                        <span className="font-semibold text-red-600">− ₹{refundPreview.platformGST.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm font-bold border-t pt-2" style={{ borderColor: '#dcfce7' }}>
+                      <span className="text-green-700">Refund Amount</span>
+                      <span className="text-green-700">₹{refundPreview.refundableAmount.toLocaleString('en-IN')}</span>
+                    </div>
+                    {refundPreview.refundableAmount === 0 && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
+                        Your payment was fully applied to non-refundable charges. No refund will be issued.
+                      </p>
+                    )}
+                    <p className="text-[11px] text-gray-400 pt-1">
+                      Platform convenience fee and applicable GST are non-refundable.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="px-4 py-3 text-sm text-gray-500">
+                    Refund details unavailable. Contact support for assistance.
+                  </div>
+                )}
+              </div>
+            )}
+
             <p className="text-sm text-gray-600 mb-4">
               Are you sure you want to cancel this booking? This action cannot be undone.
             </p>
@@ -523,14 +592,14 @@ export default function MyBookings() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => { setCancelTarget(null); setCancelReason(''); }}
+                onClick={() => { setCancelTarget(null); setCancelReason(''); setRefundPreview(null); }}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
               >
                 Keep Booking
               </button>
               <button
                 onClick={handleCancelConfirm}
-                disabled={cancelling}
+                disabled={cancelling || previewLoading}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-colors"
                 style={{ background: '#DC2626' }}
               >

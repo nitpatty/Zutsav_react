@@ -184,7 +184,7 @@ const sendWhatsApp = async (to, templateName, components = [], languageCode = 'e
   }
 
   if (logEntry) {
-    logEntry.status   = 'delivered';
+    logEntry.status   = 'sent';
     logEntry.response = { msgId: res.data?.messages?.[0]?.id };
     await logEntry.save().catch(() => {});
   }
@@ -210,7 +210,7 @@ const _safe = async (label, fn) => {
 const sendOtpWhatsApp = (phone, otp) => _safe('sendOtpWhatsApp', () =>
   sendWhatsApp(phone, 'whatsapp_verification', [
     { type: 'body', parameters: [{ type: 'text', text: String(otp) }] },
-    { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(otp) }] },
+    { type: 'button', sub_type: 'copy_code', index: '0', parameters: [{ type: 'coupon_code', coupon_code: String(otp) }] },
   ], 'en_US')
 );
 
@@ -275,7 +275,7 @@ const notifyPanditOfNewBooking = (booking, pandit, poojaName) => _safe('notifyPa
 const sendCompletionOtpWhatsApp = (booking, poojaName, otp) => _safe('sendCompletionOtpWhatsApp', () =>
   sendWhatsApp(booking.userDetails.phone, 'whatsapp_verification', [
     { type: 'body', parameters: [{ type: 'text', text: String(otp) }] },
-    { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: String(otp) }] },
+    { type: 'button', sub_type: 'copy_code', index: '0', parameters: [{ type: 'coupon_code', coupon_code: String(otp) }] },
   ], 'en_US')
 );
 

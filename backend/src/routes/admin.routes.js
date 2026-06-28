@@ -9,10 +9,12 @@ const { uploadLogo } = require('../middleware/upload');
 router.use(protect, authorize('admin'));
 
 router.get('/dashboard',                    ctrl.getDashboard);
+router.get('/activity-feed',               ctrl.getActivityFeed);
 
 // Pandits
 router.get('/pandits',                      ctrl.getPandits);
 router.get('/pandits/available',            ctrl.getAvailablePandits);
+router.get('/pandits/search',               ctrl.searchPandits);
 router.get('/pandits/:id',                  ctrl.getPanditProfile);
 router.patch('/pandits/:id/approve',        ctrl.approvePandit);
 router.patch('/pandits/:id/kyc',            ctrl.updateKYCStatus);
@@ -41,6 +43,12 @@ router.patch('/bookings/:id/kit-delivery',          ctrl.updateKitDelivery);
 router.post('/bookings/:id/kit-delivery/tackipost', ctrl.createTackipostShipment);
 router.patch('/bookings/:id/assign-payout',      ctrl.assignPayout);
 router.patch('/bookings/:id/mark-payout-paid',   ctrl.markPayoutPaid);
+router.patch('/bookings/:id/referral-status',    ctrl.updateReferralStatus);
+router.get('/bookings/:id/refund-details',       ctrl.getRefundDetails);
+router.patch('/bookings/:id/refund/process',     ctrl.processRefund);
+
+// Referral Analytics
+router.get('/referrals/analytics',               ctrl.getReferralAnalytics);
 
 // Marketplace Orders
 router.get('/orders',                           ctrl.getOrders);
@@ -49,12 +57,16 @@ router.get('/orders/:id/invoice',               ctrl.getAdminOrderInvoice);
 router.patch('/orders/:id/status',              ctrl.updateOrderStatus);
 router.patch('/orders/:id/shipment',            ctrl.updateOrderShipment);           // legacy
 // Shipment Management
-router.get('/shipping-config',                  ctrl.getShippingConfig);
-router.get('/orders/:id/shipment',              ctrl.getOrderShipment);
-router.post('/orders/:id/shipment/tekipost',    ctrl.createTekipostOrderShipment);
-router.post('/orders/:id/shipment/manual',      ctrl.createManualOrderShipment);
-router.patch('/orders/:id/shipment/status',     ctrl.updateOrderShipmentStatus);
-router.post('/orders/:id/shipment/sync',        ctrl.syncTekipostOrderStatus);
+router.get('/shipping-config',                              ctrl.getShippingConfig);
+router.get('/orders/:id/shipment',                          ctrl.getOrderShipment);
+// TekiPost Single Order API (2-step flow: init → confirm)
+router.post('/orders/:id/shipment/tekipost/init',           ctrl.initTekipostOrder);
+router.post('/orders/:id/shipment/tekipost/confirm',        ctrl.confirmTekipostOrder);
+router.post('/orders/:id/shipment/tekipost/cancel-awb',     ctrl.cancelTekipostShipmentAWB);
+router.patch('/orders/:id/shipment/tekipost/wallet-refund', ctrl.markWalletRefundCompleted);
+router.post('/orders/:id/shipment/manual',                  ctrl.createManualOrderShipment);
+router.patch('/orders/:id/shipment/status',                 ctrl.updateOrderShipmentStatus);
+router.post('/orders/:id/shipment/sync',                    ctrl.syncTekipostOrderStatus);
 // Delivery OTP
 router.post('/orders/:id/delivery-otp/generate', ctrl.generateDeliveryOTP);
 router.post('/orders/:id/delivery-otp/resend',   ctrl.resendDeliveryOTP);
@@ -106,5 +118,21 @@ router.get('/invoices/export',          invoiceCtrl.exportInvoices);
 router.get('/invoices',                 invoiceCtrl.adminGetInvoices);
 router.patch('/invoices/:id/cancel',    invoiceCtrl.adminCancelInvoice);
 router.patch('/invoices/:id/archive',   invoiceCtrl.adminArchiveInvoice);
+
+// ── Notification Engine Management ────────────────────────────────────────────
+// Events registry (read-only)
+router.get('/notifications/events',                       ctrl.getNotificationEvents);
+// WhatsApp templates dropdown (Meta-synced)
+router.get('/notifications/whatsapp-templates',           ctrl.getWhatsAppTemplatesForMapping);
+// Notification mappings CRUD
+router.get('/notifications/mappings',                     ctrl.getNotificationMappings);
+router.post('/notifications/mappings',                    ctrl.createNotificationMapping);
+router.patch('/notifications/mappings/:id',               ctrl.updateNotificationMapping);
+router.patch('/notifications/mappings/:id/toggle',        ctrl.toggleNotificationMapping);
+router.delete('/notifications/mappings/:id',              ctrl.deleteNotificationMapping);
+// Test send
+router.post('/notifications/test',                        ctrl.testNotificationMapping);
+// Notification logs
+router.get('/notifications/logs',                         ctrl.getNotificationLogs);
 
 module.exports = router;

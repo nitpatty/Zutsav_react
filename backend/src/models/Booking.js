@@ -134,6 +134,24 @@ const bookingSchema = new mongoose.Schema({
   feedbackReminderSent: { type: Boolean, default: false },
   invoiceSent:          { type: Boolean, default: false },
 
+  // ── Refund tracking (populated on cancellation; updated by admin on processing) ──
+  refund: {
+    eligibleAmount:  { type: Number, default: 0 },   // refundableAmount from engine
+    nonRefundable:   { type: Number, default: 0 },   // platformFee + platformGST
+    refundedAmount:  { type: Number, default: 0 },   // amount admin actually refunded
+    // status: none → pending (on cancel) → approved → processed → completed
+    status:          { type: String, enum: ['none', 'pending', 'approved', 'processed', 'completed'], default: 'none' },
+    reason:          { type: String, default: '' },
+    requestedAt:     { type: Date,   default: null },
+    approvedAt:      { type: Date,   default: null },
+    processedAt:     { type: Date,   default: null },
+    transactionId:   { type: String, default: '' },
+    method:          { type: String, default: '' },  // 'original_payment' | 'bank_transfer' | 'wallet'
+    approvedBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    approvedByName:  { type: String, default: '' },
+    notes:           { type: String, default: '' },
+  },
+
   // Audit trail for all status transitions and admin actions
   auditLog: [{
     action:          { type: String },
@@ -154,6 +172,13 @@ const bookingSchema = new mongoose.Schema({
   },
   // Reference to the PayoutBatch this booking was settled in (null = unpaid / individual)
   payoutBatchId: { type: mongoose.Schema.Types.ObjectId, ref: 'PayoutBatch', default: null },
+
+  // Secure link-based referral attribution — set on payment success, never from manual input
+  referral: {
+    referralId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Referral', default: null },
+    referringPanditId: { type: mongoose.Schema.Types.ObjectId, ref: 'Pandit',   default: null },
+    referralToken:     { type: String, default: '' },
+  },
 }, { timestamps: true });
 
 // Auto-generate booking number

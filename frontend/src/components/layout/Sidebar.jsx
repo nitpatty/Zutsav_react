@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, Search, Star, Users, BarChart3,
   BookOpen, Menu, X, Shield, CreditCard, MessageSquare,
   Package, MapPin, Tv, Gift, Mail, ClipboardList,
-  GraduationCap, Briefcase, IndianRupee, FileText, PenTool, Receipt,
+  GraduationCap, Briefcase, IndianRupee, FileText, PenTool, Receipt, Zap,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -61,6 +61,7 @@ const ADMIN_NAV = [
   { icon: IndianRupee,     label: 'Payout Management', path: '/admin?tab=payouts' },
   { icon: Gift,            label: 'Referral Stats',    path: '/admin?tab=referrals' },
   { icon: Mail,            label: 'Communication',     path: '/admin?tab=comm-center' },
+  { icon: Zap,             label: 'Notif Engine',      path: '/admin?tab=notifications' },
   { icon: FileText,        label: 'Blog Management',   path: '/admin?tab=blog-management' },
   { icon: Receipt,         label: 'Invoices',          path: '/admin?tab=invoices' },
   { icon: Settings,        label: 'System Settings',   path: '/admin?tab=system-settings' },

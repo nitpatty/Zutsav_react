@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, Receipt, Ban, Archive } from 'lucide-react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, Receipt, Ban, Archive, Copy, Bell, BellOff, Zap, Filter, Send, ChevronUp, Activity } from 'lucide-react';
 import CommunicationCenter from '../components/admin/CommunicationCenter';
 import ZutsavLoader, { ZutsavLoaderInline } from '../components/shared/ZutsavLoader';
 import toast from 'react-hot-toast';
@@ -39,6 +39,7 @@ export default function AdminDashboard() {
       {tab === 'livestreams'           && <LivestreamsTab />}
       {tab === 'referrals'             && <ReferralStatsTab />}
       {tab === 'comm-center'           && <CommunicationCenter />}
+      {tab === 'notifications'         && <NotificationsTab />}
       {tab === 'system-settings'       && <SystemSettingsTab />}
       {tab === 'payouts'               && <PayoutsTab />}
       {tab === 'blog-management'       && <BlogManagementTab />}
@@ -48,14 +49,211 @@ export default function AdminDashboard() {
   );
 }
 
+// ─── Activity Feed helpers ────────────────────────────────────
+const ACTIVITY_ICON_MAP = {
+  // Bookings
+  booking_paid:                  { Icon: CreditCard,    bg: '#ecfdf5', color: '#059669' },
+  status_changed_to_cancelled:   { Icon: XCircle,       bg: '#fef2f2', color: '#dc2626' },
+  booking_completed_otp:         { Icon: CheckCircle,   bg: '#ecfdf5', color: '#059669' },
+  otp_verified_completion:       { Icon: ShieldCheck,   bg: '#eff6ff', color: '#2563eb' },
+  completion_otp_generated:      { Icon: ShieldCheck,   bg: '#eff6ff', color: '#2563eb' },
+  pandit_assigned:               { Icon: Users,         bg: '#eef0f8', color: '#1B1F3B' },
+  completion_approved:           { Icon: CheckCircle,   bg: '#ecfdf5', color: '#059669' },
+  completion_rejected:           { Icon: XCircle,       bg: '#fef2f2', color: '#dc2626' },
+  // Payments
+  payout_assigned:               { Icon: IndianRupee,   bg: '#fefce8', color: '#ca8a04' },
+  payout_completed:              { Icon: IndianRupee,   bg: '#ecfdf5', color: '#059669' },
+  // Orders
+  order_paid:                    { Icon: ShoppingBag,   bg: '#eef0f8', color: '#1B1F3B' },
+  order_confirmed:               { Icon: ClipboardList, bg: '#eff6ff', color: '#2563eb' },
+  order_packed:                  { Icon: Package,       bg: '#fefce8', color: '#ca8a04' },
+  order_delivered:               { Icon: CheckCircle,   bg: '#ecfdf5', color: '#059669' },
+  order_cancelled:               { Icon: XCircle,       bg: '#fef2f2', color: '#dc2626' },
+  order_refunded:                { Icon: RotateCcw,     bg: '#fef2f2', color: '#dc2626' },
+  // Shipping
+  kit_tackipost_shipped:         { Icon: Truck,         bg: '#eff6ff', color: '#2563eb' },
+  kit_delivery_updated:          { Icon: Package,       bg: '#fefce8', color: '#ca8a04' },
+  delivery_otp_verified:         { Icon: ShieldCheck,   bg: '#ecfdf5', color: '#059669' },
+  order_shipped:                 { Icon: Truck,         bg: '#eff6ff', color: '#2563eb' },
+  order_out_for_delivery:        { Icon: Navigation,    bg: '#fefce8', color: '#d97706' },
+  shipment_created:              { Icon: Truck,         bg: '#eff6ff', color: '#2563eb' },
+  shipment_picked_up:            { Icon: Package,       bg: '#eff6ff', color: '#2563eb' },
+  shipment_in_transit:           { Icon: Navigation,    bg: '#fefce8', color: '#d97706' },
+  shipment_out_for_delivery:     { Icon: MapPin,        bg: '#fff7ed', color: '#ea580c' },
+  shipment_delivered:            { Icon: CheckCircle,   bg: '#ecfdf5', color: '#059669' },
+  shipment_cancelled:            { Icon: XCircle,       bg: '#fef2f2', color: '#dc2626' },
+  shipment_pending_courier_selection: { Icon: Search,   bg: '#f5f3ff', color: '#7c3aed' },
+  // Referrals
+  referral_created:              { Icon: Gift,          bg: '#fdf4ff', color: '#9333ea' },
+  referral_sent:                 { Icon: Mail,          bg: '#fdf4ff', color: '#9333ea' },
+  referral_opened:               { Icon: Eye,           bg: '#fdf4ff', color: '#7c3aed' },
+  referral_booked:               { Icon: BookOpen,      bg: '#fdf4ff', color: '#7c3aed' },
+  referral_completed:            { Icon: Star,          bg: '#fefce8', color: '#ca8a04' },
+  referral_settled:              { Icon: IndianRupee,   bg: '#ecfdf5', color: '#059669' },
+  referral_pending_remark:       { Icon: Clock,         bg: '#fff7ed', color: '#ea580c' },
+  referral_remark_submitted:     { Icon: ClipboardList, bg: '#eff6ff', color: '#2563eb' },
+  referral_admin_review:         { Icon: Eye,           bg: '#fef2f2', color: '#dc2626' },
+  referral_assigned:             { Icon: CheckCircle,   bg: '#ecfdf5', color: '#059669' },
+  // Users
+  user_registered:               { Icon: User,          bg: '#eff6ff', color: '#2563eb' },
+  pandit_pending:                { Icon: Users,         bg: '#fefce8', color: '#ca8a04' },
+  pandit_approved:               { Icon: BadgeCheck,    bg: '#ecfdf5', color: '#059669' },
+  pandit_rejected:               { Icon: XCircle,       bg: '#fef2f2', color: '#dc2626' },
+  pandit_suspended:              { Icon: Ban,           bg: '#fef2f2', color: '#dc2626' },
+  pandit_reupload_required:      { Icon: Upload,        bg: '#fff7ed', color: '#ea580c' },
+  pandit_under_review:           { Icon: Eye,           bg: '#eff6ff', color: '#2563eb' },
+  // Admin
+  delete_pandit:                 { Icon: Trash2,        bg: '#fef2f2', color: '#dc2626' },
+  admin_delete_user:             { Icon: Trash2,        bg: '#fef2f2', color: '#dc2626' },
+  admin_cancel_deletion:         { Icon: RotateCcw,     bg: '#ecfdf5', color: '#059669' },
+};
+
+const ACTIVITY_FILTERS = [
+  { key: 'all',       label: 'All'       },
+  { key: 'bookings',  label: 'Bookings'  },
+  { key: 'payments',  label: 'Payments'  },
+  { key: 'orders',    label: 'Orders'    },
+  { key: 'shipping',  label: 'Shipping'  },
+  { key: 'referrals', label: 'Referrals' },
+  { key: 'users',     label: 'Users'     },
+  { key: 'admin',     label: 'Admin'     },
+];
+
+function relativeTime(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return 'Yesterday';
+  if (d < 7)  return `${d}d ago`;
+  return new Date(ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+function ActivityFeed({ activities, loading, onRefresh }) {
+  const navigate = useNavigate();
+  const [activeFilter, setActiveFilter] = useState('all');
+
+  const filtered = activeFilter === 'all'
+    ? activities
+    : activities.filter(a => a.category === activeFilter);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100" style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pt-5 pb-3">
+        <h2 className="font-bold text-gray-800" style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1.1rem' }}>
+          Recent Activity
+        </h2>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          className="text-gray-400 hover:text-gray-600 transition-colors p-1.5 rounded-lg hover:bg-gray-50"
+          title="Refresh"
+        >
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="px-5 pb-3 flex gap-1.5 overflow-x-auto scrollbar-hide">
+        {ACTIVITY_FILTERS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setActiveFilter(key)}
+            className="flex-shrink-0 px-3 py-1 rounded-lg text-xs font-semibold transition-all"
+            style={activeFilter === key
+              ? { background: '#1B1F3B', color: '#fff' }
+              : { background: '#f3f4f6', color: '#6b7280' }
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="border-t border-gray-50" />
+
+      {/* Timeline */}
+      <div className="px-5 py-3 max-h-[520px] overflow-y-auto space-y-0.5">
+        {loading && (
+          <div className="flex items-center justify-center py-10 text-gray-400 text-sm">
+            <Loader size={16} className="animate-spin mr-2" /> Loading activity…
+          </div>
+        )}
+        {!loading && filtered.length === 0 && (
+          <div className="text-center py-10 text-gray-400 text-sm">No recent activity in this category.</div>
+        )}
+        {!loading && filtered.map((item, idx) => {
+          const iconMeta = ACTIVITY_ICON_MAP[item.type] || { Icon: Clock, bg: '#f3f4f6', color: '#9ca3af' };
+          const { Icon } = iconMeta;
+          const isLast = idx === filtered.length - 1;
+
+          return (
+            <div
+              key={item.id}
+              onClick={() => navigate(`?tab=${item.navigateTo}`)}
+              className="flex gap-3 py-2.5 group cursor-pointer hover:bg-gray-50/60 rounded-xl px-2 -mx-2 transition-colors"
+            >
+              {/* Icon + vertical line */}
+              <div className="flex flex-col items-center flex-shrink-0">
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: iconMeta.bg }}
+                >
+                  <Icon size={14} style={{ color: iconMeta.color }} />
+                </div>
+                {!isLast && <div className="w-px flex-1 bg-gray-100 mt-1.5" style={{ minHeight: '12px' }} />}
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0 pb-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 leading-tight">{item.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">{item.description}</p>
+                    {item.relatedName && (
+                      <p className="text-xs font-medium mt-0.5" style={{ color: '#1B1F3B' }}>{item.relatedName}</p>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 text-right">
+                    <p className="text-xs text-gray-400 whitespace-nowrap">{relativeTime(item.timestamp)}</p>
+                    {item.entityNumber && (
+                      <p className="text-xs font-mono text-gray-300 mt-0.5">{String(item.entityNumber).length > 12 ? String(item.entityNumber).slice(0,12)+'…' : item.entityNumber}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Arrow */}
+              <div className="flex-shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <ChevronRight size={12} className="text-gray-300" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Dashboard Stats ─────────────────────────────────────────
 function DashboardTab() {
-  const [stats, setStats] = useState(null);
-  const [recent, setRecent] = useState([]);
+  const [stats,      setStats]      = useState(null);
+  const [activities, setActivities] = useState([]);
+  const [feedLoading, setFeedLoading] = useState(true);
 
-  useEffect(() => {
-    API.get('/admin/dashboard').then(({ data }) => { setStats(data.stats); setRecent(data.recentBookings); });
+  const loadDashboard = useCallback(() => {
+    setFeedLoading(true);
+    API.get('/admin/dashboard').then(({ data }) => {
+      setStats(data.stats);
+      setActivities(data.recentActivity || []);
+    }).finally(() => setFeedLoading(false));
   }, []);
+
+  useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
   if (!stats) return <LoadingSpinner />;
 
@@ -88,33 +286,7 @@ function DashboardTab() {
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 p-5" style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-        <h2 className="font-bold text-gray-800 mb-4">Recent Paid Bookings</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-gray-100 text-left text-xs">
-              <th className="pb-2.5 text-gray-400 font-semibold">Booking #</th>
-              <th className="pb-2.5 text-gray-400 font-semibold">User</th>
-              <th className="pb-2.5 text-gray-400 font-semibold">Pooja</th>
-              <th className="pb-2.5 text-gray-400 font-semibold">Amount</th>
-              <th className="pb-2.5 text-gray-400 font-semibold">Date</th>
-            </tr></thead>
-            <tbody className="divide-y divide-gray-50">
-              {recent.map((b) => (
-                <tr key={b._id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="py-2.5 font-mono text-xs text-gray-400">{b.bookingNumber}</td>
-                  <td className="py-2.5 font-semibold text-gray-800">{b.userId?.name}</td>
-                  <td className="py-2.5 text-gray-600">{b.poojaId?.name}</td>
-                  <td className="py-2.5 font-bold" style={{ color: '#D4AF37', fontFamily: '"Cormorant Garamond"', fontSize: '1rem' }}>
-                    ₹{((b.amount || 0) + (b.linkedOrder?.totalAmount || 0)).toLocaleString('en-IN')}
-                  </td>
-                  <td className="py-2.5 text-gray-400 text-xs">{new Date(b.createdAt).toLocaleDateString('en-IN')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ActivityFeed activities={activities} loading={feedLoading} onRefresh={loadDashboard} />
     </div>
   );
 }
@@ -124,13 +296,17 @@ function BookingsTab() {
   const [bookings,       setBookings]       = useState([]);
   const [loading,        setLoading]        = useState(true);
   const [filter,         setFilter]         = useState('paid');
+  const [referralFilter, setReferralFilter] = useState('');
   const [search,         setSearch]         = useState('');
-  const [selected,       setSelected]       = useState(null);
-  const [pandits,        setPandits]        = useState([]);
-  const [panditId,       setPanditId]       = useState('');
-  const [assigning,      setAssigning]      = useState(false);
-  const [loadingPandits,  setLoadingPandits]  = useState(false);
-  const [panditFareAmount, setPanditFareAmount] = useState('');
+  const [selected,          setSelected]          = useState(null);
+  const [pandits,           setPandits]           = useState([]);
+  const [panditId,          setPanditId]          = useState('');
+  const [assigning,         setAssigning]         = useState(false);
+  const [loadingPandits,    setLoadingPandits]    = useState(false);
+  const [panditSearch,      setPanditSearch]      = useState('');
+  const [searchResults,     setSearchResults]     = useState([]);
+  const [searchLoading,     setSearchLoading]     = useState(false);
+  const [assignmentMethod,  setAssignmentMethod]  = useState('nearby_recommendation');
 
   // Payout modal state
   const [payoutBooking,  setPayoutBooking]  = useState(null);
@@ -151,15 +327,19 @@ function BookingsTab() {
 
   const load = () => {
     setLoading(true);
-    const params = filter === 'with_kit'
-      ? '?withKit=true&limit=50'
-      : `?status=${filter}&limit=50`;
-    API.get(`/admin/bookings${params}`)
+    const params = new URLSearchParams({ limit: '50' });
+    if (filter === 'with_kit') {
+      params.set('withKit', 'true');
+    } else if (filter) {
+      params.set('status', filter);
+    }
+    if (referralFilter) params.set('referralFilter', referralFilter);
+    API.get(`/admin/bookings?${params}`)
       .then(({ data }) => setBookings(data.bookings))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [filter]);
+  useEffect(() => { load(); }, [filter, referralFilter]);
 
   const q = search.trim().toLowerCase();
   const filteredBookings = q
@@ -230,7 +410,9 @@ function BookingsTab() {
     setSelected(booking);
     setPanditId('');
     setPandits([]);
-    setPanditFareAmount('');
+    setPanditSearch('');
+    setSearchResults([]);
+    setAssignmentMethod('nearby_recommendation');
     setLoadingPandits(true);
     try {
       const date      = booking.scheduledDate?.split('T')[0];
@@ -261,7 +443,7 @@ function BookingsTab() {
       const { data } = await API.get(`/admin/pandits/available?${params}`);
       setPandits(data.pandits);
     } catch {
-      toast.error('Could not load available pandits');
+      toast.error('Could not load nearby pandits');
     } finally {
       setLoadingPandits(false);
     }
@@ -271,11 +453,7 @@ function BookingsTab() {
     if (!panditId) { toast.error('Please select a pandit'); return; }
     setAssigning(true);
     try {
-      const body = { panditId };
-      if (panditFareAmount && !isNaN(+panditFareAmount) && +panditFareAmount > 0) {
-        body.panditFareAmount = +panditFareAmount;
-      }
-      await API.patch(`/admin/bookings/${selected._id}/assign`, body);
+      await API.patch(`/admin/bookings/${selected._id}/assign`, { panditId, assignmentMethod });
       toast.success('Pandit assigned! Notification sent to pandit.');
       setSelected(null);
       load();
@@ -309,26 +487,45 @@ function BookingsTab() {
   };
 
   // Refund modal state
-  const [refundBooking,  setRefundBooking]  = useState(null);
-  const [refundNote,     setRefundNote]     = useState('');
-  const [refundRef,      setRefundRef]      = useState('');
+  const [refundBooking,    setRefundBooking]    = useState(null);
+  const [refundDetails,    setRefundDetails]    = useState(null);
+  const [refundDetailsLoading, setRefundDetailsLoading] = useState(false);
+  const [refundNote,       setRefundNote]       = useState('');
+  const [refundRef,        setRefundRef]        = useState('');
+  const [refundMethod,     setRefundMethod]     = useState('original_payment');
+  const [refundStatusSel,  setRefundStatusSel]  = useState('processed');
   const [processingRefund, setProcessingRefund] = useState(false);
 
-  const openRefundModal = (booking) => {
+  const openRefundModal = async (booking) => {
     setRefundBooking(booking);
     setRefundNote('');
-    setRefundRef('');
+    setRefundRef(booking.refund?.transactionId || '');
+    setRefundMethod(booking.refund?.method || 'original_payment');
+    setRefundStatusSel('processed');
+    setRefundDetails(null);
+    setRefundDetailsLoading(true);
+    try {
+      const { data } = await API.get(`/admin/bookings/${booking._id}/refund-details`);
+      setRefundDetails(data.refundDetails);
+    } catch {
+      // Show modal with basic info if details fetch fails
+    } finally {
+      setRefundDetailsLoading(false);
+    }
   };
 
   const handleRefund = async () => {
     if (!refundRef.trim()) { toast.error('Please enter transaction / reference ID'); return; }
     setProcessingRefund(true);
     try {
-      await API.patch(`/admin/bookings/${refundBooking._id}/status`, {
-        status: 'refunded',
-        cancelReason: refundNote || `Refunded via ${refundRef}`,
+      await API.patch(`/admin/bookings/${refundBooking._id}/refund/process`, {
+        refundedAmount: refundDetails?.refundableAmount ?? 0,
+        transactionId:  refundRef,
+        method:         refundMethod,
+        notes:          refundNote,
+        refundStatus:   refundStatusSel,
       });
-      toast.success('Booking marked as Refunded');
+      toast.success('Refund recorded successfully');
       setRefundBooking(null);
       load();
     } catch (err) {
@@ -397,6 +594,25 @@ function BookingsTab() {
         </button>
       </div>
 
+      {/* Referral sub-filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <span className="text-xs font-semibold text-gray-400 mr-1">🤝 Referral:</span>
+        {[
+          { val: '',           label: 'All' },
+          { val: 'referred',   label: 'Referred' },
+          { val: 'normal',     label: 'No Referral' },
+          { val: 'pending',    label: 'Pending' },
+          { val: 'accepted',   label: 'Accepted' },
+          { val: 'reassigned', label: 'Reassigned' },
+          { val: 'rejected',   label: 'Rejected' },
+        ].map(({ val, label }) => (
+          <button key={val} onClick={() => setReferralFilter(val)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${referralFilter === val ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-500 border-gray-200 hover:border-green-300'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Search + Export row */}
       <div className="flex items-center gap-3 flex-wrap">
         <input
@@ -422,7 +638,7 @@ function BookingsTab() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="bg-saffron-50 text-left text-xs text-gray-500 border-b">
-                {['Booking #','Booked On','User','Location','Pooja','Puja Date','Amount / Payment','Status','Pandit','Action'].map((h) => (
+                {['Booking #','Booked On','User','Location','Pooja','Puja Date','Amount / Payment','Status','Pandit','Referral','Action'].map((h) => (
                   <th key={h} className="px-4 py-3 font-semibold">{h}</th>
                 ))}
               </tr></thead>
@@ -496,6 +712,34 @@ function BookingsTab() {
                       <span className={statusColor[b.status] || 'badge-pending'}>{statusLabel[b.status]}</span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{b.panditId?.name || '—'}</td>
+                    <td className="px-4 py-3 min-w-[120px]">
+                      {b.referral?.referralId ? (
+                        <div className="space-y-1">
+                          {(() => {
+                            const s = b.referral.referralId?.status || '';
+                            const colorMap = {
+                              COMPLETED: 'bg-green-100 text-green-700', SETTLED: 'bg-green-200 text-green-800',
+                              ADMIN_REVIEW: 'bg-purple-100 text-purple-700', ASSIGNED: 'bg-blue-100 text-blue-700',
+                              PENDING_REMARK: 'bg-amber-100 text-amber-700', REMARK_SUBMITTED: 'bg-cyan-100 text-cyan-700',
+                            };
+                            const cls = colorMap[s] || 'bg-amber-100 text-amber-700';
+                            const labelMap = {
+                              CREATED: 'Referred', SENT: 'Link Sent', OPENED: 'Opened',
+                              BOOKED: 'Booked', PENDING_REMARK: 'Remark Pending', REMARK_SUBMITTED: 'Remark In',
+                              ADMIN_REVIEW: 'In Review', ASSIGNED: 'Assigned', COMPLETED: 'Completed', SETTLED: 'Settled',
+                            };
+                            return (
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${cls}`}>
+                                🤝 {labelMap[s] || s || 'Referred'}
+                              </span>
+                            );
+                          })()}
+                          <p className="text-[10px] text-gray-500 leading-snug">{b.referral.referringPanditId?.name || '—'}</p>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-gray-300">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1.5">
                         <button
@@ -569,151 +813,279 @@ function BookingsTab() {
         </div>
       )}
 
-      {/* Location-aware assignment modal */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="font-bold text-gray-800 text-xl mb-4">
-              {selected.status === 'pending_reassignment' ? 'Reassign Pandit' : 'Assign Pandit'}
-            </h2>
+      {/* Pandit Assignment Modal */}
+      {selected && (() => {
+        const isSearchMode = panditSearch.trim().length >= 2;
 
-            {/* Booking summary */}
-            <div className="bg-saffron-50 rounded-xl p-4 mb-4 text-sm space-y-1">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-gray-700">{selected.poojaId?.name}</p>
-                  <p className="text-gray-500">{selected.scheduledDate?.split('T')[0]} · {selected.scheduledTime}</p>
+        const PanditCard = ({ p, fromSearch }) => {
+          const outOfCoverage  = !fromSearch && p.withinCoverage === false;
+          const isSelected     = panditId === p._id;
+          const isRecommended  = !!p.isRecommended;
+          const photoUrl = p.profilePhoto
+            ? (p.profilePhoto.startsWith('http') ? p.profilePhoto : `http://localhost:5000/${p.profilePhoto}`)
+            : null;
+
+          return (
+            <button
+              type="button"
+              disabled={outOfCoverage}
+              onClick={() => {
+                if (outOfCoverage) return;
+                setPanditId(p._id);
+                setAssignmentMethod(fromSearch ? 'manual_search' : 'nearby_recommendation');
+              }}
+              className={[
+                'w-full text-left rounded-xl border transition-all duration-150 p-3',
+                outOfCoverage
+                  ? 'border-gray-100 bg-gray-50/60 opacity-50 cursor-not-allowed'
+                  : isSelected
+                    ? 'border-indigo-500 bg-indigo-50 shadow-sm ring-1 ring-indigo-400'
+                    : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50 cursor-pointer',
+              ].join(' ')}
+            >
+              <div className="flex items-start gap-3">
+                {/* Avatar */}
+                <div className="w-9 h-9 rounded-full overflow-hidden bg-indigo-100 flex items-center justify-center shrink-0 border border-indigo-200">
+                  {photoUrl
+                    ? <img src={photoUrl} className="w-full h-full object-cover" alt="" />
+                    : <User size={14} className="text-indigo-400" />}
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-xs text-gray-400">Platform price</p>
-                  <p className="font-bold text-saffron-600">₹{selected.poojaId?.price?.toLocaleString('en-IN') || selected.amount?.toLocaleString('en-IN') || '—'}</p>
-                </div>
-              </div>
-            </div>
 
-            {/* User location info */}
-            <div className="border border-blue-100 bg-blue-50 rounded-xl p-3 mb-4 text-xs">
-              <p className="font-bold text-blue-700 mb-1">User Location</p>
-              <p className="text-blue-800">{selected.userDetails?.name} · {selected.userDetails?.phone}</p>
-              <p className="text-blue-600">{[selected.userDetails?.address, selected.userDetails?.city, selected.userDetails?.district, selected.userDetails?.state, selected.userDetails?.pincode].filter(Boolean).join(', ')}</p>
-            </div>
-
-            {/* Rejection history (shown only when reassigning after rejection) */}
-            {selected.status === 'pending_reassignment' && selected.panditRejections?.length > 0 && (
-              <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4 text-xs">
-                <p className="font-bold text-red-700 mb-2">Previously Rejected By</p>
-                <div className="space-y-1.5">
-                  {selected.panditRejections.map((r, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <span className="font-semibold text-red-800 shrink-0">{r.panditName}:</span>
-                      <span className="text-red-600 italic">"{r.reason}"</span>
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-semibold text-gray-800 text-sm leading-tight">{p.name}</span>
+                      {p.isOnline && <span className="w-1.5 h-1.5 bg-green-500 rounded-full" title="Online" />}
+                      {isRecommended && (
+                        <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">⭐ Referring Pandit</span>
+                      )}
+                      {!fromSearch && (
+                        outOfCoverage
+                          ? <span className="text-[9px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Outside area</span>
+                          : <span className="text-[9px] font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">In coverage</span>
+                      )}
                     </div>
-                  ))}
+                    {isSelected && (
+                      <span className="text-[9px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full shrink-0">Selected</span>
+                    )}
+                  </div>
+
+                  {/* Contact + location row */}
+                  <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+                    {[p.phone, p.email].filter(Boolean).join('  ·  ')}
+                  </p>
+                  <p className="text-[11px] text-gray-400 truncate">
+                    {[p.city, p.state].filter(Boolean).join(', ') || '—'}
+                    {p.languages?.length > 0 && <span className="ml-1 text-gray-300">· {p.languages.slice(0, 2).join(', ')}</span>}
+                  </p>
+
+                  {/* Badges row */}
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {p.distanceKm !== null && (
+                      <span className="text-[9px] font-semibold bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">{p.distanceKm} km</span>
+                    )}
+                    {p.experience > 0 && (
+                      <span className="text-[9px] font-semibold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{p.experience}y exp</span>
+                    )}
+                    {p.rating > 0 && (
+                      <span className="text-[9px] font-semibold bg-yellow-50 text-yellow-700 px-1.5 py-0.5 rounded-full">★ {p.rating.toFixed(1)} ({p.totalReviews || 0})</span>
+                    )}
+                    {(p.activeBookings ?? 0) > 0 && (
+                      <span className="text-[9px] font-semibold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">{p.activeBookings} active</span>
+                    )}
+                    {p.totalBookings > 0 && (
+                      <span className="text-[9px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded-full">{p.totalBookings} total</span>
+                    )}
+                    {!fromSearch && p.coverageType && (
+                      <span className="text-[9px] text-gray-400 px-1.5 py-0.5 rounded-full bg-gray-50">{coverageLabel(p)}</span>
+                    )}
+                  </div>
                 </div>
               </div>
-            )}
+            </button>
+          );
+        };
 
-            {loadingPandits ? (
-              <div className="text-center py-6 text-gray-400 text-sm">Loading eligible pandits…</div>
-            ) : pandits.length === 0 ? (
-              <p className="text-red-500 text-sm bg-red-50 p-3 rounded-xl mb-4">No available pandits for this date.</p>
-            ) : (
-              <>
-                <p className="text-xs text-gray-500 mb-2">
-                  {pandits.length} pandit{pandits.length !== 1 ? 's' : ''} available · <span className="text-green-600">Green = within coverage</span> · <span className="text-red-500">Red = outside area</span>
-                </p>
-                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
-                  {pandits.map((p) => {
-                    const outOfCoverage = p.withinCoverage === false;
-                    return (
-                      <label
-                        key={p._id}
-                        className={`flex items-start gap-3 p-3 rounded-xl border-2 transition-colors ${outOfCoverage ? 'border-red-100 bg-red-50/40 opacity-60 cursor-not-allowed' : panditId === p._id ? 'border-saffron-400 bg-saffron-50 cursor-pointer' : 'border-gray-200 hover:border-saffron-200 cursor-pointer'}`}
-                      >
-                        <input
-                          type="radio" name="pandit" value={p._id}
-                          checked={panditId === p._id}
-                          onChange={() => !outOfCoverage && setPanditId(p._id)}
-                          disabled={outOfCoverage}
-                          className="accent-saffron-500 mt-1 shrink-0"
-                        />
-                        <div className="w-10 h-10 bg-saffron-100 rounded-full overflow-hidden flex items-center justify-center shrink-0">
-                          {p.profilePhoto ? <img src={`http://localhost:5000/${p.profilePhoto}`} className="w-full h-full object-cover" alt="" /> : <User size={16} className="text-saffron-500" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-semibold text-gray-800 text-sm">{p.name}</p>
-                            {p.isOnline && <span className="w-2 h-2 bg-green-500 rounded-full" title="Online" />}
-                            {outOfCoverage ? (
-                              <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">Outside area</span>
-                            ) : (
-                              <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">In coverage</span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-gray-500 mt-0.5">{p.phone || p.email || ''}</p>
-                          <p className="text-[11px] text-gray-400">{p.city || '—'}{p.state ? `, ${p.state}` : ''}</p>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            {p.distanceKm !== null && (
-                              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full">{p.distanceKm} km away</span>
-                            )}
-                            <span className="text-[10px] text-gray-400">{coverageLabel(p)}</span>
-                            {p.experience > 0 && (
-                              <span className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">{p.experience}y exp</span>
-                            )}
-                            {p.rating > 0 && (
-                              <span className="text-[10px] text-yellow-600 bg-yellow-50 px-1.5 py-0.5 rounded-full">★ {p.rating.toFixed(1)} ({p.totalReviews || 0})</span>
-                            )}
-                            {p.totalBookings > 0 && (
-                              <span className="text-[10px] text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded-full">{p.totalBookings} bookings</span>
-                            )}
-                          </div>
-                          {/* Expected charges vs platform price */}
-                          {(p.expectedChargesForPooja !== null && p.expectedChargesForPooja !== undefined) && (
-                            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                              <span className="text-[10px] font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full">
-                                Pandit expects ₹{p.expectedChargesForPooja.toLocaleString('en-IN')}
-                              </span>
-                              {selected.poojaId?.price && (
-                                <span className="text-[10px] font-bold text-saffron-700 bg-saffron-50 px-1.5 py-0.5 rounded-full">
-                                  Platform ₹{selected.poojaId.price.toLocaleString('en-IN')}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </label>
-                    );
-                  })}
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: '92vh' }}>
+
+              {/* Header */}
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+                <div>
+                  <h2 className="font-bold text-gray-900 text-base" style={{ fontFamily: '"Cormorant Garamond", serif' }}>
+                    {selected.status === 'pending_reassignment' ? 'Reassign Pandit' : 'Assign Pandit'}
+                  </h2>
+                  <p className="text-xs font-mono text-gray-400 mt-0.5">#{selected.bookingNumber}</p>
                 </div>
-              </>
-            )}
-
-            {/* Agreed fare amount (admin-only) */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">
-                Final Agreed Fare Amount <span className="text-gray-400 font-normal normal-case">(optional — admin only, not shown to user or pandit)</span>
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-sm">₹</span>
-                <input
-                  type="number" min="0"
-                  className="input pl-7"
-                  placeholder="Negotiated fare (leave blank to skip)"
-                  value={panditFareAmount}
-                  onChange={(e) => setPanditFareAmount(e.target.value)}
-                />
+                <button onClick={() => setSelected(null)} className="text-gray-300 hover:text-gray-500 transition-colors">
+                  <X size={18} />
+                </button>
               </div>
-            </div>
 
-            <div className="flex gap-3">
-              <button onClick={() => setSelected(null)} className="btn-outline flex-1">Cancel</button>
-              <button onClick={handleAssign} disabled={assigning || !panditId} className="btn-primary flex-1">
-                {assigning ? 'Assigning...' : selected.status === 'pending_reassignment' ? 'Reassign & Notify Pandit' : 'Assign & Notify Pandit'}
-              </button>
+              {/* Scrollable body */}
+              <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+
+                {/* Booking summary */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Pooja</p>
+                    <p className="font-semibold text-gray-800">{selected.poojaId?.name || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Date & Time</p>
+                    <p className="font-medium text-gray-700">{selected.scheduledDate?.split('T')[0] || '—'}{selected.scheduledTime ? ` · ${selected.scheduledTime}` : ''}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Customer & Address</p>
+                    <p className="font-medium text-gray-800">{selected.userDetails?.name} · {selected.userDetails?.phone}</p>
+                    <p className="text-gray-500">{[selected.userDetails?.address, selected.userDetails?.city, selected.userDetails?.district, selected.userDetails?.state, selected.userDetails?.pincode].filter(Boolean).join(', ') || '—'}</p>
+                  </div>
+                </div>
+
+                {/* Rejection history */}
+                {selected.status === 'pending_reassignment' && selected.panditRejections?.length > 0 && (
+                  <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-xs">
+                    <p className="font-bold text-red-600 mb-2 uppercase tracking-wide text-[10px]">Previously Rejected By</p>
+                    <div className="space-y-1">
+                      {selected.panditRejections.map((r, i) => (
+                        <div key={i} className="flex items-start gap-2">
+                          <span className="font-semibold text-red-700 shrink-0">{r.panditName}:</span>
+                          <span className="text-red-500 italic">"{r.reason}"</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Search box */}
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">
+                    Search Pandit
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                      <Search size={14} />
+                    </span>
+                    <input
+                      type="text"
+                      value={panditSearch}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPanditSearch(val);
+                        // Debounced search
+                        clearTimeout(window.__panditSearchTimer);
+                        if (val.trim().length >= 2) {
+                          setSearchLoading(true);
+                          window.__panditSearchTimer = setTimeout(async () => {
+                            try {
+                              const { data } = await API.get(`/admin/pandits/search?q=${encodeURIComponent(val.trim())}`);
+                              setSearchResults(data.pandits || []);
+                            } catch {
+                              setSearchResults([]);
+                            } finally {
+                              setSearchLoading(false);
+                            }
+                          }, 300);
+                        } else {
+                          setSearchResults([]);
+                          setSearchLoading(false);
+                        }
+                      }}
+                      placeholder="Search by name, phone, or email…"
+                      className="w-full pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 bg-white"
+                    />
+                    {searchLoading && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                      </span>
+                    )}
+                  </div>
+                  {!isSearchMode && (
+                    <p className="text-[10px] text-gray-400 mt-1">Search by full name, partial name, phone, or email</p>
+                  )}
+                </div>
+
+                {/* Pandit list */}
+                {isSearchMode ? (
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+                      Search Results {!searchLoading && `(${searchResults.length})`}
+                    </p>
+                    {searchLoading ? (
+                      <div className="text-center py-8">
+                        <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                        <p className="text-xs text-gray-400">Searching…</p>
+                      </div>
+                    ) : searchResults.length === 0 ? (
+                      <div className="text-center py-10 text-gray-400">
+                        <User size={28} className="mx-auto mb-2 opacity-30" />
+                        <p className="font-medium text-sm">No pandits found</p>
+                        <p className="text-xs mt-0.5">Try searching by name, phone, or email</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {searchResults.map((p) => <PanditCard key={p._id} p={p} fromSearch={true} />)}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+                      Recommended Nearby Pandits {!loadingPandits && `(${pandits.length})`}
+                    </p>
+                    {loadingPandits ? (
+                      <div className="text-center py-8">
+                        <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                        <p className="text-xs text-gray-400">Finding nearby pandits…</p>
+                      </div>
+                    ) : pandits.length === 0 ? (
+                      <div className="text-center py-10 text-gray-400">
+                        <Users size={28} className="mx-auto mb-2 opacity-30" />
+                        <p className="font-medium text-sm">No pandits available for this date</p>
+                        <p className="text-xs mt-0.5">Use the search above to find a pandit manually</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-[10px] text-gray-400">
+                          <span className="text-green-600 font-semibold">●</span> In coverage  ·  <span className="text-red-500 font-semibold">●</span> Outside area  ·  Sorted by distance
+                        </p>
+                        {pandits.map((p) => <PanditCard key={p._id} p={p} fromSearch={false} />)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 pb-5 pt-3 border-t border-gray-100 shrink-0 space-y-2">
+                {panditId && (
+                  <p className="text-[10px] text-indigo-600 font-semibold text-center">
+                    {assignmentMethod === 'manual_search' ? '🔍 Assigning via Manual Search' : '📍 Assigning via Nearby Recommendation'}
+                  </p>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setSelected(null)}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAssign}
+                    disabled={assigning || !panditId}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-colors"
+                    style={{ background: '#1B1F3B' }}
+                  >
+                    {assigning ? 'Assigning…' : selected.status === 'pending_reassignment' ? 'Reassign & Notify' : 'Assign & Notify Pandit'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Payout modal */}
       {payoutBooking && (
@@ -871,22 +1243,113 @@ function BookingsTab() {
 
       {/* Refund Modal */}
       {refundBooking && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
-          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4 py-6 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-lg">
             <h2 className="font-bold text-gray-800 text-xl mb-1">Process Refund</h2>
             <p className="text-sm text-gray-500 mb-4">
-              Booking <span className="font-mono font-semibold">{refundBooking.bookingNumber}</span> · ₹{refundBooking.amount?.toLocaleString('en-IN')}
+              Booking <span className="font-mono font-semibold">{refundBooking.bookingNumber}</span>
+              {refundBooking.poojaId?.name && <> · {refundBooking.poojaId.name}</>}
             </p>
 
-            <div className="bg-red-50 border border-red-100 rounded-xl p-3 mb-4 text-sm text-red-700">
-              <p className="font-semibold">Customer: {refundBooking.userDetails?.name}</p>
-              <p className="text-xs mt-0.5">{refundBooking.userDetails?.phone}</p>
-              <p className="text-xs mt-0.5">Pooja: {refundBooking.poojaId?.name}</p>
+            {/* Customer info */}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-4 text-sm">
+              <p className="font-semibold text-gray-800">{refundBooking.userDetails?.name}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{refundBooking.userDetails?.phone}</p>
             </div>
+
+            {/* Refund breakdown */}
+            {refundDetailsLoading ? (
+              <div className="rounded-xl border border-green-100 bg-green-50 p-4 mb-4 text-center text-sm text-green-600">
+                Calculating refund breakdown…
+              </div>
+            ) : refundDetails ? (
+              <div className="rounded-xl border border-green-200 overflow-hidden mb-4">
+                <div className="px-4 py-2.5 bg-green-50 border-b border-green-200">
+                  <p className="text-xs font-bold text-green-700 uppercase tracking-wide">Refund Breakdown</p>
+                </div>
+                <div className="px-4 py-3 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Amount Paid by Customer</span>
+                    <span className="font-semibold">₹{refundDetails.amountPaid?.toLocaleString('en-IN')}</span>
+                  </div>
+                  {refundDetails.platformFee > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-red-600">Less: Platform Fee (non-refundable)</span>
+                      <span className="font-semibold text-red-600">− ₹{refundDetails.platformFee?.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  {refundDetails.platformGST > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-red-600">Less: GST on Platform Fee (non-refundable)</span>
+                      <span className="font-semibold text-red-600">− ₹{refundDetails.platformGST?.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold border-t border-green-200 pt-2 text-green-700">
+                    <span>Refundable Amount</span>
+                    <span>₹{refundDetails.refundableAmount?.toLocaleString('en-IN')}</span>
+                  </div>
+                  {refundDetails.kitAmount > 0 && (
+                    <div className="flex justify-between text-xs text-gray-400 pt-1">
+                      <span>Kit Amount</span>
+                      <span>₹{refundDetails.kitAmount?.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                  {refundDetails.kitGST > 0 && (
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>Kit GST</span>
+                      <span>₹{refundDetails.kitGST?.toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                </div>
+                {refundDetails.refundableAmount === 0 && (
+                  <div className="px-4 pb-3">
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      The entire payment was applied to non-refundable charges. No refund is due to the customer.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {/* Previous refund record (if any) */}
+            {refundBooking.refund?.status && refundBooking.refund.status !== 'none' && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 mb-4 text-xs text-blue-800 space-y-1">
+                <p className="font-semibold">Existing Refund Record</p>
+                <p>Status: <span className="capitalize font-bold">{refundBooking.refund.status}</span></p>
+                {refundBooking.refund.transactionId && <p>Txn ID: {refundBooking.refund.transactionId}</p>}
+                {refundBooking.refund.refundedAmount > 0 && <p>Amount: ₹{refundBooking.refund.refundedAmount?.toLocaleString('en-IN')}</p>}
+                {refundBooking.refund.approvedByName && <p>By: {refundBooking.refund.approvedByName}</p>}
+              </div>
+            )}
 
             <div className="space-y-3 mb-5">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Transaction / Reference ID <span className="text-red-500">*</span></label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Refund Status</label>
+                <select
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
+                  value={refundStatusSel}
+                  onChange={(e) => setRefundStatusSel(e.target.value)}
+                >
+                  <option value="approved">Approved</option>
+                  <option value="processed">Processed</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Refund Method</label>
+                <select
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
+                  value={refundMethod}
+                  onChange={(e) => setRefundMethod(e.target.value)}
+                >
+                  <option value="original_payment">Original Payment Method</option>
+                  <option value="bank_transfer">Bank Transfer / NEFT</option>
+                  <option value="upi">UPI</option>
+                  <option value="wallet">Wallet</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Transaction / UTR Reference ID <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
@@ -896,11 +1359,11 @@ function BookingsTab() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Note <span className="text-gray-400">(optional)</span></label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Notes <span className="text-gray-400">(optional)</span></label>
                 <textarea
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-300"
                   rows={2}
-                  placeholder="Reason or additional notes…"
+                  placeholder="Additional notes for audit record…"
                   value={refundNote}
                   onChange={(e) => setRefundNote(e.target.value)}
                 />
@@ -916,10 +1379,10 @@ function BookingsTab() {
               </button>
               <button
                 onClick={handleRefund}
-                disabled={processingRefund}
+                disabled={processingRefund || refundDetailsLoading}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-60 transition-colors"
               >
-                {processingRefund ? 'Processing…' : '↩ Mark as Refunded'}
+                {processingRefund ? 'Saving…' : `↩ Record Refund ₹${(refundDetails?.refundableAmount || 0).toLocaleString('en-IN')}`}
               </button>
             </div>
           </div>
@@ -1049,6 +1512,421 @@ function BookingsTab() {
 }
 
 // ─── Order Details Modal ──────────────────────────────────────
+const REFERRAL_STATUS_CFG = {
+  CREATED:          { bg: 'bg-gray-50',     border: 'border-gray-200',   badge: 'bg-gray-100 text-gray-600',     label: 'Created'          },
+  SENT:             { bg: 'bg-blue-50',     border: 'border-blue-200',   badge: 'bg-blue-100 text-blue-700',     label: 'Link Sent'        },
+  OPENED:           { bg: 'bg-indigo-50',   border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-700', label: 'Link Opened'      },
+  BOOKED:           { bg: 'bg-teal-50',     border: 'border-teal-200',   badge: 'bg-teal-100 text-teal-700',     label: 'Booked'           },
+  PENDING_REMARK:   { bg: 'bg-amber-50',    border: 'border-amber-200',  badge: 'bg-amber-100 text-amber-700',   label: 'Remark Pending'   },
+  REMARK_SUBMITTED: { bg: 'bg-cyan-50',     border: 'border-cyan-200',   badge: 'bg-cyan-100 text-cyan-700',     label: 'Remark Submitted' },
+  ADMIN_REVIEW:     { bg: 'bg-purple-50',   border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700', label: 'Admin Review'     },
+  ASSIGNED:         { bg: 'bg-blue-50',     border: 'border-blue-200',   badge: 'bg-blue-100 text-blue-700',     label: 'Assigned'         },
+  COMPLETED:        { bg: 'bg-green-50',    border: 'border-green-200',  badge: 'bg-green-100 text-green-700',   label: 'Completed'        },
+  SETTLED:          { bg: 'bg-green-50',    border: 'border-green-300',  badge: 'bg-green-200 text-green-800',   label: 'Settled'          },
+};
+
+const IMG_BASE_ADMIN = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+function ReferralDetailSection({ booking: b }) {
+  const ref        = b.referral;
+  const referral   = ref?.referralId;          // populated Referral document
+  const panditSeed = ref?.referringPanditId;   // basic populated fields (used as initial state)
+
+  // Full/latest pandit profile fetched live so changes to photo/contact/languages
+  // are always reflected here without needing a re-deployment.
+  const [pandit,        setPandit]        = useState(panditSeed || null);
+  const [fetchingPandit,setFetchingPandit]= useState(false);
+
+  const [updating,         setUpdating]         = useState(false);
+  const [localStatus,      setLocalStatus]      = useState(referral?.status || 'ADMIN_REVIEW');
+  const [selectStatus,     setSelectStatus]     = useState(referral?.status || 'ADMIN_REVIEW');
+  const [copied,           setCopied]           = useState('');
+
+  // Fetch the latest pandit profile by ID (not by name / email / phone)
+  useEffect(() => {
+    const pid = panditSeed?._id || panditSeed;
+    if (!pid) return;
+    setFetchingPandit(true);
+    API.get(`/admin/pandits/${pid}`)
+      .then(({ data }) => { if (data.pandit) setPandit(data.pandit); })
+      .catch(() => { /* fall back to populated data — non-fatal */ })
+      .finally(() => setFetchingPandit(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!referral) return null;
+
+  // ── Helpers ───────────────────────────────────────────────────
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
+  const getStatusDate = (status) => {
+    const entry = referral.statusHistory?.find((h) => h.status === status);
+    return fmtDate(entry?.at);
+  };
+
+  const panditDisplayId = pandit?._id
+    ? `PDT-${String(pandit._id).slice(-6).toUpperCase()}`
+    : '—';
+  const isVerified = pandit?.kycStatus === 'approved';
+  const isActive   = pandit?.status    === 'approved';
+
+  const maskedToken = b.referral?.referralToken
+    ? `••••••${b.referral.referralToken.slice(-4).toUpperCase()}`
+    : '—';
+
+  const cfg      = REFERRAL_STATUS_CFG[localStatus] || REFERRAL_STATUS_CFG.ADMIN_REVIEW;
+  const hasRemark = !!referral?.remark;
+
+  const createdDate = fmtDate(referral.createdAt);
+  const openedDate  = getStatusDate('OPENED');
+  const bookedDate  = getStatusDate('BOOKED') || fmtDate(b.createdAt);
+  const expiryDate  = fmtDate(referral.expiresAt);
+
+  const copy = async (text, key) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied(''), 2000);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  const handleUpdateStatus = async () => {
+    if (!referral?._id || selectStatus === localStatus) return;
+    setUpdating(true);
+    try {
+      await API.patch(`/referral/${referral._id}/status`, { status: selectStatus });
+      setLocalStatus(selectStatus);
+      toast.success('Referral stage updated');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Update failed');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const STAGE_KEYS = Object.keys(REFERRAL_STATUS_CFG);
+  const currentStageIdx = STAGE_KEYS.indexOf(localStatus);
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">🤝 Pandit Referral</p>
+
+      {/* ── Referring Pandit Mini Profile Card ──────────────────── */}
+      <div className="rounded-2xl border border-gray-200 overflow-hidden shadow-sm bg-white">
+
+        {/* Premium accent bar */}
+        <div className="h-1" style={{ background: 'linear-gradient(90deg,#1B1F3B 0%,#D4AF37 60%,#FF6B00 100%)' }} />
+
+        <div className="p-4">
+
+          {/* Top row: Avatar · Identity · Action */}
+          <div className="flex items-start gap-4 mb-4">
+
+            {/* Circular photo with verification dot */}
+            <div className="relative shrink-0">
+              {pandit?.profilePhoto ? (
+                <img
+                  src={`${IMG_BASE_ADMIN}/${pandit.profilePhoto}`}
+                  alt={pandit.name}
+                  className="w-16 h-16 rounded-full object-cover border-2 border-gray-100 shadow"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-indigo-50 border-2 border-gray-100 shadow flex items-center justify-center text-3xl">
+                  🙏
+                </div>
+              )}
+              {fetchingPandit && (
+                <div className="absolute inset-0 rounded-full bg-white/50 flex items-center justify-center">
+                  <Loader size={14} className="text-indigo-400 animate-spin" />
+                </div>
+              )}
+              {isVerified && !fetchingPandit && (
+                <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 bg-blue-600 rounded-full border-2 border-white flex items-center justify-center shadow">
+                  <CheckCircle size={9} className="text-white" />
+                </div>
+              )}
+            </div>
+
+            {/* Name · ID · Badges */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-gray-900 text-base leading-tight" style={{ fontFamily: '"Cormorant Garamond",serif' }}>
+                  {pandit?.name || panditSeed?.name || '—'}
+                </h3>
+                {isVerified && (
+                  <span className="inline-flex items-center gap-0.5 bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0">
+                    <BadgeCheck size={9} /> Verified
+                  </span>
+                )}
+              </div>
+
+              {/* Unique Pandit ID */}
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <p className="text-xs font-mono text-gray-400">{panditDisplayId}</p>
+                <button
+                  onClick={() => copy(panditDisplayId, 'id')}
+                  className="text-gray-300 hover:text-indigo-500 transition-colors"
+                  title="Copy Pandit ID"
+                >
+                  {copied === 'id'
+                    ? <CheckCircle size={10} className="text-green-500" />
+                    : <Copy size={10} />}
+                </button>
+              </div>
+
+              {/* Status pill row */}
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                  {isActive ? '● Active' : `● ${pandit?.status || 'Unknown'}`}
+                </span>
+                {isVerified && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
+                    KYC Approved
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Quick: open referral history in new tab */}
+            <a
+              href="/admin?tab=referrals"
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+              title="View all referrals by this pandit"
+            >
+              <ExternalLink size={10} /> Referrals
+            </a>
+          </div>
+
+          {/* Contact & Profile grid */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-4">
+
+            {/* Email */}
+            <div className="flex items-start gap-2 min-w-0">
+              <span className="text-base leading-none mt-0.5">📧</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Email</p>
+                <p className="text-xs text-gray-700 font-medium truncate">{pandit?.email || '—'}</p>
+              </div>
+              {pandit?.email && (
+                <button onClick={() => copy(pandit.email, 'email')} className="shrink-0 text-gray-300 hover:text-indigo-500 transition-colors" title="Copy email">
+                  {copied === 'email' ? <CheckCircle size={11} className="text-green-500" /> : <Copy size={11} />}
+                </button>
+              )}
+            </div>
+
+            {/* Phone */}
+            <div className="flex items-start gap-2 min-w-0">
+              <span className="text-base leading-none mt-0.5">📞</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Phone</p>
+                <p className="text-xs text-gray-700 font-medium">{pandit?.phone || '—'}</p>
+              </div>
+              {pandit?.phone && (
+                <button onClick={() => copy(pandit.phone, 'phone')} className="shrink-0 text-gray-300 hover:text-indigo-500 transition-colors" title="Copy phone">
+                  {copied === 'phone' ? <CheckCircle size={11} className="text-green-500" /> : <Copy size={11} />}
+                </button>
+              )}
+            </div>
+
+            {/* Location */}
+            <div className="flex items-start gap-2 min-w-0">
+              <span className="text-base leading-none mt-0.5">📍</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Location</p>
+                <p className="text-xs text-gray-700 font-medium">
+                  {[pandit?.city, pandit?.state].filter(Boolean).join(', ') || pandit?.district || '—'}
+                </p>
+              </div>
+            </div>
+
+            {/* Experience */}
+            <div className="flex items-start gap-2 min-w-0">
+              <span className="text-base leading-none mt-0.5">🕉️</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Experience</p>
+                <p className="text-xs text-gray-700 font-medium">
+                  {pandit?.experience ? `${pandit.experience} Years` : '—'}
+                </p>
+              </div>
+            </div>
+
+            {/* Languages — full width row */}
+            {(pandit?.languages?.length > 0) && (
+              <div className="col-span-2 flex items-start gap-2 min-w-0">
+                <span className="text-base leading-none mt-0.5">🌐</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1">Languages</p>
+                  <div className="flex flex-wrap gap-1">
+                    {pandit.languages.map((l) => (
+                      <span key={l} className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-md font-medium">{l}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Quick action strip */}
+          <div className="flex flex-wrap gap-1.5 pt-3 border-t border-gray-100">
+            <button
+              onClick={() => copy(panditDisplayId, 'id2')}
+              className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              {copied === 'id2' ? <CheckCircle size={10} className="text-green-500" /> : <Copy size={10} />}
+              Copy Pandit ID
+            </button>
+            {pandit?.email && (
+              <button
+                onClick={() => copy(pandit.email, 'email2')}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition-colors"
+              >
+                {copied === 'email2' ? <CheckCircle size={10} className="text-green-500" /> : <Copy size={10} />}
+                Copy Email
+              </button>
+            )}
+            {pandit?.phone && (
+              <button
+                onClick={() => copy(pandit.phone, 'phone2')}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 px-2.5 py-1.5 rounded-lg transition-colors"
+              >
+                {copied === 'phone2' ? <CheckCircle size={10} className="text-green-500" /> : <Copy size={10} />}
+                Copy Phone
+              </button>
+            )}
+            <a
+              href="/admin?tab=pandits"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              <ExternalLink size={10} /> View Full Profile
+            </a>
+            <a
+              href="/admin?tab=referrals"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-100 px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              <ExternalLink size={10} /> All Referrals
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Referral Metadata Card ───────────────────────────────── */}
+      <div className={`rounded-2xl border p-4 ${cfg.bg} ${cfg.border}`}>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-bold text-gray-600 uppercase tracking-widest">Referral Details</p>
+          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${cfg.badge}`}>{cfg.label}</span>
+        </div>
+
+        {/* Date grid */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {[['Created', createdDate], ['Opened', openedDate], ['Booked', bookedDate]].map(([label, val]) => (
+            <div key={label} className="bg-white/70 rounded-xl px-3 py-2 border border-white/50">
+              <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">{label}</p>
+              <p className="text-xs text-gray-800 font-semibold mt-0.5">{val || '—'}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Token / Source / Expiry grid */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="bg-white/70 rounded-xl px-3 py-2 border border-white/50">
+            <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Source</p>
+            <p className="text-xs text-gray-800 font-semibold mt-0.5">Referral Link</p>
+          </div>
+          <div className="bg-white/70 rounded-xl px-3 py-2 border border-white/50">
+            <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Token</p>
+            <p className="text-xs font-mono text-gray-700 font-semibold mt-0.5 tracking-wider">{maskedToken}</p>
+          </div>
+          <div className="bg-white/70 rounded-xl px-3 py-2 border border-white/50">
+            <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Expires</p>
+            <p className="text-xs text-gray-800 font-semibold mt-0.5">{expiryDate || '—'}</p>
+          </div>
+        </div>
+
+        {/* Stage tracker (horizontal pipeline) */}
+        <div className="bg-white/70 rounded-xl px-3 py-3 mb-3 border border-white/50 overflow-x-auto">
+          <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2.5">Current Stage</p>
+          <div className="flex items-center gap-0 min-w-max">
+            {STAGE_KEYS.map((key, idx) => {
+              const isDone    = idx < currentStageIdx;
+              const isCurrent = idx === currentStageIdx;
+              const { label } = REFERRAL_STATUS_CFG[key];
+              return (
+                <React.Fragment key={key}>
+                  <div className="flex flex-col items-center gap-0.5">
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center border-2 transition-all ${
+                      isDone    ? 'bg-indigo-500 border-indigo-500' :
+                      isCurrent ? 'bg-amber-400 border-amber-400' :
+                                  'bg-white border-gray-300'
+                    }`}>
+                      {isDone    && <CheckCircle size={8} className="text-white" />}
+                      {isCurrent && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <p className={`text-[8px] font-medium whitespace-nowrap mt-0.5 ${
+                      isDone || isCurrent ? 'text-indigo-600' : 'text-gray-300'
+                    }`}>{label}</p>
+                  </div>
+                  {idx < STAGE_KEYS.length - 1 && (
+                    <div className={`w-4 h-px shrink-0 mb-3.5 ${isDone ? 'bg-indigo-400' : 'bg-gray-200'}`} />
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Admin: update stage */}
+        <div className="flex items-center gap-2 pt-3 border-t border-current/20">
+          <select
+            value={selectStatus}
+            onChange={(e) => setSelectStatus(e.target.value)}
+            className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-2 bg-white outline-none focus:border-indigo-400"
+          >
+            {STAGE_KEYS.map((val) => (
+              <option key={val} value={val}>{REFERRAL_STATUS_CFG[val].label}</option>
+            ))}
+          </select>
+          <button
+            onClick={handleUpdateStatus}
+            disabled={updating || selectStatus === localStatus}
+            className="text-xs font-semibold px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors whitespace-nowrap"
+          >
+            {updating ? 'Saving…' : 'Update Stage'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Mandatory Remark ────────────────────────────────────── */}
+      <div className={`rounded-2xl border p-4 ${hasRemark ? 'bg-cyan-50/60 border-cyan-100' : 'bg-amber-50/60 border-amber-100'}`}>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: hasRemark ? '#0891b2' : '#d97706' }}>
+            Pandit's Mandatory Remark
+          </p>
+          {referral.remarkSubmittedAt && (
+            <span className="text-[10px] text-gray-400">
+              {fmtDate(referral.remarkSubmittedAt)}
+            </span>
+          )}
+        </div>
+        {hasRemark ? (
+          <div className="bg-white rounded-xl border border-cyan-100 px-3 py-2.5">
+            <p className="text-sm text-gray-700 leading-relaxed italic">"{referral.remark}"</p>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 italic">
+            {localStatus === 'PENDING_REMARK'
+              ? 'Awaiting mandatory remark from the referring pandit.'
+              : 'No remark submitted yet.'}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OrderDetailsModal({ booking: b, onClose }) {
   const [payments,        setPayments]        = useState([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
@@ -1152,6 +2030,11 @@ function OrderDetailsModal({ booking: b, onClose }) {
               </div>
             )}
           </div>
+
+          {/* Section — Pandit Referral */}
+          {b.referral?.referralId && (
+            <ReferralDetailSection booking={b} />
+          )}
 
           {/* Section 3 — Kit (conditional) */}
           {hasKit && (
@@ -3441,14 +4324,15 @@ function _openInvoiceWindow(order, shipment) {
 }
 
 const SHIPMENT_STATUS_META = {
-  created:          { label: 'Shipment Created',  color: 'bg-blue-100 text-blue-700'    },
-  picked_up:        { label: 'Picked Up',          color: 'bg-indigo-100 text-indigo-700'},
-  in_transit:       { label: 'In Transit',         color: 'bg-purple-100 text-purple-700'},
-  out_for_delivery: { label: 'Out for Delivery',   color: 'bg-amber-100 text-amber-700'  },
-  delivered:        { label: 'Delivered',          color: 'bg-green-100 text-green-700'  },
-  failed_delivery:  { label: 'Failed Delivery',    color: 'bg-red-100 text-red-700'      },
-  cancelled:        { label: 'Cancelled',          color: 'bg-red-100 text-red-700'      },
-  returned:         { label: 'Returned',           color: 'bg-gray-100 text-gray-600'    },
+  pending_courier_selection: { label: 'Select Courier',   color: 'bg-yellow-100 text-yellow-700' },
+  created:          { label: 'AWB Generated',    color: 'bg-blue-100 text-blue-700'    },
+  picked_up:        { label: 'Picked Up',         color: 'bg-indigo-100 text-indigo-700'},
+  in_transit:       { label: 'In Transit',        color: 'bg-purple-100 text-purple-700'},
+  out_for_delivery: { label: 'Out for Delivery',  color: 'bg-amber-100 text-amber-700'  },
+  delivered:        { label: 'Delivered',         color: 'bg-green-100 text-green-700'  },
+  failed_delivery:  { label: 'Failed Delivery',   color: 'bg-red-100 text-red-700'      },
+  cancelled:        { label: 'Cancelled',         color: 'bg-red-100 text-red-700'      },
+  returned:         { label: 'Returned',          color: 'bg-gray-100 text-gray-600'    },
 };
 
 const TRACKING_STEPS = [
@@ -3480,8 +4364,19 @@ function ManageOrderModal({ order, onClose, onRefresh }) {
   const [shippingMethod,  setShippingMethod]  = useState(null);   // null | 'tekipost' | 'manual'
   const [manualType,      setManualType]      = useState(null);   // null | 'courier' | 'local_delivery'
 
-  // TekiPost
-  const [tekiposting,     setTekiposting]     = useState(false);
+  // TekiPost multi-step flow
+  // tpStep: null → parcel form → courier_select → (done — shipment.status=created)
+  const [tpStep,          setTpStep]          = useState(null);
+  const [tpParcel,        setTpParcel]        = useState({ weight: '', length: '', width: '', height: '', isCOD: false, codAmount: '' });
+  const [tpCouriers,      setTpCouriers]      = useState([]);
+  const [tpSelected,      setTpSelected]      = useState(null);    // selected courier object
+  const [tpPendingId,     setTpPendingId]     = useState(null);    // shipment._id from init
+  const [tpOrderId,       setTpOrderId]       = useState('');      // tekipostOrderId from init
+  const [tpIniting,       setTpIniting]       = useState(false);
+  const [tpConfirming,    setTpConfirming]    = useState(false);
+  const [tpCancelling,    setTpCancelling]    = useState(false);
+  const [tpMarkingRefund, setTpMarkingRefund] = useState(false);
+
   const [syncing,         setSyncing]         = useState(false);
 
   // Manual courier form
@@ -3531,6 +4426,14 @@ function ManageOrderModal({ order, onClose, onRefresh }) {
         if (sd.shipment) {
           setShippingMethod(sd.shipment.shippingMethod);
           setManualType(sd.shipment.manualType || null);
+          // Resume TekiPost courier selection if admin previously initiated but hadn't confirmed
+          if (sd.shipment.shippingMethod === 'tekipost' &&
+              sd.shipment.shipmentStatus === 'pending_courier_selection') {
+            setTpStep('courier_select');
+            setTpPendingId(sd.shipment._id);
+            setTpOrderId(sd.shipment.tekipostOrderId || '');
+            setTpCouriers(sd.shipment.availableCouriers || []);
+          }
         }
       } catch { toast.error('Could not load shipment data'); }
       finally { setShipmentLoading(false); }
@@ -3538,26 +4441,93 @@ function ManageOrderModal({ order, onClose, onRefresh }) {
     loadShipment();
   }, [order._id]);
 
-  const handleTekiPost = async () => {
-    if (!window.confirm('Create a TekiPost shipment for this order? This will auto-assign a courier and generate an AWB.')) return;
-    setTekiposting(true);
+  // Step 1: validate parcel info → call TekiPost Single Order API → show courier options
+  const handleTekiPostInit = async () => {
+    setTpIniting(true);
     try {
-      const { data } = await API.post(`/admin/orders/${order._id}/shipment/tekipost`);
+      const payload = {
+        weight:    tpParcel.weight   ? Number(tpParcel.weight)   : undefined,
+        length:    tpParcel.length   ? Number(tpParcel.length)   : undefined,
+        width:     tpParcel.width    ? Number(tpParcel.width)    : undefined,
+        height:    tpParcel.height   ? Number(tpParcel.height)   : undefined,
+        isCOD:     tpParcel.isCOD,
+        codAmount: tpParcel.isCOD && tpParcel.codAmount ? Number(tpParcel.codAmount) : undefined,
+      };
+      const { data } = await API.post(`/admin/orders/${order._id}/shipment/tekipost/init`, payload);
       setShipment(data.shipment);
-      toast.success(`Shipped via ${data.shipment.courierName}! AWB: ${data.shipment.awbNumber}`);
+
+      // TekiPost auto-selected courier — no courier selection step needed
+      if (data.autoConfirmed) {
+        toast.success(`Shipment created! AWB: ${data.awbNumber} · ${data.courier}`);
+        setTpStep(null);
+        return;
+      }
+
+      setTpPendingId(data.shipment._id);
+      setTpOrderId(data.tekipostOrderId || '');
+      setTpCouriers(data.couriers || []);
+      setTpStep('courier_select');
+      if (data.resumed) toast('Resumed previous courier selection', { icon: '↩️' });
+    } catch (err) {
+      const errData = err?.response?.data;
+      toast.error(errData?.message || 'Failed to get courier options', { duration: 6000 });
+      const tpErrors = errData?.tekipostResponse?.errors;
+      if (Array.isArray(tpErrors) && tpErrors.length) {
+        toast.error(tpErrors.map((e) => `${e.field ? e.field + ': ' : ''}${e.message}`).join('\n'), { duration: 8000 });
+      }
+    }
+    finally { setTpIniting(false); }
+  };
+
+  // Step 2: confirm selected courier → generate AWB
+  const handleTekiPostConfirm = async () => {
+    if (!tpSelected) { toast.error('Select a courier to continue'); return; }
+    setTpConfirming(true);
+    try {
+      const { data } = await API.post(`/admin/orders/${order._id}/shipment/tekipost/confirm`, {
+        logisticsId:  tpSelected.logisticsId,
+        courierCode:  tpSelected.courierCode,
+        courierName:  tpSelected.courierName,
+        freightCharge: tpSelected.freightCharge,
+      });
+      setShipment(data.shipment);
+      setTpStep(null);
+      toast.success(`AWB ${data.shipment.awbNumber} generated via ${data.shipment.courierName}!`);
       onRefresh();
     } catch (err) {
-      const errData  = err?.response?.data;
-      const mainMsg  = errData?.message || 'TekiPost shipment failed';
-      const tpErrors = errData?.tekipostResponse?.errors;
-      const detail   = Array.isArray(tpErrors) && tpErrors.length
-        ? tpErrors.map((e) => `${e.field ? e.field + ': ' : ''}${e.message}`).join('\n')
-        : null;
-      // Show primary message immediately; follow with validation details if any
-      toast.error(mainMsg, { duration: 6000 });
-      if (detail) toast.error(`TekiPost details:\n${detail}`, { duration: 8000 });
+      const errData = err?.response?.data;
+      toast.error(errData?.message || 'Courier confirmation failed', { duration: 6000 });
     }
-    finally { setTekiposting(false); }
+    finally { setTpConfirming(false); }
+  };
+
+  // Cancel AWB (after AWB generation, before pickup)
+  const handleTekiPostCancelAWB = async () => {
+    if (!window.confirm(`Cancel AWB ${shipment?.awbNumber}? TekiPost will attempt to refund the freight charges to the wallet.`)) return;
+    setTpCancelling(true);
+    try {
+      const reason = window.prompt('Cancellation reason (optional):') || '';
+      const { data } = await API.post(`/admin/orders/${order._id}/shipment/tekipost/cancel-awb`, { reason });
+      setShipment(data.shipment);
+      toast.success(`AWB cancelled. Wallet refund: ₹${data.refundAmount || 0}`);
+      onRefresh();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'AWB cancellation failed', { duration: 6000 });
+    }
+    finally { setTpCancelling(false); }
+  };
+
+  // Admin manually marks wallet refund as completed
+  const handleMarkWalletRefunded = async () => {
+    setTpMarkingRefund(true);
+    try {
+      const { data } = await API.patch(`/admin/orders/${order._id}/shipment/tekipost/wallet-refund`);
+      setShipment(data.shipment);
+      toast.success('Wallet refund marked as completed');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed');
+    }
+    finally { setTpMarkingRefund(false); }
   };
 
   const handleManualSave = async () => {
@@ -3669,9 +4639,11 @@ function ManageOrderModal({ order, onClose, onRefresh }) {
   const addr          = order.shippingAddress || {};
   const curStatus     = localOrder.status || order.status;
   const nextStatuses  = STATUS_TRANSITIONS[curStatus] || [];
-  const isSaved       = !!shipment;
   const isTekiPost    = shipment?.shippingMethod === 'tekipost';
   const isManual      = shipment?.shippingMethod === 'manual';
+  const isPendingCourierSelect = isTekiPost && shipment?.shipmentStatus === 'pending_courier_selection';
+  // "isSaved" means a final shipment exists (AWB assigned or manual created) — not just a pending-selection placeholder
+  const isSaved       = !!shipment && !isPendingCourierSelect;
   const showOTPPanel  = ['out_for_delivery', 'shipped'].includes(curStatus) && !otpVerified;
   const showInvoiceBtn = ['paid', 'confirmed', 'packed', 'shipped', 'out_for_delivery', 'delivered'].includes(curStatus);
 
@@ -3785,6 +4757,12 @@ function ManageOrderModal({ order, onClose, onRefresh }) {
                     <p className="font-bold text-indigo-900 font-mono">{shipment.awbNumber}</p>
                   </div>
                 )}
+                {shipment.freightCharges > 0 && (
+                  <div>
+                    <p className="text-indigo-400 mb-0.5">Freight Charges</p>
+                    <p className="font-bold text-indigo-900">₹{Number(shipment.freightCharges).toLocaleString('en-IN')}</p>
+                  </div>
+                )}
                 {shipment.estimatedDelivery && (
                   <div>
                     <p className="text-indigo-400 mb-0.5">Estimated Delivery</p>
@@ -3832,7 +4810,7 @@ function ManageOrderModal({ order, onClose, onRefresh }) {
 
               {/* Action buttons */}
               <div className="flex flex-wrap gap-2">
-                {isTekiPost && (
+                {isTekiPost && !shipment.isCancelled && (
                   <button onClick={handleSyncStatus} disabled={syncing}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition-colors disabled:opacity-50">
                     <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
@@ -3851,7 +4829,35 @@ function ManageOrderModal({ order, onClose, onRefresh }) {
                     <ExternalLink size={12} /> View Tracking
                   </a>
                 )}
+                {/* Cancel AWB — only before pickup */}
+                {isTekiPost && shipment.awbNumber && !shipment.isCancelled &&
+                 ['created'].includes(shipment.shipmentStatus) && (
+                  <button onClick={handleTekiPostCancelAWB} disabled={tpCancelling}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
+                    <X size={12} /> {tpCancelling ? 'Cancelling...' : 'Cancel AWB'}
+                  </button>
+                )}
               </div>
+
+              {/* Wallet refund status (after AWB cancel) */}
+              {shipment.isCancelled && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs space-y-1">
+                  <p className="font-bold text-red-700">AWB Cancelled {shipment.cancelledAt ? `— ${new Date(shipment.cancelledAt).toLocaleDateString('en-IN')}` : ''}</p>
+                  {shipment.cancellationReason && <p className="text-red-600">{shipment.cancellationReason}</p>}
+                  {shipment.walletRefundStatus === 'pending' && (
+                    <div className="flex items-center justify-between">
+                      <p className="text-amber-700 font-semibold">Wallet refund pending: ₹{shipment.walletRefundAmount || '—'}</p>
+                      <button onClick={handleMarkWalletRefunded} disabled={tpMarkingRefund}
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors disabled:opacity-50">
+                        {tpMarkingRefund ? '...' : 'Mark Refunded'}
+                      </button>
+                    </div>
+                  )}
+                  {shipment.walletRefundStatus === 'refunded' && (
+                    <p className="text-green-700 font-semibold">Wallet refund completed: ₹{shipment.walletRefundAmount}</p>
+                  )}
+                </div>
+              )}
 
               {/* Tracking Timeline */}
               <div>
@@ -3913,30 +4919,152 @@ function ManageOrderModal({ order, onClose, onRefresh }) {
               )}
             </div>
           ) : (
-            /* ─ No shipment yet — show selection UI ─ */
+            /* ─ No final shipment yet — show selection UI ─ */
             <div className="mb-4">
-              {/* Method selection */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                {[
-                  { value: 'tekipost', label: 'TekiPost', icon: '🚀', desc: 'Auto-assign courier, generate AWB & label' },
-                  { value: 'manual',   label: 'Manual',   icon: '✋', desc: 'Enter courier details manually'             },
-                ].map(opt => (
-                  <button key={opt.value} onClick={() => { setShippingMethod(opt.value); setManualType(null); }}
-                    className={`p-4 rounded-2xl border-2 text-left transition-all ${shippingMethod === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300 bg-gray-50'}`}>
-                    <p className="text-lg mb-1">{opt.icon}</p>
-                    <p className={`text-sm font-bold ${shippingMethod === opt.value ? 'text-indigo-700' : 'text-gray-700'}`}>{opt.label}</p>
-                    <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">{opt.desc}</p>
-                  </button>
-                ))}
-              </div>
+              {/* Method selection — hidden if admin already initiated a TekiPost order (resuming courier selection) */}
+              {!isPendingCourierSelect && (
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  {[
+                    { value: 'tekipost', label: 'TekiPost', icon: '🚀', desc: '2-step: choose your courier, then generate AWB' },
+                    { value: 'manual',   label: 'Manual',   icon: '✋', desc: 'Enter courier details manually'                  },
+                  ].map(opt => (
+                    <button key={opt.value} onClick={() => { setShippingMethod(opt.value); setManualType(null); setTpStep(null); }}
+                      className={`p-4 rounded-2xl border-2 text-left transition-all ${shippingMethod === opt.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300 bg-gray-50'}`}>
+                      <p className="text-lg mb-1">{opt.icon}</p>
+                      <p className={`text-sm font-bold ${shippingMethod === opt.value ? 'text-indigo-700' : 'text-gray-700'}`}>{opt.label}</p>
+                      <p className="text-[10px] text-gray-500 mt-0.5 leading-tight">{opt.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
 
-              {/* TekiPost action */}
+              {/* TekiPost multi-step flow */}
               {shippingMethod === 'tekipost' && (
-                <button onClick={handleTekiPost} disabled={tekiposting}
-                  className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                  style={{ background: '#1B1F3B' }}>
-                  {tekiposting ? <><Loader size={14} className="animate-spin" /> Creating Shipment...</> : <><Truck size={14} /> Generate TekiPost Shipment</>}
-                </button>
+                <div className="space-y-4">
+                  {/* Step 0: initial prompt OR parcel form */}
+                  {tpStep === null && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-indigo-700 font-semibold bg-indigo-50 rounded-xl p-3 border border-indigo-100">
+                        Fill in parcel details and TekiPost will show available couriers for you to choose from.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Weight (kg) *</label>
+                          <input type="number" step="0.1" min="0.1" className="input text-sm"
+                            placeholder="e.g. 1.5"
+                            value={tpParcel.weight}
+                            onChange={e => setTpParcel(p => ({ ...p, weight: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Length (cm)</label>
+                          <input type="number" min="1" className="input text-sm"
+                            placeholder="20"
+                            value={tpParcel.length}
+                            onChange={e => setTpParcel(p => ({ ...p, length: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Width (cm)</label>
+                          <input type="number" min="1" className="input text-sm"
+                            placeholder="15"
+                            value={tpParcel.width}
+                            onChange={e => setTpParcel(p => ({ ...p, width: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Height (cm)</label>
+                          <input type="number" min="1" className="input text-sm"
+                            placeholder="10"
+                            value={tpParcel.height}
+                            onChange={e => setTpParcel(p => ({ ...p, height: e.target.value }))} />
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" checked={tpParcel.isCOD}
+                          onChange={e => setTpParcel(p => ({ ...p, isCOD: e.target.checked }))}
+                          className="w-4 h-4 rounded" />
+                        <span className="text-xs font-semibold text-gray-600">Cash on Delivery (COD)</span>
+                      </label>
+                      {tpParcel.isCOD && (
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">COD Amount (₹)</label>
+                          <input type="number" min="0" className="input text-sm"
+                            placeholder={`Order total: ₹${order.totalAmount}`}
+                            value={tpParcel.codAmount}
+                            onChange={e => setTpParcel(p => ({ ...p, codAmount: e.target.value }))} />
+                        </div>
+                      )}
+                      <button onClick={handleTekiPostInit} disabled={tpIniting || !tpParcel.weight}
+                        className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                        style={{ background: '#1B1F3B' }}>
+                        {tpIniting
+                          ? <><Loader size={14} className="animate-spin" /> Fetching Couriers...</>
+                          : <><Truck size={14} /> Get Available Couriers</>}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Step 1: courier selection */}
+                  {tpStep === 'courier_select' && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold text-gray-700">Select a Courier</p>
+                        <button onClick={() => { setTpStep(null); setTpCouriers([]); setTpSelected(null); }}
+                          className="text-[10px] text-gray-400 hover:text-gray-600 underline">
+                          ← Change Parcel Info
+                        </button>
+                      </div>
+                      {tpCouriers.length === 0 ? (
+                        <div className="text-center py-4 text-xs text-red-600 bg-red-50 rounded-xl border border-red-100">
+                          No couriers available for this route. Check TekiPost Logistics Settings.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                          {tpCouriers.map((c) => (
+                            <button key={c.logisticsId || c.courierCode}
+                              onClick={() => setTpSelected(c)}
+                              className={`w-full p-3 rounded-xl border-2 text-left transition-all ${tpSelected?.logisticsId === c.logisticsId ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-200 bg-white'}`}>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <p className="text-xs font-bold text-gray-800">{c.courierName}</p>
+                                    {c.isRecommended && (
+                                      <span className="text-[9px] font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Recommended</span>
+                                    )}
+                                    {c.isCOD && (
+                                      <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">COD</span>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-gray-500 mt-0.5">
+                                    {c.serviceType}{c.estimatedDays ? ` · ${c.estimatedDays} day${c.estimatedDays !== 1 ? 's' : ''}` : ''}
+                                    {c.pickupDate ? ` · Pickup: ${new Date(c.pickupDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}
+                                  </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <p className="text-sm font-bold text-indigo-700">₹{Number(c.freightCharge || 0).toLocaleString('en-IN')}</p>
+                                  {c.rating && <p className="text-[9px] text-amber-600">★ {c.rating}</p>}
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {tpSelected && (
+                        <div className="bg-indigo-50 rounded-xl p-3 text-xs border border-indigo-100">
+                          <p className="text-indigo-600 font-semibold">Selected: <strong className="text-indigo-900">{tpSelected.courierName}</strong></p>
+                          <p className="text-indigo-500 mt-0.5">Freight: ₹{Number(tpSelected.freightCharge || 0).toLocaleString('en-IN')}
+                            {tpSelected.estimatedDays ? ` · Est. ${tpSelected.estimatedDays} days` : ''}</p>
+                        </div>
+                      )}
+                      <button onClick={handleTekiPostConfirm}
+                        disabled={!tpSelected || tpConfirming}
+                        className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                        style={{ background: '#1B1F3B' }}>
+                        {tpConfirming
+                          ? <><Loader size={14} className="animate-spin" /> Generating AWB...</>
+                          : <><CheckCircle size={14} /> Confirm & Generate AWB</>}
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Manual sub-selection */}
@@ -5729,68 +6857,132 @@ function LivestreamsTab() {
 
 // ─── Referral Stats Tab ────────────────────────────────────────
 function ReferralStatsTab() {
-  const [data, setData]   = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [userReferrals,   setUserReferrals]   = useState(null);
+  const [panditReferrals, setPanditReferrals] = useState(null);
+  const [loading,         setLoading]         = useState(true);
+  const [view,            setView]            = useState('pandit'); // 'pandit' | 'user'
 
   useEffect(() => {
-    API.get('/referral/admin/stats')
-      .then(({ data: d }) => setData(d.stats))
-      .catch(() => toast.error('Could not load referral stats'))
-      .finally(() => setLoading(false));
+    Promise.all([
+      API.get('/referral/admin/stats').catch(() => ({ data: { stats: null } })),
+      API.get('/referral/analytics').catch(() => ({ data: { analytics: null } })),
+    ]).then(([userRes, panditRes]) => {
+      setUserReferrals(userRes.data.stats);
+      setPanditReferrals(panditRes.data.stats);
+    }).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingSpinner />;
 
+  const pr = panditReferrals;
+
   return (
     <div className="animate-fade-in space-y-6">
-      <h2 className="text-xl font-bold text-gray-800">Referral Statistics</h2>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 bg-saffron-50 rounded-xl flex items-center justify-center">
-            <Users size={22} className="text-saffron-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-800">{data?.totalReferred ?? 0}</p>
-            <p className="text-sm text-gray-500">Total Users Referred</p>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
-            <Gift size={22} className="text-green-600" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-800">{data?.usersWithCode ?? 0}</p>
-            <p className="text-sm text-gray-500">Users with Referral Code</p>
-          </div>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-xl font-bold text-gray-800">Referral Analytics</h2>
+        <div className="flex rounded-xl overflow-hidden border border-gray-200">
+          <button onClick={() => setView('pandit')} className={`px-4 py-2 text-sm font-medium transition-colors ${view === 'pandit' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>🤝 Pandit Referrals</button>
+          <button onClick={() => setView('user')}   className={`px-4 py-2 text-sm font-medium transition-colors ${view === 'user'   ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>👥 User Referrals</button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-700">Top Referrers</h3>
-        </div>
-        <div className="divide-y divide-gray-50">
-          {data?.topReferrers?.length === 0 && (
-            <p className="text-center py-10 text-gray-400">No referrals yet.</p>
-          )}
-          {data?.topReferrers?.map((u, i) => (
-            <div key={u._id} className="px-5 py-3 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i < 3 ? 'bg-saffron-100 text-saffron-700' : 'bg-gray-100 text-gray-500'}`}>{i + 1}</span>
+      {view === 'pandit' && pr && (
+        <>
+          {/* Analytics cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {[
+              { label: 'Total Referrals Created',  value: pr.totalReferrals    ?? 0,  icon: BookOpen,    bg: 'bg-indigo-50', ic: 'text-indigo-600' },
+              { label: 'Resulted in Bookings',     value: pr.bookedReferrals   ?? 0,  icon: CheckCircle, bg: 'bg-teal-50',   ic: 'text-teal-600'   },
+              { label: 'Completed Referrals',      value: pr.completedReferrals?? 0,  icon: CheckCircle, bg: 'bg-green-50',  ic: 'text-green-600'  },
+              { label: 'Conversion Rate',          value: `${pr.conversionRate ?? 0}%`,icon: Percent,    bg: 'bg-amber-50',  ic: 'text-amber-600'  },
+              { label: 'Remark Pending',           value: pr.remarkPending     ?? 0,  icon: BookOpen,    bg: 'bg-red-50',    ic: 'text-red-600'    },
+            ].map(({ label, value, icon: Icon, bg, ic }) => (
+              <div key={label} className={`${bg} rounded-2xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm`}>
+                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shrink-0">
+                  <Icon size={18} className={ic} />
+                </div>
                 <div>
-                  <p className="font-semibold text-gray-800 text-sm">{u.name}</p>
-                  <p className="text-xs text-gray-400">{u.phone} {u.email ? `· ${u.email}` : ''}</p>
+                  <p className="text-xl font-bold text-gray-800">{value}</p>
+                  <p className="text-xs text-gray-500">{label}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-4 shrink-0">
-                <span className="text-xs font-mono bg-saffron-50 text-saffron-700 px-2 py-0.5 rounded-lg">{u.referralCode}</span>
-                <span className="font-bold text-saffron-600">{u.referralCount} refs</span>
+            ))}
+          </div>
+
+          {/* Top referring pandits */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="font-semibold text-gray-700">Top Referring Pandits</h3>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {!pr.topReferrers?.length && (
+                <p className="text-center py-10 text-gray-400">No pandit referrals yet.</p>
+              )}
+              {pr.topReferrers?.map((p, i) => (
+                <div key={String(p._id)} className="px-5 py-3 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${i < 3 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>{i + 1}</span>
+                    <div>
+                      <p className="font-semibold text-gray-800 text-sm">{p.panditName || '—'}</p>
+                      <p className="text-xs text-gray-400">{p.totalCompleted} completed · {p.totalCreated} created</p>
+                    </div>
+                  </div>
+                  <span className="font-bold text-indigo-600 shrink-0">{p.totalBooked} booked</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {view === 'user' && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4 shadow-sm">
+              <div className="w-12 h-12 bg-saffron-50 rounded-xl flex items-center justify-center">
+                <Users size={22} className="text-saffron-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-800">{userReferrals?.totalReferred ?? 0}</p>
+                <p className="text-sm text-gray-500">Total Users Referred</p>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-center gap-4 shadow-sm">
+              <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center">
+                <Gift size={22} className="text-green-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-800">{userReferrals?.usersWithCode ?? 0}</p>
+                <p className="text-sm text-gray-500">Users with Referral Code</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h3 className="font-semibold text-gray-700">Top User Referrers</h3>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {!userReferrals?.topReferrers?.length && <p className="text-center py-10 text-gray-400">No referrals yet.</p>}
+              {userReferrals?.topReferrers?.map((u, i) => (
+                <div key={u._id} className="px-5 py-3 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i < 3 ? 'bg-saffron-100 text-saffron-700' : 'bg-gray-100 text-gray-500'}`}>{i + 1}</span>
+                    <div>
+                      <p className="font-semibold text-gray-800 text-sm">{u.name}</p>
+                      <p className="text-xs text-gray-400">{u.phone} {u.email ? `· ${u.email}` : ''}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0">
+                    <span className="text-xs font-mono bg-saffron-50 text-saffron-700 px-2 py-0.5 rounded-lg">{u.referralCode}</span>
+                    <span className="font-bold text-saffron-600">{u.referralCount} refs</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -7581,6 +8773,679 @@ function InvoicesTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Notification Engine Management Tab ──────────────────────────────────────
+
+const CHANNEL_LABELS = { whatsapp: 'WhatsApp', email: 'Email', inapp: 'In-App' };
+const RECIPIENT_LABELS = { user: 'Customer', pandit: 'Pandit', admin: 'Admin', referral_pandit: 'Referral Pandit' };
+const CHANNEL_COLORS = {
+  whatsapp: { bg: '#dcfce7', text: '#166534' },
+  email:    { bg: '#dbeafe', text: '#1e40af' },
+  inapp:    { bg: '#ede9fe', text: '#6d28d9' },
+};
+const LOG_STATUS_COLORS = {
+  sent: '#166534', delivered: '#059669', failed: '#dc2626', pending: '#b45309', skipped: '#6b7280',
+};
+
+function NotificationsTab() {
+  const [view, setView] = useState('mappings');
+  const [events, setEvents] = useState([]);
+  const [mappings, setMappings] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [logsMeta, setLogsMeta] = useState({ total: 0, page: 1, pages: 1 });
+  const [waTemplates, setWaTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [filterEvent, setFilterEvent] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [logFilterEvent, setLogFilterEvent] = useState('');
+  const [logFilterStatus, setLogFilterStatus] = useState('');
+  const [logPage, setLogPage] = useState(1);
+  const [modal, setModal] = useState(null);
+  const [testModal, setTestModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [expandedCategory, setExpandedCategory] = useState(null);
+
+  useEffect(() => { loadData(); }, []);
+  useEffect(() => { if (view === 'logs') loadLogs(); }, [view, logPage, logFilterEvent, logFilterStatus]);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [evRes, mapRes, tmplRes] = await Promise.all([
+        API.get('/admin/notifications/events'),
+        API.get('/admin/notifications/mappings'),
+        API.get('/admin/notifications/whatsapp-templates'),
+      ]);
+      setEvents(evRes.data.events || []);
+      setMappings(mapRes.data.mappings || []);
+      setWaTemplates(tmplRes.data.templates || []);
+    } catch { toast.error('Failed to load notification data'); }
+    setLoading(false);
+  }
+
+  async function loadLogs() {
+    setLogsLoading(true);
+    try {
+      const params = { page: logPage, limit: 20 };
+      if (logFilterEvent)  params.event  = logFilterEvent;
+      if (logFilterStatus) params.status = logFilterStatus;
+      const res = await API.get('/admin/notifications/logs', { params });
+      setLogs(res.data.logs || []);
+      setLogsMeta(res.data.meta || { total: 0, page: 1, pages: 1 });
+    } catch { toast.error('Failed to load logs'); }
+    setLogsLoading(false);
+  }
+
+  async function saveMapping(form) {
+    setSaving(true);
+    try {
+      if (modal.mode === 'create') {
+        await API.post('/admin/notifications/mappings', form);
+        toast.success('Mapping created');
+      } else {
+        await API.patch(`/admin/notifications/mappings/${modal.mapping._id}`, form);
+        toast.success('Mapping updated');
+      }
+      setModal(null);
+      await loadData();
+    } catch (e) { toast.error(e.response?.data?.message || 'Save failed'); }
+    setSaving(false);
+  }
+
+  async function toggleMapping(id, enabled) {
+    try {
+      await API.patch(`/admin/notifications/mappings/${id}/toggle`, { enabled: !enabled });
+      setMappings(m => m.map(x => x._id === id ? { ...x, enabled: !enabled } : x));
+    } catch { toast.error('Toggle failed'); }
+  }
+
+  async function deleteMapping(id) {
+    if (!window.confirm('Delete this mapping?')) return;
+    try {
+      await API.delete(`/admin/notifications/mappings/${id}`);
+      setMappings(m => m.filter(x => x._id !== id));
+      toast.success('Deleted');
+    } catch { toast.error('Delete failed'); }
+  }
+
+  async function testMapping(form) {
+    setTesting(true);
+    try {
+      await API.post('/admin/notifications/test', form);
+      toast.success('Test notification sent — check the log');
+    } catch (e) { toast.error(e.response?.data?.message || 'Test failed'); }
+    setTesting(false);
+  }
+
+  const categories = [...new Set(events.map(e => e.category))].sort();
+  const filteredEvents = events.filter(e =>
+    (!filterEvent || (e.name || '').toLowerCase().includes(filterEvent.toLowerCase()) || (e.label || '').toLowerCase().includes(filterEvent.toLowerCase())) &&
+    (!filterCategory || e.category === filterCategory)
+  );
+  const groupedByCategory = categories.reduce((acc, cat) => {
+    acc[cat] = filteredEvents.filter(e => e.category === cat);
+    return acc;
+  }, {});
+  const getMappingsForEvent = (eventName) => mappings.filter(m => m.eventName === eventName);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-24">
+      <Loader className="animate-spin w-8 h-8" style={{ color: 'var(--t-primary)' }} />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold" style={{ color: 'var(--t-text)' }}>Notification Engine</h2>
+          <p className="text-sm mt-1" style={{ color: 'var(--t-muted)' }}>
+            Configure channels per event. Changes take effect immediately — no deploy needed.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {[{ key: 'mappings', label: 'Mappings', Icon: Zap }, { key: 'logs', label: 'Logs', Icon: Activity }].map(({ key, label, Icon }) => (
+            <button key={key} onClick={() => setView(key)}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${view === key ? 'text-white' : 'border'}`}
+              style={view === key ? { background: 'var(--t-primary)' } : { borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>
+              <Icon className="w-4 h-4 inline mr-1" />{label}
+            </button>
+          ))}
+          <button onClick={loadData} className="px-3 py-2 rounded-xl border text-sm"
+            style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Events',      value: events.length,                           color: '#1B1F3B', Icon: Zap    },
+          { label: 'Active Mappings',   value: mappings.filter(m => m.enabled).length,  color: '#059669', Icon: Bell   },
+          { label: 'Disabled Mappings', value: mappings.filter(m => !m.enabled).length, color: '#dc2626', Icon: BellOff},
+          { label: 'Total Mappings',    value: mappings.length,                          color: '#7c3aed', Icon: Settings },
+        ].map(({ label, value, color, Icon }) => (
+          <div key={label} className="rounded-2xl border p-4"
+            style={{ background: 'var(--t-card)', borderColor: 'var(--t-border)' }}>
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl p-2" style={{ background: color + '15' }}>
+                <Icon className="w-5 h-5" style={{ color }} />
+              </div>
+              <div>
+                <div className="text-2xl font-bold" style={{ color: 'var(--t-text)' }}>{value}</div>
+                <div className="text-xs" style={{ color: 'var(--t-muted)' }}>{label}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {view === 'mappings' ? (
+        <>
+          <div className="flex flex-wrap gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--t-muted)' }} />
+              <input placeholder="Search events…" value={filterEvent} onChange={e => setFilterEvent(e.target.value)}
+                className="pl-9 pr-4 py-2 rounded-xl border text-sm w-56"
+                style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+            </div>
+            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+              className="px-3 py-2 rounded-xl border text-sm"
+              style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}>
+              <option value="">All Categories</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div className="space-y-3">
+            {categories.filter(cat => groupedByCategory[cat]?.length > 0).map(cat => (
+              <div key={cat} className="rounded-2xl border overflow-hidden"
+                style={{ background: 'var(--t-card)', borderColor: 'var(--t-border)' }}>
+                <button onClick={() => setExpandedCategory(expandedCategory === cat ? null : cat)}
+                  className="w-full flex items-center justify-between px-5 py-4 text-left hover:opacity-80 transition-opacity">
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-sm" style={{ color: 'var(--t-text)' }}>{cat}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      style={{ background: 'var(--t-primary)15', color: 'var(--t-primary)' }}>
+                      {groupedByCategory[cat].length} events
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#dcfce7', color: '#166534' }}>
+                      {groupedByCategory[cat].reduce((n, e) => n + getMappingsForEvent(e.name).filter(m => m.enabled).length, 0)} active
+                    </span>
+                  </div>
+                  {expandedCategory === cat
+                    ? <ChevronUp className="w-4 h-4" style={{ color: 'var(--t-muted)' }} />
+                    : <ChevronDown className="w-4 h-4" style={{ color: 'var(--t-muted)' }} />}
+                </button>
+                {expandedCategory === cat && (
+                  <div className="divide-y" style={{ borderColor: 'var(--t-border)' }}>
+                    {groupedByCategory[cat].map(event => (
+                      <NotifEventRow key={event.name} event={event}
+                        mappings={getMappingsForEvent(event.name)}
+                        onAdd={() => setModal({ mode: 'create', mapping: { eventName: event.name, channel: 'whatsapp', recipientType: 'user', enabled: true, priority: 0 } })}
+                        onEdit={m => setModal({ mode: 'edit', mapping: m })}
+                        onToggle={m => toggleMapping(m._id, m.enabled)}
+                        onDelete={m => deleteMapping(m._id)}
+                        onTest={m => setTestModal(m)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <select value={logFilterEvent} onChange={e => { setLogFilterEvent(e.target.value); setLogPage(1); }}
+              className="px-3 py-2 rounded-xl border text-sm"
+              style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}>
+              <option value="">All Events</option>
+              {events.map(e => <option key={e.name} value={e.name}>{e.label}</option>)}
+            </select>
+            <select value={logFilterStatus} onChange={e => { setLogFilterStatus(e.target.value); setLogPage(1); }}
+              className="px-3 py-2 rounded-xl border text-sm"
+              style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}>
+              <option value="">All Statuses</option>
+              {['sent', 'delivered', 'failed', 'pending', 'skipped'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          {logsLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader className="animate-spin w-6 h-6" style={{ color: 'var(--t-primary)' }} />
+            </div>
+          ) : logs.length === 0 ? (
+            <div className="text-center py-16 rounded-2xl border" style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>
+              <Activity className="w-10 h-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No logs found</p>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--t-border)' }}>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ background: 'var(--t-bg)', color: 'var(--t-muted)', borderBottom: '1px solid var(--t-border)' }}>
+                      {['Event', 'Channel', 'Recipient', 'Template', 'Status', 'Retries', 'Time'].map(h => (
+                        <th key={h} className="text-left px-4 py-3 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map(log => (
+                      <tr key={log._id} className="border-t hover:bg-black/5 transition-colors"
+                        style={{ borderColor: 'var(--t-border)', background: 'var(--t-card)' }}>
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-xs px-1.5 py-0.5 rounded"
+                            style={{ background: 'var(--t-bg)', color: 'var(--t-muted)' }}>
+                            {log.event || log.type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                            style={{ background: (CHANNEL_COLORS[log.type] || CHANNEL_COLORS.inapp).bg, color: (CHANNEL_COLORS[log.type] || CHANNEL_COLORS.inapp).text }}>
+                            {CHANNEL_LABELS[log.type] || log.type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs" style={{ color: 'var(--t-muted)' }}>
+                          {log.recipientName || log.recipientEmail || log.recipientPhone || '—'}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs" style={{ color: 'var(--t-muted)' }}>
+                          {log.templateName || '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs font-semibold" style={{ color: LOG_STATUS_COLORS[log.status] || '#6b7280' }}>
+                            {log.status}
+                          </span>
+                          {log.error && (
+                            <div className="text-xs mt-0.5 max-w-xs truncate" style={{ color: '#dc2626' }} title={log.error}>
+                              {log.error}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-center" style={{ color: 'var(--t-muted)' }}>{log.retryCount || 0}</td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: 'var(--t-muted)' }}>
+                          {new Date(log.createdAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {logsMeta.pages > 1 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: 'var(--t-muted)' }}>
+                    {logsMeta.total} logs · Page {logsMeta.page} of {logsMeta.pages}
+                  </span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={logPage === 1}
+                      className="px-3 py-1.5 rounded-lg border text-sm disabled:opacity-40"
+                      style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>Prev</button>
+                    <button onClick={() => setLogPage(p => Math.min(logsMeta.pages, p + 1))} disabled={logPage === logsMeta.pages}
+                      className="px-3 py-1.5 rounded-lg border text-sm disabled:opacity-40"
+                      style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>Next</button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {modal && (
+        <NotifMappingModal mode={modal.mode} initial={modal.mapping} waTemplates={waTemplates}
+          onSave={saveMapping} onClose={() => setModal(null)} saving={saving} />
+      )}
+      {testModal && (
+        <NotifTestModal mapping={testModal} onTest={testMapping} onClose={() => setTestModal(null)} testing={testing} />
+      )}
+    </div>
+  );
+}
+
+function NotifEventRow({ event, mappings, onAdd, onEdit, onToggle, onDelete, onTest }) {
+  return (
+    <div className="px-5 py-4">
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div>
+          <span className="font-medium text-sm" style={{ color: 'var(--t-text)' }}>{event.label}</span>
+          <code className="text-xs mt-0.5 block" style={{ color: 'var(--t-muted)' }}>{event.name}</code>
+        </div>
+        <button onClick={onAdd}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shrink-0"
+          style={{ background: 'var(--t-primary)' }}>
+          <Plus className="w-3 h-3" />Add
+        </button>
+      </div>
+      {mappings.length === 0 ? (
+        <p className="text-xs italic" style={{ color: 'var(--t-muted)' }}>No mappings — this event fires silently.</p>
+      ) : (
+        <div className="space-y-2">
+          {mappings.map(m => (
+            <div key={m._id} className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl"
+              style={{ background: 'var(--t-bg)', opacity: m.enabled ? 1 : 0.55 }}>
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                style={{ background: (CHANNEL_COLORS[m.channel] || CHANNEL_COLORS.inapp).bg, color: (CHANNEL_COLORS[m.channel] || CHANNEL_COLORS.inapp).text }}>
+                {CHANNEL_LABELS[m.channel] || m.channel}
+              </span>
+              <span className="text-xs px-2 py-0.5 rounded-full border"
+                style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>
+                {RECIPIENT_LABELS[m.recipientType] || m.recipientType}
+              </span>
+              {(m.whatsappTemplateName || m.emailTemplateName) && (
+                <span className="text-xs font-mono" style={{ color: 'var(--t-muted)' }}>
+                  {m.whatsappTemplateName || m.emailTemplateName}
+                </span>
+              )}
+              {m.label && <span className="text-xs" style={{ color: 'var(--t-muted)' }}>{m.label}</span>}
+              <div className="ml-auto flex items-center gap-1">
+                <button onClick={() => onTest(m)} title="Test send" className="p-1.5 rounded-lg hover:bg-black/5 transition-colors">
+                  <Send className="w-3.5 h-3.5" style={{ color: '#7c3aed' }} />
+                </button>
+                <button onClick={() => onEdit(m)} title="Edit" className="p-1.5 rounded-lg hover:bg-black/5 transition-colors">
+                  <Edit3 className="w-3.5 h-3.5" style={{ color: 'var(--t-muted)' }} />
+                </button>
+                <button onClick={() => onToggle(m)} title={m.enabled ? 'Disable' : 'Enable'}
+                  className="p-1.5 rounded-lg hover:bg-black/5 transition-colors">
+                  {m.enabled
+                    ? <ToggleRight className="w-4 h-4" style={{ color: '#059669' }} />
+                    : <ToggleLeft  className="w-4 h-4" style={{ color: '#6b7280' }} />}
+                </button>
+                <button onClick={() => onDelete(m)} title="Delete" className="p-1.5 rounded-lg hover:bg-red-50 transition-colors">
+                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotifMappingModal({ mode, initial, waTemplates, onSave, onClose, saving }) {
+  const [form, setForm] = useState({
+    eventName:            initial.eventName            || '',
+    recipientType:        initial.recipientType        || 'user',
+    channel:              initial.channel              || 'whatsapp',
+    whatsappTemplateName: initial.whatsappTemplateName || '',
+    whatsappLanguage:     initial.whatsappLanguage     || 'en',
+    whatsappVariables:    initial.whatsappVariables    || [],
+    emailTemplateName:    initial.emailTemplateName    || '',
+    emailSubject:         initial.emailSubject         || '',
+    emailHtml:            initial.emailHtml            || '',
+    inAppType:            initial.inAppType            || '',
+    inAppTitle:           initial.inAppTitle           || '',
+    inAppMessage:         initial.inAppMessage         || '',
+    enabled:              initial.enabled !== false,
+    priority:             initial.priority             || 0,
+    label:                initial.label               || '',
+  });
+  const [varInput, setVarInput] = useState({ position: '', payloadPath: '', label: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const addVar = () => {
+    if (!varInput.position || !varInput.payloadPath) return;
+    set('whatsappVariables', [...form.whatsappVariables, { ...varInput, position: Number(varInput.position) }]);
+    setVarInput({ position: '', payloadPath: '', label: '' });
+  };
+  const removeVar = (i) => set('whatsappVariables', form.whatsappVariables.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl" style={{ background: 'var(--t-card)' }}>
+        <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--t-border)' }}>
+          <h3 className="font-bold text-lg" style={{ color: 'var(--t-text)' }}>
+            {mode === 'create' ? 'Add Notification Mapping' : 'Edit Mapping'}
+          </h3>
+          <button onClick={onClose}><X className="w-5 h-5" style={{ color: 'var(--t-muted)' }} /></button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Event</label>
+              <input value={form.eventName} readOnly
+                className="w-full px-3 py-2 rounded-xl border text-sm font-mono cursor-default opacity-70"
+                style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Label</label>
+              <input value={form.label} onChange={e => set('label', e.target.value)} placeholder="e.g. WhatsApp to customer"
+                className="w-full px-3 py-2 rounded-xl border text-sm"
+                style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Channel</label>
+              <select value={form.channel} onChange={e => set('channel', e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border text-sm"
+                style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="email">Email</option>
+                <option value="inapp">In-App</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Recipient</label>
+              <select value={form.recipientType} onChange={e => set('recipientType', e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border text-sm"
+                style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}>
+                <option value="user">Customer</option>
+                <option value="pandit">Pandit</option>
+                <option value="admin">Admin</option>
+                <option value="referral_pandit">Referral Pandit</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Priority</label>
+              <input type="number" value={form.priority} onChange={e => set('priority', Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-xl border text-sm"
+                style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+            </div>
+          </div>
+
+          {form.channel === 'whatsapp' && (
+            <div className="space-y-3 rounded-xl p-4 border" style={{ borderColor: '#bbf7d0', background: '#dcfce715' }}>
+              <h4 className="text-sm font-semibold" style={{ color: '#166534' }}>WhatsApp Config</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Template (Meta-synced)</label>
+                  <select value={form.whatsappTemplateName} onChange={e => set('whatsappTemplateName', e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border text-sm"
+                    style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}>
+                    <option value="">— select template —</option>
+                    {waTemplates.map(t => (
+                      <option key={t.name} value={t.name}>{t.name} ({t.language || 'en'})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Language</label>
+                  <input value={form.whatsappLanguage} onChange={e => set('whatsappLanguage', e.target.value)} placeholder="en"
+                    className="w-full px-3 py-2 rounded-xl border text-sm"
+                    style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-2" style={{ color: 'var(--t-muted)' }}>Body Variables (positional)</label>
+                {form.whatsappVariables.map((v, i) => (
+                  <div key={i} className="flex items-center gap-2 mb-1.5">
+                    <span className="text-xs font-mono px-2 py-1 rounded" style={{ background: 'var(--t-bg)', color: 'var(--t-muted)', minWidth: 28 }}>
+                      #{v.position}
+                    </span>
+                    <span className="text-xs font-mono flex-1" style={{ color: 'var(--t-text)' }}>{v.payloadPath}</span>
+                    {v.label && <span className="text-xs" style={{ color: 'var(--t-muted)' }}>{v.label}</span>}
+                    <button onClick={() => removeVar(i)} className="p-1 hover:text-red-500">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex gap-2 mt-2">
+                  <input type="number" placeholder="#" value={varInput.position}
+                    onChange={e => setVarInput(v => ({ ...v, position: e.target.value }))}
+                    className="w-16 px-2 py-1.5 rounded-lg border text-xs"
+                    style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+                  <input placeholder="payload.path (e.g. user.name)" value={varInput.payloadPath}
+                    onChange={e => setVarInput(v => ({ ...v, payloadPath: e.target.value }))}
+                    className="flex-1 px-2 py-1.5 rounded-lg border text-xs font-mono"
+                    style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+                  <input placeholder="label" value={varInput.label}
+                    onChange={e => setVarInput(v => ({ ...v, label: e.target.value }))}
+                    className="w-24 px-2 py-1.5 rounded-lg border text-xs"
+                    style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+                  <button onClick={addVar} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: '#166534' }}>
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+                <p className="text-xs mt-1" style={{ color: 'var(--t-muted)' }}>
+                  Paths: user.name · user.phone · booking.bookingNumber · booking.poojaName · order.orderNumber · otp
+                </p>
+              </div>
+            </div>
+          )}
+
+          {form.channel === 'email' && (
+            <div className="space-y-3 rounded-xl p-4 border" style={{ borderColor: '#bfdbfe', background: '#dbeafe15' }}>
+              <h4 className="text-sm font-semibold" style={{ color: '#1e40af' }}>Email Config</h4>
+              <p className="text-xs" style={{ color: 'var(--t-muted)' }}>
+                Leave subject & HTML blank to use the built-in template for this event.
+              </p>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Subject</label>
+                <input value={form.emailSubject} onChange={e => set('emailSubject', e.target.value)}
+                  placeholder="Leave blank to use legacy template"
+                  className="w-full px-3 py-2 rounded-xl border text-sm"
+                  style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>HTML Body (supports {'{{user.name}}'})</label>
+                <textarea rows={5} value={form.emailHtml} onChange={e => set('emailHtml', e.target.value)}
+                  placeholder="Leave blank to use built-in HTML template"
+                  className="w-full px-3 py-2 rounded-xl border text-sm font-mono"
+                  style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)', resize: 'vertical' }} />
+              </div>
+            </div>
+          )}
+
+          {form.channel === 'inapp' && (
+            <div className="space-y-3 rounded-xl p-4 border" style={{ borderColor: '#ddd6fe', background: '#ede9fe15' }}>
+              <h4 className="text-sm font-semibold" style={{ color: '#6d28d9' }}>In-App Config</h4>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Notification Type</label>
+                <input value={form.inAppType} onChange={e => set('inAppType', e.target.value)}
+                  placeholder="e.g. booking_confirmed"
+                  className="w-full px-3 py-2 rounded-xl border text-sm"
+                  style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Title (supports {'{{variables}}'})</label>
+                <input value={form.inAppTitle} onChange={e => set('inAppTitle', e.target.value)}
+                  placeholder="Booking #{{booking.bookingNumber}} confirmed"
+                  className="w-full px-3 py-2 rounded-xl border text-sm"
+                  style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Message (supports {'{{variables}}'})</label>
+                <textarea rows={3} value={form.inAppMessage} onChange={e => set('inAppMessage', e.target.value)}
+                  placeholder="Your {{booking.poojaName}} is confirmed for {{booking.scheduledDate}}"
+                  className="w-full px-3 py-2 rounded-xl border text-sm"
+                  style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)', resize: 'vertical' }} />
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
+            <button onClick={() => set('enabled', !form.enabled)}>
+              {form.enabled
+                ? <ToggleRight className="w-8 h-8" style={{ color: '#059669' }} />
+                : <ToggleLeft  className="w-8 h-8" style={{ color: '#6b7280' }} />}
+            </button>
+            <span className="text-sm" style={{ color: 'var(--t-text)' }}>
+              {form.enabled ? 'Enabled — will fire on event' : 'Disabled — will be skipped'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex gap-3 justify-end px-5 pb-5">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border text-sm font-semibold"
+            style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>Cancel</button>
+          <button onClick={() => onSave(form)} disabled={saving}
+            className="px-5 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+            style={{ background: 'var(--t-primary)' }}>
+            {saving ? <Loader className="w-4 h-4 animate-spin inline mr-1" /> : <Save className="w-4 h-4 inline mr-1" />}
+            {mode === 'create' ? 'Create' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotifTestModal({ mapping, onTest, onClose, testing }) {
+  const [phone, setPhone]   = useState('');
+  const [email, setEmail]   = useState('');
+  const [userId, setUserId] = useState('');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-2xl shadow-2xl" style={{ background: 'var(--t-card)' }}>
+        <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--t-border)' }}>
+          <h3 className="font-bold" style={{ color: 'var(--t-text)' }}>Test Send</h3>
+          <button onClick={onClose}><X className="w-5 h-5" style={{ color: 'var(--t-muted)' }} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="text-xs px-3 py-2 rounded-xl" style={{ background: 'var(--t-bg)', color: 'var(--t-muted)' }}>
+            <span className="font-mono">{mapping.eventName}</span> →{' '}
+            <strong>{CHANNEL_LABELS[mapping.channel]}</strong> →{' '}
+            <strong>{RECIPIENT_LABELS[mapping.recipientType]}</strong>
+          </div>
+          {mapping.channel === 'whatsapp' && (
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Override Phone</label>
+              <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="91XXXXXXXXXX"
+                className="w-full px-3 py-2 rounded-xl border text-sm"
+                style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+            </div>
+          )}
+          {mapping.channel === 'email' && (
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Override Email</label>
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="test@example.com" type="email"
+                className="w-full px-3 py-2 rounded-xl border text-sm"
+                style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+            </div>
+          )}
+          {mapping.channel === 'inapp' && (
+            <div>
+              <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>User ID to notify</label>
+              <input value={userId} onChange={e => setUserId(e.target.value)} placeholder="MongoDB user _id"
+                className="w-full px-3 py-2 rounded-xl border text-sm font-mono"
+                style={{ background: 'var(--t-bg)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }} />
+            </div>
+          )}
+          <p className="text-xs" style={{ color: 'var(--t-muted)' }}>
+            A test payload is used — no real booking/order data required.
+          </p>
+        </div>
+        <div className="flex gap-3 justify-end px-5 pb-5">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border text-sm font-semibold"
+            style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>Cancel</button>
+          <button onClick={() => onTest({ mappingId: mapping._id, testPhone: phone || undefined, testEmail: email || undefined, testUserId: userId || undefined })}
+            disabled={testing} className="px-5 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+            style={{ background: '#7c3aed' }}>
+            {testing ? <Loader className="w-4 h-4 animate-spin inline mr-1" /> : <Send className="w-4 h-4 inline mr-1" />}
+            Send Test
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

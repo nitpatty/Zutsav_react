@@ -7,14 +7,9 @@ const Booking       = require('../models/Booking');
 const Order         = require('../models/Order');
 const Notification  = require('../models/Notification');
 const AdminAuditLog = require('../models/AdminAuditLog');
-const { sendEmail }        = require('../utils/email');
-const { sendOtpWhatsApp }   = require('../utils/whatsapp');
-const {
-  notifyUserRegistered,
-  notifyDeletionRequested,
-  notifyDeletionCancelled,
-  notifyAccountRestored,
-} = require('../utils/notificationService');
+const { sendEmail }                  = require('../utils/email');
+const { sendOtpWhatsApp }            = require('../utils/whatsapp');
+const { NotificationEngine }         = require('../../notification-engine');
 
 const signToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
@@ -183,8 +178,9 @@ exports.completeRegistration = async (req, res, next) => {
     // Clean up OTP record
     await OTP.deleteOne({ _id: otpRecord._id });
 
-    // Welcome notification
-    notifyUserRegistered(user._id, user.name).catch(() => {});
+    NotificationEngine.emit('USER_REGISTERED', {
+      user: { id: String(user._id), name: user.name, phone: user.phone, email: user.email },
+    }).catch(() => {});
 
     sendToken(user, 201, res);
   } catch (err) {
@@ -384,8 +380,9 @@ exports.confirmAccountDeletion = async (req, res, next) => {
       scheduledDeletionDate,
     });
 
-    // Notifications
-    notifyDeletionRequested(user._id, scheduledDeletionDate).catch(() => {});
+    NotificationEngine.emit('ACCOUNT_DELETION_REQUESTED', {
+      user: { id: String(user._id), name: user.name, phone: user.phone, email: user.email },
+    }).catch(() => {});
     if (user.email) {
       sendEmail(
         user.email,
@@ -444,7 +441,9 @@ exports.cancelAccountDeletion = async (req, res, next) => {
       scheduledDeletionDate: null,
     });
 
-    notifyAccountRestored(user._id).catch(() => {});
+    NotificationEngine.emit('ACCOUNT_RESTORED', {
+      user: { id: String(user._id), name: user.name, phone: user.phone, email: user.email },
+    }).catch(() => {});
     if (user.email) {
       sendEmail(
         user.email,

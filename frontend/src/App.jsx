@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -42,11 +42,16 @@ import InvoicePage      from './pages/InvoicePage';
 import BlogHomePage     from './pages/BlogHomePage';
 import BlogDetailPage   from './pages/BlogDetailPage';
 import BlogEditor       from './pages/BlogEditor';
+import ReferralLanding  from './pages/ReferralLanding';
 
 /* ── Auth guard ─────────────────────────────────────── */
 const ProtectedRoute = ({ children, roles }) => {
   const { user, isAuthenticated } = useAuth();
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (!isAuthenticated) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
   if (roles && !roles.includes(user?.role)) return <Navigate to="/" replace />;
   return children;
 };
@@ -200,6 +205,9 @@ const AppRoutes = () => {
               <DashboardLayout><AdminDashboard /></DashboardLayout>
             </ProtectedRoute>
           } />
+
+          {/* Referral landing — public, no auth required */}
+          <Route path="/r/:token"      element={<ReferralLanding />} />
 
           {/* Blog routes — public listing and detail, authenticated editor */}
           <Route path="/blog"          element={<PublicLayout><BlogHomePage /></PublicLayout>} />

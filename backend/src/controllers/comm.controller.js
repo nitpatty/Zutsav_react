@@ -112,8 +112,10 @@ exports.syncWhatsAppTemplates = async (req, res) => {
 
     const fetched = response.data?.data || [];
     let synced = 0;
+    const activeNames = [];
 
     for (const t of fetched) {
+      if (t.status === 'DELETED') continue;
       await WhatsAppTemplate.findOneAndUpdate(
         { name: t.name },
         {
@@ -126,7 +128,13 @@ exports.syncWhatsAppTemplates = async (req, res) => {
         },
         { upsert: true, new: true }
       );
+      activeNames.push(t.name);
       synced++;
+    }
+
+    // Remove DB records for templates deleted from Meta
+    if (activeNames.length > 0) {
+      await WhatsAppTemplate.deleteMany({ name: { $nin: activeNames } });
     }
 
     ok(res, { message: `Synced ${synced} templates from Meta` });

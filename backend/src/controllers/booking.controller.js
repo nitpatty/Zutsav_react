@@ -2,6 +2,7 @@ const crypto  = require('crypto');
 const bcrypt   = require('bcryptjs');
 
 const Booking       = require('../models/Booking');
+const Referral      = require('../models/Referral');
 const PaymentLedger = require('../models/PaymentLedger');
 const Pooja         = require('../models/Pooja');
 const Pandit        = require('../models/Pandit');
@@ -12,19 +13,9 @@ const AdminAuditLog = require('../models/AdminAuditLog');
 const { createOrder, verifySignature }                                        = require('../utils/razorpay');
 const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum }       = require('../utils/phonepe');
 const settings                                                                = require('../utils/settingsService');
-const { notifyBookingCreated, notifyBookingCancelled }                        = require('../utils/notificationService');
-const {
-  sendBookingConfirmedEmail,
-  sendBookingCancelledEmail,
-  sendCompletionOtpEmail,
-  sendInvoiceEmail,
-  sendFeedbackRequestEmail,
-  sendPartialPaymentEmail,
-  sendFinalPaymentEmail,
-} = require('../utils/email');
-const { notifyBookingConfirmed, sendCompletionOtpWhatsApp, sendWhatsAppForEvent } = require('../utils/whatsapp');
-const { dispatchTriggerEvent } = require('../utils/triggerDispatch');
-const { generateInvoiceForPayment } = require('../utils/invoiceGenerator');
+const { generateInvoiceForPayment }  = require('../utils/invoiceGenerator');
+const { calculateRefundBreakdown }   = require('../utils/refundEngine');
+const { NotificationEngine }         = require('../../notification-engine');
 
 // ── Pricing engine ────────────────────────────────────────────────────────────
 async function calculatePricing(pooja, kitPrice = 0) {
@@ -100,32 +91,85 @@ async function resolveChargeAmount(grandTotal, paymentMode, partialAmount) {
   return { chargeAmount: charge, paymentType: 'PARTIAL' };
 }
 
-// ── Post-payment notifications ─────────────────────────────────────────────────
+// ── Post-payment referral link-up ──────────────────────────────────────────────
+
+async function fireReferralNotifications(booking, poojaName) {
+  try {
+    const ref = booking.referral;
+    if (!ref?.referralId) return;
+
+    const referral = await Referral.findById(ref.referralId);
+    if (!referral) return;
+
+    // Advance referral: BOOKED → PENDING_REMARK
+    referral.bookingId = booking._id;
+    referral.status    = 'PENDING_REMARK';
+    referral.statusHistory.push({ status: 'BOOKED',         note: 'Payment confirmed' });
+    referral.statusHistory.push({ status: 'PENDING_REMARK', note: 'Awaiting pandit mandatory remark' });
+    await referral.save();
+
+    const refPandit = await Pandit.findById(referral.panditId).select('userId name phone email');
+    const ud        = booking.userDetails || {};
+
+    const basePayload = {
+      user:           { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+      referralPandit: { id: String(referral.panditId || ''), userId: String(refPandit?.userId || ''), name: refPandit?.name, phone: refPandit?.phone, email: refPandit?.email },
+      booking:        { bookingNumber: booking.bookingNumber, poojaName },
+      referral:       { referralId: String(referral._id) },
+      _booking:       booking,
+      _poojaName:     poojaName,
+    };
+
+    NotificationEngine.emit('REFERRAL_BOOKING_CREATED', basePayload).catch(() => {});
+    NotificationEngine.emit('REFERRAL_PENDING_REMARK',  basePayload).catch(() => {});
+  } catch { /* non-fatal */ }
+}
 
 async function onPaymentSuccess(booking, poojaName) {
-  notifyBookingCreated(booking.userId, booking.bookingNumber, poojaName).catch(() => {});
-  sendBookingConfirmedEmail(booking, poojaName).catch(() => {});
   const ud = booking.userDetails || {};
-  const triggered = await dispatchTriggerEvent('booking_confirmed', {
-    user: { phone: ud.phone, email: ud.email, name: ud.name, id: String(booking.userId || '') },
-    components: [{ type: 'body', parameters: [
-      { type: 'text', text: ud.name || 'Customer' },
-      { type: 'text', text: String(booking.amountPaid || booking.amount || 0) },
-      { type: 'text', text: booking.bookingNumber },
-    ]}],
-    emailVars: { 'user.name': ud.name, 'booking.number': booking.bookingNumber, 'booking.amount': booking.amount, 'pooja.name': poojaName },
-  }).catch(() => false);
-  if (!triggered) notifyBookingConfirmed(booking, poojaName).catch(() => {});
+  const payload = {
+    user:     { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+    booking:  {
+      bookingNumber: booking.bookingNumber,
+      amountPaid:    String(booking.amountPaid || booking.amount || 0),
+      grandTotal:    String(booking.grandTotal || booking.amount || 0),
+      poojaName,
+      scheduledDate: booking.scheduledDate,
+      scheduledTime: booking.scheduledTime,
+    },
+    _booking:  booking,
+    _poojaName: poojaName,
+  };
+
+  NotificationEngine.emit('PAYMENT_SUCCESS',    payload).catch(() => {});
+  NotificationEngine.emit('BOOKING_CONFIRMED',  payload).catch(() => {});
+  fireReferralNotifications(booking, poojaName).catch(() => {});
 }
 
 async function onPartialPaymentSuccess(booking, poojaName) {
-  notifyBookingCreated(booking.userId, booking.bookingNumber, poojaName).catch(() => {});
-  sendPartialPaymentEmail(booking, poojaName).catch(() => {});
-  notifyBookingConfirmed(booking, poojaName).catch(() => {});
+  const ud = booking.userDetails || {};
+  NotificationEngine.emit('PARTIAL_PAYMENT_RECEIVED', {
+    user:      { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+    booking:   {
+      bookingNumber:  booking.bookingNumber,
+      amountPaid:     String(booking.amountPaid || 0),
+      grandTotal:     String(booking.grandTotal || 0),
+      remainingAmount:String(booking.remainingAmount || 0),
+      poojaName,
+    },
+    _booking:  booking,
+    _poojaName: poojaName,
+  }).catch(() => {});
 }
 
 async function onFinalPaymentSuccess(booking, poojaName) {
-  sendFinalPaymentEmail(booking, poojaName).catch(() => {});
+  const ud = booking.userDetails || {};
+  NotificationEngine.emit('FINAL_PAYMENT_RECEIVED', {
+    user:     { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+    booking:  { bookingNumber: booking.bookingNumber, amountPaid: String(booking.grandTotal || 0), poojaName },
+    _booking:  booking,
+    _poojaName: poojaName,
+  }).catch(() => {});
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -209,6 +253,7 @@ exports.createPhonePeBooking = async (req, res, next) => {
       poojaId, scheduledDate, scheduledTime, language, specialNote,
       userDetails, isUrgent, withKit, kitId,
       paymentMode = 'FULL', partialAmount,
+      referralToken,
     } = req.body;
 
     const urgent = isUrgent === true || isUrgent === 'true';
@@ -227,6 +272,23 @@ exports.createPhonePeBooking = async (req, res, next) => {
       ({ chargeAmount, paymentType } = await resolveChargeAmount(pricing.grandTotal, pMode, partialAmount));
     } catch (err) {
       return res.status(err.status || 400).json({ success: false, message: err.message });
+    }
+
+    // ── Validate referral token (backend-only; never trust raw IDs from frontend) ──
+    let resolvedReferral = {};
+    if (referralToken) {
+      const referral = await Referral.findOne({
+        token:     referralToken,
+        expiresAt: { $gt: new Date() },
+        status:    { $nin: ['BOOKED','PENDING_REMARK','REMARK_SUBMITTED','ADMIN_REVIEW','ASSIGNED','COMPLETED','SETTLED'] },
+      });
+      if (referral) {
+        resolvedReferral = {
+          referralId:        referral._id,
+          referringPanditId: referral.panditId,
+          referralToken,
+        };
+      }
     }
 
     const booking = await Booking.create({
@@ -250,7 +312,6 @@ exports.createPhonePeBooking = async (req, res, next) => {
       gstPercent:       pricing.gstPercent,
       gstAmount:        pricing.gstAmount,
       amount:           pricing.grandTotal,
-      // Payment tracking
       paymentMode:      pMode,
       paymentStatus:    'PENDING',
       amountPaid:       0,
@@ -258,10 +319,11 @@ exports.createPhonePeBooking = async (req, res, next) => {
       paymentProvider:              'phonepe',
       phonePeMerchantTransactionId: merchantTransactionId,
       status:                       'pending_payment',
-      bookingType: urgent ? 'urgent' : 'normal',
-      isUrgent:    urgent,
-      withKit:     !!resolvedKitId,
-      kitId:       resolvedKitId,
+      bookingType:     urgent ? 'urgent' : 'normal',
+      isUrgent:        urgent,
+      withKit:         !!resolvedKitId,
+      kitId:           resolvedKitId,
+      referral:        resolvedReferral,
     });
 
     // Record in ledger
@@ -602,33 +664,65 @@ exports.cancelBooking = async (req, res, next) => {
     const poojaName  = booking.poojaId?.name || 'Pooja';
     const phone      = booking.userDetails?.phone;
 
+    // ── Calculate refund using centralized engine ──────────────────────────
+    const refundCalc = calculateRefundBreakdown(booking);
+
     booking.status        = 'cancelled';
     booking.paymentStatus = booking.amountPaid > 0 ? 'REFUNDED' : booking.paymentStatus;
     if (cancelNote) booking.cancelReason = cancelNote;
+
+    // Populate refund subdocument
+    booking.refund = {
+      eligibleAmount: refundCalc.refundableAmount,
+      nonRefundable:  refundCalc.nonRefundableTotal,
+      refundedAmount: 0,
+      status:         booking.amountPaid > 0 && refundCalc.refundableAmount > 0 ? 'pending' : 'none',
+      reason:         cancelNote || 'Cancelled by customer',
+      requestedAt:    new Date(),
+    };
+
     booking.auditLog.push({
       action:          'status_changed_to_cancelled',
       performedBy:     req.user._id,
       performedByName: req.user.name || 'Customer',
-      note:            `Cancelled by user from ${prevStatus}${cancelNote ? ': ' + cancelNote : ''}`,
+      note:            `Cancelled by user from ${prevStatus}. Eligible refund: ₹${refundCalc.refundableAmount}${cancelNote ? '. Reason: ' + cancelNote : ''}`,
       at:              new Date(),
     });
     await booking.save();
 
-    notifyBookingCancelled(booking.userId, booking.bookingNumber, cancelNote).catch(() => {});
-    sendBookingCancelledEmail(booking, poojaName, cancelNote).catch(() => {});
     const ud = booking.userDetails || {};
-    const components = [{ type: 'body', parameters: [
-      { type: 'text', text: ud.name || 'Customer' },
-      { type: 'text', text: booking.bookingNumber },
-    ]}];
-    const triggered = await dispatchTriggerEvent('booking_cancelled', {
-      user: { phone: ud.phone, email: ud.email, name: ud.name, id: String(booking.userId || '') },
-      components,
-      emailVars: { 'user.name': ud.name, 'booking.number': booking.bookingNumber, 'pooja.name': poojaName },
-    }).catch(() => false);
-    if (!triggered && phone) sendWhatsAppForEvent('booking_cancelled', phone, components).catch(() => {});
+    NotificationEngine.emit('BOOKING_CANCELLED', {
+      user:    { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+      booking: { bookingNumber: booking.bookingNumber, poojaName, cancelReason: cancelNote },
+      _booking:  booking,
+      _poojaName: poojaName,
+    }).catch(() => {});
 
-    res.json({ success: true, message: 'Booking cancelled successfully', booking });
+    res.json({ success: true, message: 'Booking cancelled successfully', booking, refundBreakdown: refundCalc });
+  } catch (err) { next(err); }
+};
+
+// GET /api/bookings/:id/refund-preview  (user — shown before confirming cancellation)
+exports.getRefundPreview = async (req, res, next) => {
+  try {
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    if (String(booking.userId) !== String(req.user._id) && req.user.role !== 'admin')
+      return res.status(403).json({ success: false, message: 'Access denied' });
+
+    const breakdown = calculateRefundBreakdown(booking);
+
+    res.json({
+      success: true,
+      refundPreview: {
+        ...breakdown,
+        bookingNumber: booking.bookingNumber,
+        poojaName:     booking.poojaId?.name || '',
+        grandTotal:    booking.grandTotal || booking.amount || 0,
+        paymentStatus: booking.paymentStatus,
+      },
+    });
   } catch (err) { next(err); }
 };
 
@@ -722,8 +816,14 @@ exports.requestCompletion = async (req, res, next) => {
     await booking.save();
 
     const poojaName = booking.poojaId?.name || 'Pooja';
-    sendCompletionOtpEmail(booking, poojaName, rawOtp).catch(() => {});
-    sendCompletionOtpWhatsApp(booking, poojaName, rawOtp).catch(() => {});
+    const ud2 = booking.userDetails || {};
+    NotificationEngine.emit('SERVICE_COMPLETION_OTP', {
+      user:    { id: String(booking.userId || ''), name: ud2.name, phone: ud2.phone, email: ud2.email },
+      booking: { bookingNumber: booking.bookingNumber, poojaName },
+      otp:     rawOtp,
+      _booking:  booking,
+      _poojaName: poojaName,
+    }).catch(() => {});
 
     res.json({ success: true, message: 'OTP sent to user. Ask user to share it with you.' });
   } catch (err) { next(err); }
@@ -770,8 +870,16 @@ exports.verifyCompletionOtp = async (req, res, next) => {
     }).catch(() => {});
 
     const completedPoojaName = booking.poojaId?.name || 'Pooja';
-    sendInvoiceEmail(booking, completedPoojaName).catch(() => {});
-    sendFeedbackRequestEmail(booking, completedPoojaName).catch(() => {});
+    const ud3 = booking.userDetails || {};
+    const completionPayload = {
+      user:    { id: String(booking.userId || ''), name: ud3.name, phone: ud3.phone, email: ud3.email },
+      booking: { bookingNumber: booking.bookingNumber, poojaName: completedPoojaName },
+      _booking:  booking,
+      _poojaName: completedPoojaName,
+    };
+    NotificationEngine.emit('INVOICE_GENERATED', completionPayload).catch(() => {});
+    NotificationEngine.emit('FEEDBACK_REQUEST',  completionPayload).catch(() => {});
+    NotificationEngine.emit('SERVICE_COMPLETED', completionPayload).catch(() => {});
     Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
 
     res.json({ success: true, message: 'Booking completed successfully', booking });

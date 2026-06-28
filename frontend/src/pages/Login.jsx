@@ -11,7 +11,9 @@ export default function Login() {
   const { logoUrl, platformName } = useSettings();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = location.state?.from?.pathname || '/';
+  // Support ?next= param (used by referral links) as well as router state
+  const nextParam = new URLSearchParams(location.search).get('next');
+  const from = nextParam || location.state?.from?.pathname || '/';
 
   const [form, setForm] = useState({ emailOrPhone: '', password: '' });
   const [show, setShow]  = useState(false);

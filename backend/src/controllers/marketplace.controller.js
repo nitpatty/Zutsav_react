@@ -3,7 +3,7 @@ const Kit          = require('../models/Kit');
 const Order        = require('../models/Order');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum } = require('../utils/phonepe');
-const { notifyOrderPlaced } = require('../utils/notificationService');
+const { NotificationEngine } = require('../../notification-engine');
 const { deductStock } = require('../utils/inventoryUtils');
 
 const auditLog = (req, action, targetType, target, note = '') =>
@@ -329,7 +329,11 @@ exports.createOrder = async (req, res, next) => {
       redirectUrl: `${baseUrl}/payment-callback/${merchantTransactionId}`,
     });
 
-    notifyOrderPlaced(req.user._id, order.orderNumber || order._id).catch(() => {});
+    NotificationEngine.emit('ORDER_PLACED', {
+      user:  { id: String(req.user._id), name: req.user.name, phone: req.user.phone, email: req.user.email },
+      order: { orderNumber: order.orderNumber || String(order._id), totalAmount },
+      _order: order,
+    }).catch(() => {});
     res.status(201).json({ success: true, order, redirectUrl });
   } catch (err) {
     next(err);

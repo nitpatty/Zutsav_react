@@ -3,7 +3,8 @@ import {
   BookOpen, Calendar, CalendarDays, IndianRupee, Ban,
   CheckCircle, Power, XCircle, RefreshCw, Upload,
   Clock, Star, User, FileText, ShieldCheck,
-  BadgeCheck, AlertTriangle, MapPin, BarChart3, Sun,
+  BadgeCheck, AlertTriangle, MapPin, BarChart3, Sun, Users,
+  Plus, Copy, MessageCircle,
 } from 'lucide-react';
 import ZutsavLoader from '../components/shared/ZutsavLoader';
 import { Link, useSearchParams, Navigate } from 'react-router-dom';
@@ -564,6 +565,22 @@ function DashboardHome({ pandit, reload }) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* ── My Referrals quick link ── */}
+      <div className="bg-indigo-50 rounded-2xl border border-indigo-100 shadow-sm p-5 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-indigo-100">
+            <Users size={18} className="text-indigo-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-800">My Referrals</p>
+            <p className="text-xs text-gray-500">Bookings made by customers you referred offline</p>
+          </div>
+        </div>
+        <Link to="/pandit/dashboard?tab=referrals" className="text-xs font-bold text-indigo-600 hover:underline shrink-0">
+          View all →
+        </Link>
       </div>
 
       {/* ── SECTION 9: Performance Overview ── */}
@@ -1170,6 +1187,442 @@ function EarningsTab({ pandit }) {
   );
 }
 
+// ─── My Referrals Tab ───────────────────────────────────────────
+const REFERRAL_STATUS = {
+  CREATED:          { label: 'Created',          color: 'bg-gray-100 text-gray-600'     },
+  SENT:             { label: 'Link Sent',         color: 'bg-blue-100 text-blue-700'     },
+  OPENED:           { label: 'Link Opened',       color: 'bg-indigo-100 text-indigo-700' },
+  BOOKED:           { label: 'Booked',            color: 'bg-teal-100 text-teal-700'     },
+  PENDING_REMARK:   { label: 'Action Required',   color: 'bg-amber-100 text-amber-700'   },
+  REMARK_SUBMITTED: { label: 'Remark Submitted',  color: 'bg-cyan-100 text-cyan-700'     },
+  ADMIN_REVIEW:     { label: 'Admin Review',      color: 'bg-purple-100 text-purple-700' },
+  ASSIGNED:         { label: 'Pandit Assigned',   color: 'bg-blue-100 text-blue-700'     },
+  COMPLETED:        { label: 'Completed',         color: 'bg-green-100 text-green-700'   },
+  SETTLED:          { label: 'Settled',           color: 'bg-green-200 text-green-800'   },
+};
+
+function CreateReferralModal({ onClose, onCreated }) {
+  const [form, setForm]       = useState({ userMobile: '', userEmail: '', poojaId: '', preferredDate: '' });
+  const [submitting, setSub]  = useState(false);
+  const [poojas, setPoojas]   = useState([]);
+  const [created, setCreated] = useState(null);
+
+  useEffect(() => {
+    API.get('/poojas?limit=100').then(({ data }) => setPoojas(data.poojas || [])).catch(() => {});
+  }, []);
+
+  const referralUrl = created ? `${window.location.origin}/r/${created.token}` : '';
+
+  const handleSubmit = async () => {
+    if (!/^\d{10}$/.test(form.userMobile)) { toast.error('Enter a valid 10-digit mobile number'); return; }
+    setSub(true);
+    try {
+      const { data } = await API.post('/referral', {
+        userMobile: form.userMobile,
+        userEmail: form.userEmail || undefined,
+        poojaId: form.poojaId || undefined,
+        preferredDate: form.preferredDate || undefined,
+      });
+      setCreated(data.referral);
+      toast.success('Referral link created!');
+      onCreated?.();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not create referral');
+    } finally {
+      setSub(false);
+    }
+  };
+
+  const copyLink = async () => {
+    await navigator.clipboard.writeText(referralUrl);
+    toast.success('Link copied!');
+  };
+
+  const shareWhatsApp = () => {
+    const text = encodeURIComponent(`Book a pooja via Zutsav: ${referralUrl}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-bold text-gray-900 text-lg" style={{ fontFamily: '"Cormorant Garamond", serif' }}>
+            Create Referral Link
+          </h3>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-500 transition-colors">
+            <XCircle size={20} />
+          </button>
+        </div>
+
+        {!created ? (
+          <div className="px-6 py-5 space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">
+                Customer Mobile <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="tel"
+                maxLength={10}
+                value={form.userMobile}
+                onChange={(e) => setForm({ ...form, userMobile: e.target.value.replace(/\D/g, '') })}
+                placeholder="10-digit mobile number"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">
+                Customer Email <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="email"
+                value={form.userEmail}
+                onChange={(e) => setForm({ ...form, userEmail: e.target.value })}
+                placeholder="customer@email.com"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">
+                Recommended Pooja <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <select
+                value={form.poojaId}
+                onChange={(e) => setForm({ ...form, poojaId: e.target.value })}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+              >
+                <option value="">— No specific pooja —</option>
+                {poojas.map((p) => (
+                  <option key={p._id} value={p._id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">
+                Preferred Date <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="date"
+                value={form.preferredDate}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={(e) => setForm({ ...form, preferredDate: e.target.value })}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={submitting || !form.userMobile}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background: '#1B1F3B' }}
+              >
+                {submitting ? 'Creating…' : 'Generate Link'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-6 py-5 space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+              <CheckCircle size={32} className="text-green-500 mx-auto mb-2" />
+              <p className="font-bold text-green-800">Referral link created!</p>
+              <p className="text-xs text-green-600 mt-1">Valid for 30 days · Share with the customer</p>
+            </div>
+            <div className="border border-gray-200 rounded-xl p-3 bg-gray-50">
+              <p className="text-xs text-gray-500 mb-1 font-medium">Your referral link</p>
+              <p className="text-xs font-mono text-gray-800 break-all">{referralUrl}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={copyLink}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50"
+              >
+                <Copy size={15} /> Copy Link
+              </button>
+              <button
+                onClick={shareWhatsApp}
+                className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold bg-green-500 text-white hover:bg-green-600"
+              >
+                <MessageCircle size={15} /> WhatsApp
+              </button>
+            </div>
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50">
+              Done
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RemarkModal({ referral, onClose, onSaved }) {
+  const [remark,     setRemark]     = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const MIN = 20;
+  const isValid = remark.trim().length >= MIN;
+
+  const handleSubmit = async () => {
+    if (!isValid) { toast.error(`Remark must be at least ${MIN} characters`); return; }
+    setSubmitting(true);
+    try {
+      await API.patch(`/referral/${referral._id}/remark`, { remark: remark.trim() });
+      toast.success('Mandatory remark submitted');
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not submit remark');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="px-6 py-4 border-b border-amber-100 flex items-start justify-between bg-amber-50">
+          <div>
+            <h3 className="font-bold text-gray-900 text-lg" style={{ fontFamily: '"Cormorant Garamond", serif' }}>
+              Submit Mandatory Remark
+            </h3>
+            <p className="text-xs text-amber-700 mt-0.5">Required before admin review can proceed</p>
+          </div>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-500 transition-colors mt-0.5">
+            <XCircle size={20} />
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+            <p className="font-semibold mb-1">Customer booked via your referral</p>
+            <p>Mobile: {referral.userMobile} · Status: {REFERRAL_STATUS[referral.status]?.label}</p>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">
+              Your Remark <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={remark}
+              onChange={(e) => setRemark(e.target.value)}
+              rows={5}
+              maxLength={1000}
+              placeholder={`Share your observations about this customer and why they would benefit from this pooja. Minimum ${MIN} characters.`}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-300"
+            />
+            <div className="flex justify-between text-[10px] mt-1">
+              {!isValid ? (
+                <span className="text-red-500">{MIN - remark.trim().length} more character{MIN - remark.trim().length !== 1 ? 's' : ''} needed</span>
+              ) : (
+                <span className="text-green-600 font-semibold">✓ Minimum met</span>
+              )}
+              <span className={remark.length > 900 ? 'text-amber-600 font-semibold' : 'text-gray-400'}>{remark.length}/1000</span>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 pb-5 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !isValid}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+            style={{ background: '#D4AF37', color: '#1B1F3B' }}
+          >
+            {submitting ? 'Submitting…' : 'Submit Remark'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReferralsTab() {
+  const [referrals,    setReferrals]    = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [filter,       setFilter]       = useState('');
+  const [remarkTarget, setRemarkTarget] = useState(null);
+  const [showCreate,   setShowCreate]   = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const params = filter ? `?status=${filter}` : '';
+    API.get(`/referral/my${params}`)
+      .then(({ data }) => setReferrals(data.referrals || []))
+      .catch(() => toast.error('Could not load referrals'))
+      .finally(() => setLoading(false));
+  }, [filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const pendingRemarks = referrals.filter((r) => r.status === 'PENDING_REMARK');
+
+  const copyLink = async (token) => {
+    await navigator.clipboard.writeText(`${window.location.origin}/r/${token}`);
+    toast.success('Referral link copied!');
+  };
+
+  const shareWhatsApp = (token) => {
+    const text = encodeURIComponent(`Book a pooja via Zutsav: ${window.location.origin}/r/${token}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+  };
+
+  const FILTERS = [
+    ['', 'All'], ['CREATED', 'Created'], ['OPENED', 'Opened'],
+    ['BOOKED', 'Booked'], ['PENDING_REMARK', 'Action Required'],
+    ['COMPLETED', 'Completed'], ['SETTLED', 'Settled'],
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">My Referrals</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{referrals.length} referral{referrals.length !== 1 ? 's' : ''} created</p>
+        </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white shadow"
+          style={{ background: '#1B1F3B' }}
+        >
+          <Plus size={15} /> Create Referral
+        </button>
+      </div>
+
+      {pendingRemarks.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 flex items-start gap-3">
+          <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold text-amber-800 text-sm">
+              Action Required — {pendingRemarks.length} mandatory remark{pendingRemarks.length !== 1 ? 's' : ''} pending
+            </p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Your referred customers have booked. Submit your mandatory remark so admin review can proceed.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2 flex-wrap">
+        {FILTERS.map(([val, label]) => (
+          <button key={val} onClick={() => setFilter(val)}
+            className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all border ${filter === val ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-300'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-16">
+          <div className="w-8 h-8 border-4 border-saffron-400 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : referrals.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <Users size={40} className="mx-auto mb-3 opacity-30" />
+          <p className="font-medium">No referrals yet.</p>
+          <p className="text-sm mt-1">Create a referral link to invite customers to book.</p>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="mt-4 px-5 py-2 rounded-xl text-sm font-semibold text-white"
+            style={{ background: '#1B1F3B' }}
+          >
+            Create First Referral
+          </button>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-indigo-50 text-left text-xs text-gray-500 border-b">
+                  {['Created', 'Target Mobile', 'Pooja', 'Expires', 'Status', 'Remark', 'Actions'].map((h) => (
+                    <th key={h} className="px-4 py-3 font-semibold whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {referrals.map((r) => {
+                  const statusCfg = REFERRAL_STATUS[r.status] || { label: r.status, color: 'bg-gray-100 text-gray-600' };
+                  const daysLeft  = Math.max(0, Math.ceil((new Date(r.expiresAt) - Date.now()) / 86400000));
+                  const isPending = r.status === 'PENDING_REMARK';
+                  return (
+                    <tr key={r._id} className={`hover:bg-indigo-50/30 transition-colors ${isPending ? 'bg-amber-50/40' : ''}`}>
+                      <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
+                        {new Date(r.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-gray-800">{r.userMobile}</p>
+                        {r.userEmail && <p className="text-xs text-gray-400">{r.userEmail}</p>}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">{r.poojaId?.name || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-4 py-3 text-xs whitespace-nowrap">
+                        <span className={daysLeft <= 3 ? 'text-red-600 font-semibold' : 'text-gray-500'}>
+                          {daysLeft > 0 ? `${daysLeft}d left` : 'Expired'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusCfg.color}`}>
+                          {statusCfg.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 min-w-[160px]">
+                        {r.remark ? (
+                          <p className="text-[10px] text-gray-600 max-w-[200px] line-clamp-2" title={r.remark}>{r.remark}</p>
+                        ) : (
+                          <span className="text-[10px] text-gray-300">No remark</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {isPending && (
+                            <button
+                              onClick={() => setRemarkTarget(r)}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap"
+                              style={{ background: '#D4AF37', color: '#1B1F3B' }}
+                            >
+                              Submit Remark
+                            </button>
+                          )}
+                          <button onClick={() => copyLink(r.token)} title="Copy link"
+                            className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50">
+                            <Copy size={13} />
+                          </button>
+                          <button onClick={() => shareWhatsApp(r.token)} title="Share on WhatsApp"
+                            className="p-1.5 rounded-lg bg-green-50 border border-green-200 text-green-600 hover:bg-green-100">
+                            <MessageCircle size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {remarkTarget && (
+        <RemarkModal
+          referral={remarkTarget}
+          onClose={() => setRemarkTarget(null)}
+          onSaved={load}
+        />
+      )}
+      {showCreate && (
+        <CreateReferralModal
+          onClose={() => setShowCreate(false)}
+          onCreated={load}
+        />
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
@@ -1210,6 +1663,7 @@ export default function PanditDashboard() {
     <div className="p-4 md:p-6">
       {tab === 'overview'     && <DashboardHome      pandit={pandit} reload={load} />}
       {tab === 'bookings'     && <BookingsTab />}
+      {tab === 'referrals'    && <ReferralsTab />}
       {tab === 'availability' && <AvailabilityManager pandit={pandit} onReload={load} />}
       {tab === 'festivals'    && <FestivalsTab />}
       {tab === 'earnings'     && <EarningsTab         pandit={pandit} />}

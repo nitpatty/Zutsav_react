@@ -20,6 +20,7 @@ router.get('/verify-remaining/:merchantTransactionId', ctrl.verifyRemainingPayme
 
 router.get('/my',                      ctrl.getMyBookings);
 router.patch('/:id/cancel',            ctrl.cancelBooking);
+router.get('/:id/refund-preview',      ctrl.getRefundPreview);
 router.post('/:id/rate',               ctrl.rateBooking);
 router.post('/:id/pay-remaining',      ctrl.payRemaining);
 router.get('/:id/invoice',             ctrl.getInvoiceData);

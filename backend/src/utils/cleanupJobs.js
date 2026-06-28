@@ -3,8 +3,8 @@ const Pandit       = require('../models/Pandit');
 const Booking      = require('../models/Booking');
 const Notification = require('../models/Notification');
 const AdminAuditLog = require('../models/AdminAuditLog');
-const { sendEmail, sendServiceReminderEmail, sendFeedbackRequestEmail, sendInvoiceEmail } = require('./email');
-const { sendWhatsAppForEvent } = require('./whatsapp');
+const { sendEmail } = require('./email');
+const { NotificationEngine } = require('../../notification-engine');
 
 /**
  * Permanently deletes user accounts that have passed their 30-day deletion grace period.
@@ -107,9 +107,12 @@ const run24hReminder = async () => {
     for (const booking of bookings) {
       try {
         const poojaName = booking.poojaId?.name || 'Pooja';
-        sendServiceReminderEmail(booking, poojaName, 'tomorrow').catch(() => {});
-        const phone = booking.userDetails?.phone;
-        if (phone) sendWhatsAppForEvent('service_reminder_24h', phone, []).catch(() => {});
+        const ud = booking.userDetails || {};
+        NotificationEngine.emit('SERVICE_REMINDER_24H', {
+          user:    { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+          booking: { bookingNumber: booking.bookingNumber, poojaName, scheduledDate: booking.scheduledDate, scheduledTime: booking.scheduledTime },
+          _booking: booking, _poojaName: poojaName,
+        }).catch(() => {});
 
         await Booking.findByIdAndUpdate(booking._id, { reminder24hSent: true });
         console.log(`[Reminders] 24h reminder sent for booking ${booking.bookingNumber}`);
@@ -162,9 +165,12 @@ const run1hReminder = async () => {
         if (diffMs < 45 * MS_PER_MINUTE || diffMs > 75 * MS_PER_MINUTE) continue;
 
         const poojaName = booking.poojaId?.name || 'Pooja';
-        sendServiceReminderEmail(booking, poojaName, '1 hour').catch(() => {});
-        const phone = booking.userDetails?.phone;
-        if (phone) sendWhatsAppForEvent('service_reminder_1h', phone, []).catch(() => {});
+        const ud = booking.userDetails || {};
+        NotificationEngine.emit('SERVICE_REMINDER_1H', {
+          user:    { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+          booking: { bookingNumber: booking.bookingNumber, poojaName, scheduledDate: booking.scheduledDate, scheduledTime: booking.scheduledTime },
+          _booking: booking, _poojaName: poojaName,
+        }).catch(() => {});
 
         await Booking.findByIdAndUpdate(booking._id, { reminder1hSent: true });
         console.log(`[Reminders] 1h reminder sent for booking ${booking.bookingNumber}`);
@@ -220,9 +226,12 @@ const runFeedbackReminder = async () => {
     for (const booking of bookings) {
       try {
         const poojaName = booking.poojaId?.name || 'Pooja';
-        sendFeedbackRequestEmail(booking, poojaName).catch(() => {});
-        const phone = booking.userDetails?.phone;
-        if (phone) sendWhatsAppForEvent('feedback_request', phone, []).catch(() => {});
+        const ud = booking.userDetails || {};
+        NotificationEngine.emit('FEEDBACK_REQUEST', {
+          user:    { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+          booking: { bookingNumber: booking.bookingNumber, poojaName },
+          _booking: booking, _poojaName: poojaName,
+        }).catch(() => {});
 
         await Booking.findByIdAndUpdate(booking._id, { feedbackReminderSent: true });
         console.log(`[Reminders] Feedback reminder sent for booking ${booking.bookingNumber}`);
@@ -253,10 +262,12 @@ const runInvoiceJob = async () => {
     for (const booking of bookings) {
       try {
         const poojaName = booking.poojaId?.name || 'Pooja';
-        sendInvoiceEmail(booking, poojaName).catch(() => {});
-        if (booking.userDetails?.phone) {
-          sendWhatsAppForEvent('invoice', booking.userDetails.phone, []).catch(() => {});
-        }
+        const ud = booking.userDetails || {};
+        NotificationEngine.emit('INVOICE_GENERATED', {
+          user:    { id: String(booking.userId || ''), name: ud.name, phone: ud.phone, email: ud.email },
+          booking: { bookingNumber: booking.bookingNumber, poojaName },
+          _booking: booking, _poojaName: poojaName,
+        }).catch(() => {});
         await Booking.findByIdAndUpdate(booking._id, { invoiceSent: true });
         console.log(`[Reminders] Invoice sent for booking ${booking.bookingNumber}`);
       } catch (err) {

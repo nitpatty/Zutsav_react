@@ -13,6 +13,5 @@ const paymentLedgerSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 paymentLedgerSchema.index({ bookingId: 1 });
-paymentLedgerSchema.index({ merchantTransactionId: 1 }, { unique: true });
 
 module.exports = mongoose.model('PaymentLedger', paymentLedgerSchema);
