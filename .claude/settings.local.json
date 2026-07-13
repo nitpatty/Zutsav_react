@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(node --check src/controllers/marketplace.controller.js)",
-      "Bash(node --check src/routes/marketplace.routes.js)",
-      "Bash(node --check src/controllers/booking.controller.js)"
-    ]
-  }
-}
