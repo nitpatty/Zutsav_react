@@ -61,4 +61,12 @@ const uploadKYCDocs = multer({
 const uploadBlog = multer({ storage: createStorage('blogs'), fileFilter: imageFilter, limits: { fileSize: 8 * 1024 * 1024 } });
 const uploadHeroBanner = multer({ storage: createStorage('herobanners'), fileFilter: imageFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 
-module.exports = { uploadLogo, uploadProfile, uploadGovtId, uploadProducts, uploadKits, uploadCSV, uploadKYCDocs, uploadBlog, uploadHeroBanner };
+const legalDocFilter = (req, file, cb) => {
+  const extOk = /\.(pdf|doc|docx)$/i.test(file.originalname);
+  const mimeOk = /^(application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document)$/.test(file.mimetype);
+  if (extOk && mimeOk) cb(null, true);
+  else cb(new Error('Only PDF, DOC, or DOCX files are allowed'));
+};
+const uploadLegalDocument = multer({ storage: createStorage('legaldocs'), fileFilter: legalDocFilter, limits: { fileSize: 10 * 1024 * 1024 } });
+
+module.exports = { uploadLogo, uploadProfile, uploadGovtId, uploadProducts, uploadKits, uploadCSV, uploadKYCDocs, uploadBlog, uploadHeroBanner, uploadLegalDocument };

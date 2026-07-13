@@ -7,6 +7,7 @@ import {
 import toast from 'react-hot-toast';
 import API from '../../api/axios';
 import { validateField } from '../../utils/configValidation';
+import LegalDocumentsSection from './LegalDocumentsSection';
 
 // ─── Sub-tab nav ────────────────────────────────────────────────────────────
 const TABS = [
@@ -451,22 +452,7 @@ export default function SystemConfigurationTab() {
         />
       )}
 
-      {tab === 'frontend' && (
-        <EditableSection
-          section="frontend"
-          fields={manifest.frontend}
-          values={values}
-          onValuesChange={setValues}
-          onSaved={load}
-          extra={
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2">
-              <ReadOnlyRef label="Website URL" value={values.deployWebsiteUrl} hint="Edit in Deployment tab" />
-              <ReadOnlyRef label="Backend API URL" value={values.deployApiUrl} hint="Edit in Deployment tab" />
-              <ReadOnlyRef label="Admin Panel URL" value={values.deployAdminUrl} hint="Edit in Deployment tab" />
-            </div>
-          }
-        />
-      )}
+      {tab === 'frontend' && <LegalDocumentsSection />}
 
       {tab === 'mobile' && (
         <EditableSection

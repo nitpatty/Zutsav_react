@@ -10,5 +10,3 @@ export const webUrl = WEB_URL;
 export const adminUrl = ADMIN_URL;
 export const socketUrl = serverOrigin;
 export const supportEmail = process.env.REACT_APP_SUPPORT_EMAIL || 'info@zutsav.com';
-export const privacyUrl = process.env.REACT_APP_PRIVACY_URL || `${WEB_URL}/privacy`;
-export const termsUrl = process.env.REACT_APP_TERMS_URL || `${WEB_URL}/terms`;

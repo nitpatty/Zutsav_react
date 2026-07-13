@@ -141,6 +141,7 @@ app.use('/api/comm',             require('./routes/comm.routes'));
 app.use('/api/settings',         require('./routes/settings.routes'));
 app.use('/api/blogs',            require('./routes/blog.routes'));
 app.use('/api/invoices',         require('./routes/invoice.routes'));
+app.use('/api/documents',        require('./routes/legalDocument.routes'));
 
 // ✅ ✅ Error handler (improved)
 app.use((err, req, res, next) => {

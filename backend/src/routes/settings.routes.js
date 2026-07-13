@@ -2,11 +2,10 @@ const router = require('express').Router();
 const SystemSettings = require('../models/SystemSettings');
 
 const PUBLIC_FIELDS = 'platformName logo contactEmail supportPhone supportAddress ' +
-  'privacyUrl termsUrl contactUrl helpCenterUrl whatsappNumber customerCareNumber deployWebsiteUrl';
+  'whatsappNumber customerCareNumber deployWebsiteUrl';
 
 const DEFAULTS = {
   platformName: 'Zutsav', logo: '', contactEmail: '', supportPhone: '', supportAddress: '',
-  privacyUrl: '', termsUrl: '', contactUrl: '', helpCenterUrl: '',
   whatsappNumber: '', customerCareNumber: '', deployWebsiteUrl: '',
 };
 

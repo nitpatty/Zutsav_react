@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Phone, Mail, MapPin, Instagram, Facebook, Youtube, ArrowUpRight } from 'lucide-react';
 import { useSettings } from '../../context/SettingsContext';
-import { urls } from '../../config';
+import API from '../../api/axios';
+import { resolveViewUrl } from '../../utils/legalDocs';
 
 const SERVICES = [
   { label: 'Book a Pooja',          to: '/poojas'      },
@@ -22,13 +23,15 @@ const COMPANY = [
 export default function Footer() {
   const {
     platformName, logoUrl, contactEmail, supportPhone, supportAddress,
-    privacyUrl, termsUrl, helpCenterUrl,
   } = useSettings();
 
-  // Admin → System Configuration values apply live (no rebuild); fall back
-  // to the build-time config default until an admin sets an override.
-  const resolvedPrivacyUrl = privacyUrl || urls.privacyUrl;
-  const resolvedTermsUrl = termsUrl || urls.termsUrl;
+  const [legalDocs, setLegalDocs] = useState([]);
+
+  useEffect(() => {
+    API.get('/documents')
+      .then(({ data }) => setLegalDocs((data.documents || []).filter((d) => d.exists)))
+      .catch(() => {});
+  }, []);
 
   return (
     <footer className="bg-charcoal text-white">
@@ -90,23 +93,18 @@ export default function Footer() {
                   </Link>
                 </li>
               ))}
-              <li>
-                <a href={resolvedPrivacyUrl} className="text-gray-400 text-sm hover:text-saffron-400 transition-colors">
-                  Privacy Policy
-                </a>
-              </li>
-              <li>
-                <a href={resolvedTermsUrl} className="text-gray-400 text-sm hover:text-saffron-400 transition-colors">
-                  Terms of Service
-                </a>
-              </li>
-              {helpCenterUrl && (
-                <li>
-                  <a href={helpCenterUrl} className="text-gray-400 text-sm hover:text-saffron-400 transition-colors">
-                    Help Center
+              {legalDocs.map((doc) => (
+                <li key={doc.documentType}>
+                  <a
+                    href={resolveViewUrl(doc)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-400 text-sm hover:text-saffron-400 transition-colors"
+                  >
+                    {doc.label}
                   </a>
                 </li>
-              )}
+              ))}
             </ul>
           </div>
 

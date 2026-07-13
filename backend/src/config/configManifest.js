@@ -44,14 +44,6 @@ const MANIFEST = [
   { key: 'companyState', section: 'company', label: 'Registered State', type: 'text', required: false, liveApply: true,
     helpText: 'Used to determine interstate vs intrastate GST on invoices.' },
 
-  // ── Frontend ───────────────────────────────────────────────────────────
-  { key: 'privacyUrl', section: 'frontend', label: 'Privacy Policy URL', type: 'url', required: false, liveApply: true,
-    helpText: 'Shown in the website footer. Applies live — no rebuild needed.' },
-  { key: 'termsUrl', section: 'frontend', label: 'Terms URL', type: 'url', required: false, liveApply: true,
-    helpText: 'Shown in the website footer. Applies live — no rebuild needed.' },
-  { key: 'contactUrl', section: 'frontend', label: 'Contact URL', type: 'url', required: false, liveApply: true },
-  { key: 'helpCenterUrl', section: 'frontend', label: 'Help Center URL', type: 'url', required: false, liveApply: true },
-
   // ── Mobile ─────────────────────────────────────────────────────────────
   { key: 'mobileSupportUrl', section: 'mobile', label: 'Support URL', type: 'url', required: false, liveApply: false,
     helpText: 'Requires a new mobile app build (EAS) to take effect on already-installed apps.' },
@@ -64,7 +56,7 @@ const MANIFEST = [
   { key: 'customerCareNumber', section: 'communication', label: 'Customer Care Number', type: 'phone', required: false, liveApply: true },
 ];
 
-const SECTIONS = ['deployment', 'company', 'frontend', 'mobile', 'communication'];
+const SECTIONS = ['deployment', 'company', 'mobile', 'communication'];
 
 function forSection(section) {
   return MANIFEST.filter((f) => f.section === section);

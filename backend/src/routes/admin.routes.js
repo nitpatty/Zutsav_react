@@ -11,6 +11,7 @@ const { uploadLogo } = require('../middleware/upload');
 router.use(protect, authorize('admin'));
 
 router.use('/config-center', configCenterRoutes);
+router.use('/documents', require('./legalDocumentAdmin.routes'));
 
 router.get('/dashboard',                    ctrl.getDashboard);
 router.get('/activity-feed',               ctrl.getActivityFeed);

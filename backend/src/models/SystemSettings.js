@@ -92,12 +92,6 @@ const systemSettingsSchema = new mongoose.Schema({
   companyPan:   { type: String, default: '' },
   companyState: { type: String, default: '' },
 
-  // Frontend-consumed runtime URLs (System Configuration Center)
-  privacyUrl:     { type: String, default: '' },
-  termsUrl:       { type: String, default: '' },
-  contactUrl:     { type: String, default: '' },
-  helpCenterUrl:  { type: String, default: '' },
-
   // Communication (System Configuration Center)
   whatsappNumber:     { type: String, default: '' },
   customerCareNumber: { type: String, default: '' },

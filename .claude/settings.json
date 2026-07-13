@@ -39,7 +39,31 @@
       "Skill(run)",
       "Skill(run:*)",
       "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./backend/package.json'\\).scripts,null,2\\)\\)\")",
-      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./frontend/package.json'\\).scripts,null,2\\)\\)\")"
+      "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./frontend/package.json'\\).scripts,null,2\\)\\)\")",
+      "Bash(break)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5000/api/documents)",
+      "Bash(curl -s http://localhost:5000/api/documents)",
+      "Bash(curl -s -o /dev/null -w \"frontend http: %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s http://localhost:5000/api/settings/public)",
+      "Bash(printf '%%PDF-1.4\\\\n1 *)",
+      "Bash(curl -s -X POST http://localhost:5000/api/admin/documents/privacy -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -F 'file=@/tmp/test-privacy.pdf;type=application/pdf')",
+      "Bash(curl -s http://localhost:5000/api/documents/privacy)",
+      "Bash(curl -s -i -X POST http://localhost:5000/api/admin/documents/privacy -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -F 'file=@/tmp/test-privacy.pdf;type=application/pdf')",
+      "Bash(ls -la /tmp/test-privacy.pdf 2>&1; pwd)",
+      "Bash(curl -sS -o /tmp/resp.txt -w 'STATUS:%{http_code}\\\\n' -X POST http://localhost:5000/api/admin/documents/privacy -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -F 'file=@/tmp/test-privacy.pdf;type=application/pdf')",
+      "Bash(echo \"exit=$?\")",
+      "Bash(curl -sS -o /tmp/resp.txt -w 'STATUS:%{http_code}\\\\n' -X POST http://localhost:5000/api/admin/documents/privacy -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -F file=@/tmp/test-privacy.pdf)",
+      "Bash(curl -sS -i \"http://localhost:5000/api/documents/privacy/view\" -o /tmp/view_resp.txt -D /tmp/view_headers.txt)",
+      "Bash(printf 'PK\\\\x03\\\\x04fakezipcontent')",
+      "Bash(curl -sS -o /tmp/resp2.txt -w 'STATUS:%{http_code}\\\\n' -X PUT http://localhost:5000/api/admin/documents/privacy -H 'Authorization: Bearer __CMDSUB_OUTPUT__' -F file=@/tmp/test-privacy.docx)",
+      "Bash(node \"C:\\\\Users\\\\HP\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-HP-OneDrive-Documents-zutsav-updated\\\\7b52ef3f-a9f7-43ef-b958-bfc28cc7ddaa\\\\scratchpad\\\\test_upload.js\")",
+      "Bash(node ./_test_upload_tmp.js)",
+      "Bash(cygpath -w /tmp/admin_token.txt)",
+      "Bash(sed -i \"s#/tmp/admin_token.txt#C:\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\Users\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\HP\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\AppData\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\Local\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\Temp\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\admin_token.txt#\" ./_test_upload_tmp.js)",
+      "Bash(rm -f ./_test_upload_tmp.js /tmp/test-privacy.pdf /tmp/test-privacy.docx /tmp/resp.txt /tmp/resp2.txt /tmp/view_resp.txt /tmp/view_headers.txt /tmp/admin_token.txt /tmp/backend.pid /tmp/backend.log)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);j.documents.forEach\\(x=>console.log\\(x.documentType, x.exists, x.originalName\\)\\)}\\)\")",
+      "Bash(curl -s http://localhost:3000/static/js/bundle.js -o /dev/null -w \"bundle.js status: %{http_code}\\\\n\")",
+      "Bash(curl -s http://localhost:3000/static/js/bundle.js)"
     ]
   }
 }

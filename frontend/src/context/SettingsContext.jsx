@@ -2,20 +2,14 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import API from '../api/axios';
 import { getImageUrl } from '../config';
 
-// privacyUrl/termsUrl/contactUrl/helpCenterUrl/whatsappNumber/customerCareNumber/
-// deployWebsiteUrl are managed from Admin → System Configuration and applied
-// live (no rebuild) — components should prefer these over the static
-// config/urls.config.js build-time defaults where both exist.
+// whatsappNumber/customerCareNumber/deployWebsiteUrl are managed from
+// Admin → System Configuration and applied live (no rebuild).
 const SettingsContext = createContext({
   platformName: 'Zutsav',
   logo: '',
   contactEmail: '',
   supportPhone: '',
   supportAddress: '',
-  privacyUrl: '',
-  termsUrl: '',
-  contactUrl: '',
-  helpCenterUrl: '',
   whatsappNumber: '',
   customerCareNumber: '',
   deployWebsiteUrl: '',
@@ -30,10 +24,6 @@ export function SettingsProvider({ children }) {
     contactEmail:   '',
     supportPhone:   '',
     supportAddress: '',
-    privacyUrl:         '',
-    termsUrl:           '',
-    contactUrl:         '',
-    helpCenterUrl:      '',
     whatsappNumber:     '',
     customerCareNumber: '',
     deployWebsiteUrl:   '',
