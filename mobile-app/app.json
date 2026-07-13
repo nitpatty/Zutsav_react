@@ -1,0 +1,74 @@
+{
+  "expo": {
+    "name": "Zutsav",
+    "slug": "zutsav",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "zutsav",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFF8E7"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.zutsav.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Zutsav uses your location to show nearby temples and assign pandits.",
+        "NSCameraUsageDescription": "Zutsav needs camera access for profile photos and KYC document upload.",
+        "NSPhotoLibraryUsageDescription": "Zutsav needs photo library access to upload profile photos and KYC documents.",
+        "NSPhotoLibraryAddUsageDescription": "Zutsav saves images to your photo library."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFF8E7"
+      },
+      "package": "com.zutsav.app",
+      "versionCode": 1,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#D4AF37"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Zutsav to use your location to find nearby temples and assign pandits."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Zutsav to access your photos for profile and KYC uploads.",
+          "cameraPermission": "Allow Zutsav to use your camera for profile and KYC photos."
+        }
+      ],
+      "expo-font"
+    ]
+  }
+}
