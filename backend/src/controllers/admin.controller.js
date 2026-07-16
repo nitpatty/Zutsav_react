@@ -24,6 +24,7 @@ const { NotificationEngine } = require('../../notification-engine');
 const { restoreStock }             = require('../utils/inventoryUtils');
 const { calculateRefundBreakdown, validateRefundAmount } = require('../utils/refundEngine');
 const { roundToPaise } = require('../utils/financeUtils');
+const { resolveApprovedPayoutAmount } = require('../utils/payoutUtils');
 const {
   normalizeBookingPayload,
   normalizeOrderPayload,
@@ -386,7 +387,7 @@ exports.getDashboard = async (req, res, next) => {
 
     const [
       totalUsers, totalPandits, pendingPandits, totalBookings, paidBookings,
-      totalOrders, pendingOrders, deliveredOrders, cancelledOrders,
+      totalOrders, pendingOrders, deliveredOrders, cancelledOrders, urgentBookings,
     ] = await Promise.all([
       User.countDocuments({ role: 'user' }),
       Pandit.countDocuments({ status: 'approved' }),
@@ -397,6 +398,7 @@ exports.getDashboard = async (req, res, next) => {
       Order.countDocuments({ status: { $in: ['paid', 'confirmed', 'packed', 'shipped', 'out_for_delivery'] } }),
       Order.countDocuments({ status: 'delivered' }),
       Order.countDocuments({ status: 'cancelled' }),
+      Booking.countDocuments({ bookingType: 'urgent', status: { $in: PAID_BOOKING_STATUSES } }),
     ]);
 
     const [bookingRevenue, orderRevenue, lowStockProducts] = await Promise.all([
@@ -519,6 +521,7 @@ exports.getDashboard = async (req, res, next) => {
         pendingPandits,
         totalBookings,
         paidBookings,
+        urgentBookings,
         totalRevenue: (bookingRevenue[0]?.total || 0) + (orderRevenue[0]?.total || 0),
         bookingRevenue: bookingRevenue[0]?.total || 0,
         orderRevenue:   orderRevenue[0]?.total || 0,
@@ -946,11 +949,12 @@ exports.getBookingById = async (req, res, next) => {
 
 exports.getBookings = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, status, withKit, referralFilter, refundStatus } = req.query;
+    const { page = 1, limit = 20, status, withKit, referralFilter, refundStatus, bookingType } = req.query;
     const query = {};
     if (status)  query.status = status;
     if (withKit === 'true') query.withKit = true;
     if (refundStatus) query['refund.status'] = refundStatus;
+    if (bookingType === 'normal' || bookingType === 'urgent') query.bookingType = bookingType;
     // Referral filters (new Referral model — filter by presence of referralId)
     if (referralFilter === 'referred') query['referral.referralId'] = { $ne: null };
     if (referralFilter === 'normal')   query['referral.referralId'] = null;
@@ -1169,10 +1173,11 @@ exports.getReferralAnalytics = require('./referral.controller').getReferralAnaly
 // GET /api/admin/bookings/export  — server-side Excel export
 exports.exportBookings = async (req, res, next) => {
   try {
-    const { status, withKit, startDate, endDate } = req.query;
+    const { status, withKit, startDate, endDate, bookingType } = req.query;
     const query = {};
     if (status)           query.status  = status;
     if (withKit === 'true') query.withKit = true;
+    if (bookingType === 'normal' || bookingType === 'urgent') query.bookingType = bookingType;
     if (startDate || endDate) {
       query.createdAt = {};
       if (startDate) query.createdAt.$gte = new Date(startDate);
@@ -1332,7 +1337,7 @@ exports.exportBookings = async (req, res, next) => {
         bookingNumber:    b.bookingNumber || String(b._id),
         bookedOn:         b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN') : '',
         status:           BOOKING_STATUS_LABEL[b.status] || b.status,
-        bookingType:      b.isUrgent ? 'Urgent' : 'Normal',
+        bookingType:      b.bookingType === 'urgent' ? 'Urgent' : 'Normal',
         pooja:            b.poojaId?.name || '',
         language:         b.language || '',
         ceremonyDate:     b.scheduledDate ? new Date(b.scheduledDate).toLocaleDateString('en-IN') : '',
@@ -1852,22 +1857,12 @@ exports.approveCompletion = async (req, res, next) => {
       at:              now,
     });
 
-    // Auto-determine payout amount from pandit's admin-approved price
+    // Auto-determine payout amount from admin-approved sources only (never the
+    // pandit's self-declared expected price — see resolveApprovedPayoutAmount).
     let payoutAmount = 0;
     if (booking.panditId) {
       const pandit = await Pandit.findById(booking.panditId).select('poojaCharges');
-      if (pandit) {
-        const charge = pandit.poojaCharges.find(
-          (c) => c.poojaId && c.poojaId.toString() === booking.poojaId.toString()
-        );
-        if (charge?.priceApprovalStatus === 'approved' && charge.approvedPrice != null) {
-          payoutAmount = charge.approvedPrice;
-        } else if (booking.panditFareAmount) {
-          payoutAmount = booking.panditFareAmount;
-        } else if (charge?.expectedCharges) {
-          payoutAmount = charge.expectedCharges;
-        }
-      }
+      payoutAmount = resolveApprovedPayoutAmount(booking, pandit);
     }
 
     booking.payout.status = 'pending';
@@ -2672,19 +2667,10 @@ exports.getPendingPayouts = async (req, res, next) => {
       .sort({ verifiedAt: -1 });
 
     // Auto-heal bookings where amount is 0: look up the pandit's approved price
+    // (same admin-approved-only resolver used everywhere else — see payoutUtils)
     for (const b of bookings) {
       if ((b.payout?.amount || 0) === 0 && b.panditId && b.poojaId) {
-        const charge = b.panditId.poojaCharges?.find(
-          (c) => c.poojaId && c.poojaId.toString() === b.poojaId._id.toString()
-        );
-        let healed = 0;
-        if (charge?.priceApprovalStatus === 'approved' && charge.approvedPrice > 0) {
-          healed = charge.approvedPrice;
-        } else if (charge?.expectedCharges > 0) {
-          healed = charge.expectedCharges;
-        } else if (b.panditFareAmount > 0) {
-          healed = b.panditFareAmount;
-        }
+        const healed = resolveApprovedPayoutAmount(b, b.panditId);
         if (healed > 0) {
           await Booking.findByIdAndUpdate(b._id, { 'payout.amount': healed });
           b.payout.amount = healed;

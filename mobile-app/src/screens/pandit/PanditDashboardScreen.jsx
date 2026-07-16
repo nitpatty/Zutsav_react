@@ -1,25 +1,39 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, StatusBar, Switch } from 'react-native';
+import { View, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, StatusBar, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useAuthStore } from '../../store/authStore';
-import { useThemeStore } from '../../store/themeStore';
 import { useNotificationStore } from '../../store/notificationStore';
-import { formatCurrency, formatDate, formatTime, timeAgo, daysUntil, bookingStatusColor } from '../../utils/helpers';
+import { formatCurrency, formatDate, timeAgo, daysUntil } from '../../utils/helpers';
 import { saveCache, loadCache } from '../../utils/offlineCache';
 import useOnReconnect from '../../hooks/useOnReconnect';
-import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import NotificationBell from '../../components/NotificationBell';
 import DashboardChart from '../../components/admin/DashboardChart';
 
+import { COLORS, SPACING } from '../../theme/tokens';
+import { Greeting, Heading, Body, Caption, CardTitle } from '../../components/ui/Typography';
+import Badge from '../../components/ui/Badge';
+import Card from '../../components/ui/Card';
+import HeroCard from '../../components/ui/HeroCard';
+import StatTile from '../../components/ui/StatTile';
+import ActionCard from '../../components/ui/ActionCard';
+import BookingCard from '../../components/ui/BookingCard';
+import SectionHeader from '../../components/ui/SectionHeader';
+import IconContainer from '../../components/ui/IconContainer';
+
+function greetingForHour() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good Morning,';
+  if (h < 17) return 'Good Afternoon,';
+  return 'Good Evening,';
+}
+
 export default function PanditDashboardScreen() {
   const navigation = useNavigation();
   const { user } = useAuthStore();
-  const { theme } = useThemeStore();
-  const C = theme.colors;
   const { notifications, fetch: fetchNotifications } = useNotificationStore();
 
   const [dash,          setDash]          = useState(null);
@@ -90,97 +104,169 @@ export default function PanditDashboardScreen() {
   const kycApproved = profile.kycStatus === 'approved';
   const hasActionRequired = pending.referralRemarks > 0 || today.bookings.some((b) => b.status === 'pandit_assigned') || upcoming.bookings.some((b) => b.status === 'pandit_assigned');
 
-  const statCards = [
-    { label: "Today's Bookings",  value: today.bookings.length, icon: 'today', nav: 'PanditBookingsTab' },
-    { label: "Today's Earnings",  value: formatCurrency(today.earnings), icon: 'cash', nav: 'PanditEarnings' },
-    { label: 'Monthly Earnings',  value: formatCurrency(monthly.earnings), icon: 'trending-up', nav: 'PanditEarnings' },
-    { label: 'Pending Payments',  value: formatCurrency(payoutStats?.pendingAmount || 0), icon: 'wallet', nav: 'PanditEarnings' },
-    { label: 'Average Rating',    value: profile.rating ? `${profile.rating.toFixed(1)} ★` : 'N/A', icon: 'star', nav: 'PanditRatings' },
-    { label: 'Completion Rate',   value: `${perf.completionRate || 0}%`, icon: 'checkmark-circle', nav: null },
-    { label: 'Repeat Customers',  value: perf.repeatCustomers || 0, icon: 'people', nav: null },
-    { label: 'Accepted / Rejected', value: `${perf.accepted || 0} / ${perf.rejected || 0}`, icon: 'swap-vertical', nav: null },
+  // Derived from real monthly trend data — never fabricated.
+  const monthlySeries = dash?.trends?.monthly || [];
+  let monthlyDeltaText = null;
+  if (monthlySeries.length >= 2) {
+    const curr = monthlySeries[monthlySeries.length - 1]?.value ?? 0;
+    const prev = monthlySeries[monthlySeries.length - 2]?.value ?? 0;
+    if (prev > 0) {
+      const pct = Math.round(((curr - prev) / prev) * 100);
+      monthlyDeltaText = `${pct >= 0 ? '+' : ''}${pct}% this month`;
+    }
+  }
+
+  const statTiles = [
+    { label: "Today's Bookings", value: String(today.bookings.length), icon: 'calendar-outline', nav: 'PanditBookingsTab' },
+    { label: "Today's Earnings", value: formatCurrency(today.earnings), icon: 'cash-outline', nav: 'PanditEarnings' },
+    { label: 'Pending Payments', value: formatCurrency(payoutStats?.pendingAmount || 0), icon: 'wallet-outline', nav: 'PanditEarnings' },
+    { label: 'Monthly Earnings', value: formatCurrency(monthly.earnings), icon: 'trending-up-outline', nav: 'PanditEarnings', deltaText: monthlyDeltaText },
+    { label: 'Average Rating', value: profile.rating ? `${profile.rating.toFixed(1)} ★` : 'N/A', icon: 'star-outline', nav: 'PanditRatings' },
+    { label: 'Completion Rate', value: `${perf.completionRate || 0}%`, icon: 'checkmark-circle-outline', nav: null },
+    { label: 'Repeat Customers', value: String(perf.repeatCustomers || 0), icon: 'people-outline', nav: null },
+    { label: 'Accepted / Rejected', value: `${perf.accepted || 0} / ${perf.rejected || 0}`, icon: 'swap-vertical-outline', nav: null },
+    { label: 'Total Pujas', value: String(perf.completed || 0), icon: 'flame-outline', nav: null },
+  ];
+
+  const quickActions = [
+    { label: 'Availability', icon: 'time-outline', nav: 'PanditAvailability' },
+    { label: 'My Services', icon: 'sparkles-outline', nav: 'PanditPoojaServices' },
+    { label: 'Manage Pujas', icon: 'flame-outline', nav: 'PanditPoojaServices' },
+    { label: 'Earnings Report', icon: 'bar-chart-outline', nav: 'PanditEarnings' },
+    { label: 'Customer Reviews', icon: 'star-outline', nav: 'PanditRatings' },
+    { label: 'Profile', icon: 'person-outline', nav: 'PanditProfileMain' },
+    { label: 'KYC', icon: 'document-text-outline', nav: 'PanditKYC' },
+    { label: 'Referrals', icon: 'people-outline', nav: 'PanditReferralTab' },
+    { label: 'My Blogs', icon: 'newspaper-outline', nav: 'PanditMyBlogs' },
+    { label: 'Festivals', icon: 'calendar-outline', nav: 'Festivals' },
+    { label: 'Panchang', icon: 'sunny-outline', nav: 'Panchang' },
   ];
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
-      <StatusBar barStyle={theme.dark ? 'light-content' : 'dark-content'} backgroundColor={C.background} />
+    <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
 
-      <View style={[styles.header, { paddingTop: 56, backgroundColor: C.surface, borderBottomColor: C.border }]}>
+      <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.greeting, { color: C.textSecondary }]}>Pandit Dashboard</Text>
-          <Text style={[styles.userName, { color: C.text }]}>{user?.name?.split(' ')[0]}</Text>
+          <Greeting>{greetingForHour()}</Greeting>
+          <View style={styles.nameRow}>
+            <Heading numberOfLines={1}>{user?.name?.split(' ')[0]}</Heading>
+            <Badge label="Pandit" variant="primary" />
+          </View>
         </View>
         <View style={styles.onlineToggle}>
-          <Text style={[styles.onlineLabel, { color: profile.isOnline ? '#16A34A' : C.textSecondary }]}>{profile.isOnline ? 'Online' : 'Offline'}</Text>
-          <Switch value={!!profile.isOnline} onValueChange={handleToggleOnline} disabled={togglingOnline} trackColor={{ true: '#16A34A' }} />
+          <Caption color={profile.isOnline ? COLORS.success : COLORS.textSecondary} style={{ fontWeight: '700' }}>
+            {profile.isOnline ? 'Online' : 'Offline'}
+          </Caption>
+          <Switch
+            value={!!profile.isOnline}
+            onValueChange={handleToggleOnline}
+            disabled={togglingOnline}
+            trackColor={{ true: COLORS.success }}
+          />
         </View>
-        <NotificationBell color={C.text} notifScreen="PanditNotifications" />
+        <NotificationBell color={COLORS.text} notifScreen="PanditNotifications" />
       </View>
 
       <ScrollView
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(true); }} tintColor={C.primary} />}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(true); }} tintColor={COLORS.primary} />}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
       >
         {!kycApproved && (
-          <TouchableOpacity
-            style={[styles.kycAlert, { backgroundColor: '#FFFBEB', borderColor: '#FCD34D' }]}
-            onPress={() => navigation.navigate('PanditKYC')}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="warning" size={20} color="#D97706" />
-            <Text style={styles.kycAlertText}>
-              {profile.kycStatus === 'not_submitted' ? 'Complete KYC to start receiving bookings' :
-               profile.kycStatus === 'submitted' ? 'KYC under review — please wait' :
-               profile.kycStatus === 'rejected' ? 'KYC rejected — please resubmit' :
-               profile.kycStatus === 'reupload_required' ? 'KYC documents need reupload' :
-               'Complete your profile'}
-            </Text>
-            <Ionicons name="chevron-forward" size={16} color="#D97706" />
+          <TouchableOpacity onPress={() => navigation.navigate('PanditKYC')} activeOpacity={0.85}>
+            <Card padding={SPACING.md} style={[styles.alertCard, { backgroundColor: COLORS.warningBg }]} elevation="raised">
+              <IconContainer name="warning-outline" size="sm" color={COLORS.warning} />
+              <Body color="#7A4B12" style={styles.alertText}>
+                {profile.kycStatus === 'not_submitted' ? 'Complete KYC to start receiving bookings' :
+                 profile.kycStatus === 'submitted' ? 'KYC under review — please wait' :
+                 profile.kycStatus === 'rejected' ? 'KYC rejected — please resubmit' :
+                 profile.kycStatus === 'reupload_required' ? 'KYC documents need reupload' :
+                 'Complete your profile'}
+              </Body>
+              <Ionicons name="chevron-forward" size={16} color={COLORS.warning} />
+            </Card>
           </TouchableOpacity>
         )}
 
         {hasActionRequired && (
-          <View style={[styles.actionAlert, { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' }]}>
-            <Ionicons name="alert-circle" size={20} color="#DC2626" />
-            <Text style={styles.actionAlertText}>
+          <Card padding={SPACING.md} style={[styles.alertCard, { backgroundColor: COLORS.errorBg }]} elevation="raised">
+            <IconContainer name="alert-circle-outline" size="sm" color={COLORS.error} />
+            <Body color="#8A2E28" style={styles.alertText}>
               {pending.referralRemarks > 0 ? `${pending.referralRemarks} referral remark${pending.referralRemarks === 1 ? '' : 's'} pending` : 'You have bookings needing action'}
-            </Text>
-          </View>
+            </Body>
+          </Card>
         )}
 
+        <HeroCard
+          label="Total Earnings"
+          value={formatCurrency(monthly.earnings)}
+          period="This Month"
+          deltaText={monthlyDeltaText}
+          onViewDetails={() => navigation.navigate('PanditEarnings')}
+        />
+
         <View style={styles.statsGrid}>
-          {statCards.map((s) => (
-            <TouchableOpacity
-              key={s.label}
-              style={[styles.statCard, { backgroundColor: C.surface, borderColor: C.border }]}
-              onPress={() => s.nav && navigation.navigate(s.nav)}
-              activeOpacity={s.nav ? 0.85 : 1}
-              disabled={!s.nav}
-            >
-              <Ionicons name={s.icon} size={18} color={C.primary} />
-              <Text style={[styles.statValue, { color: C.text }]}>{s.value}</Text>
-              <Text style={[styles.statLabel, { color: C.textSecondary }]}>{s.label}</Text>
-            </TouchableOpacity>
+          {statTiles.map((s) => (
+            <View key={s.label} style={styles.statCol}>
+              <StatTile
+                icon={s.icon}
+                value={s.value}
+                label={s.label}
+                deltaText={s.deltaText}
+                onPress={s.nav ? () => navigation.navigate(s.nav) : undefined}
+              />
+            </View>
           ))}
         </View>
 
-        {today.bookings.length > 0 && (
-          <Section title="Today's Tasks" C={C}>
-            {today.bookings.map((b) => (
-              <BookingRow key={b._id} b={b} C={C} onPress={() => navigation.navigate('PanditBookingsTab', { screen: 'PanditBookingDetail', params: { bookingId: b._id } })} />
+        <View style={styles.section}>
+          <SectionHeader title="Quick Actions" />
+          <View style={styles.actionsGrid}>
+            {quickActions.map((a) => (
+              <View key={a.label} style={styles.actionCol}>
+                <ActionCard icon={a.icon} label={a.label} onPress={() => navigation.navigate(a.nav)} />
+              </View>
             ))}
-          </Section>
+          </View>
+        </View>
+
+        {today.bookings.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeader title="Today's Tasks" onSeeAll={() => navigation.navigate('PanditBookingsTab')} />
+            <View style={{ gap: SPACING.sm }}>
+              {today.bookings.map((b) => (
+                <BookingCard
+                  key={b._id}
+                  title={b.poojaId?.name || 'Pooja'}
+                  subtitle={b.userId?.name || ''}
+                  status={b.status}
+                  onPress={() => navigation.navigate('PanditBookingsTab', { screen: 'PanditBookingDetail', params: { bookingId: b._id } })}
+                />
+              ))}
+            </View>
+          </View>
         )}
 
         {upcoming.bookings.length > 0 && (
-          <Section title="Upcoming Calendar" C={C} onSeeAll={() => navigation.navigate('PanditBookingsTab')}>
-            {upcoming.bookings.slice(0, 5).map((b) => (
-              <BookingRow key={b._id} b={b} C={C} showDate onPress={() => navigation.navigate('PanditBookingsTab', { screen: 'PanditBookingDetail', params: { bookingId: b._id } })} />
-            ))}
-          </Section>
+          <View style={styles.section}>
+            <SectionHeader title="Upcoming Pujas" seeAllLabel="View Calendar" onSeeAll={() => navigation.navigate('PanditBookingsTab')} />
+            <View style={{ gap: SPACING.sm }}>
+              {upcoming.bookings.slice(0, 5).map((b) => (
+                <BookingCard
+                  key={b._id}
+                  title={b.poojaId?.name || 'Pooja'}
+                  subtitle={b.userId?.name || ''}
+                  date={b.scheduledDate}
+                  status={b.status}
+                  onPress={() => navigation.navigate('PanditBookingsTab', { screen: 'PanditBookingDetail', params: { bookingId: b._id } })}
+                />
+              ))}
+            </View>
+          </View>
         )}
 
-        <View style={{ paddingHorizontal: 16, marginTop: 4 }}>
+        <View style={[styles.section, { paddingHorizontal: SPACING.xl }]}>
           <DashboardChart
             title="Earnings (30 Days)"
             series={(dash?.trends?.daily || []).map((d) => ({ date: d.date, value: d.value }))}
@@ -189,157 +275,83 @@ export default function PanditDashboardScreen() {
         </View>
 
         {referralStats && (
-          <TouchableOpacity onPress={() => navigation.navigate('PanditReferralTab')} activeOpacity={0.85}>
-            <Section title="Referral Statistics" C={C}>
-              <View style={styles.referralRow}>
-                <ReferralStat label="Total" value={referralStats.total} C={C} />
-                <ReferralStat label="Booked" value={referralStats.booked} C={C} />
-                <ReferralStat label="Completed" value={referralStats.completed} C={C} />
-              </View>
-            </Section>
+          <TouchableOpacity onPress={() => navigation.navigate('PanditReferralTab')} activeOpacity={0.85} style={styles.section}>
+            <SectionHeader title="Referral Statistics" />
+            <Card style={styles.referralRow}>
+              <ReferralStat label="Total" value={referralStats.total} />
+              <ReferralStat label="Booked" value={referralStats.booked} />
+              <ReferralStat label="Completed" value={referralStats.completed} />
+            </Card>
           </TouchableOpacity>
         )}
 
         {festivals.length > 0 && (
-          <Section title="Upcoming Festivals" C={C} onSeeAll={() => navigation.navigate('Festivals')}>
-            {festivals.map((f) => (
-              <View key={f._id} style={[styles.festivalRow, { borderColor: C.border }]}>
-                <Text style={[styles.festivalDate, { color: C.primary }]}>{formatDate(f.date, 'dd MMM')}</Text>
-                <Text style={[styles.festivalName, { color: C.text }]} numberOfLines={1}>{f.name}</Text>
-              </View>
-            ))}
-          </Section>
+          <View style={styles.section}>
+            <SectionHeader title="Upcoming Festivals" onSeeAll={() => navigation.navigate('Festivals')} />
+            <View style={{ gap: SPACING.sm }}>
+              {festivals.map((f) => (
+                <Card key={f._id} padding={SPACING.md} style={styles.rowCard} elevation="raised">
+                  <Caption color={COLORS.primaryDark} style={styles.festivalDate}>{formatDate(f.date, 'dd MMM')}</Caption>
+                  <CardTitle numberOfLines={1} style={{ flex: 1 }}>{f.name}</CardTitle>
+                </Card>
+              ))}
+            </View>
+          </View>
         )}
 
         {notifications.length > 0 && (
-          <Section title="Recent Notifications" C={C} onSeeAll={() => navigation.navigate('PanditNotifications')}>
-            {notifications.slice(0, 3).map((n) => (
-              <View key={n._id} style={[styles.notifRow, { borderColor: C.border }]}>
-                <Text style={[styles.notifTitle, { color: C.text }]} numberOfLines={1}>{n.title}</Text>
-                <Text style={[styles.notifTime, { color: C.textSecondary }]}>{timeAgo(n.createdAt)}</Text>
-              </View>
-            ))}
-          </Section>
+          <View style={styles.section}>
+            <SectionHeader title="Recent Notifications" onSeeAll={() => navigation.navigate('PanditNotifications')} />
+            <View style={{ gap: SPACING.sm }}>
+              {notifications.slice(0, 3).map((n) => (
+                <Card key={n._id} padding={SPACING.md} style={styles.rowCard} elevation="raised">
+                  <CardTitle numberOfLines={1} style={{ flex: 1, marginRight: SPACING.sm }}>{n.title}</CardTitle>
+                  <Caption>{timeAgo(n.createdAt)}</Caption>
+                </Card>
+              ))}
+            </View>
+          </View>
         )}
-
-        <View style={styles.quickRow}>
-          {[
-            { label: 'Profile', icon: 'person', nav: 'PanditProfileMain' },
-            { label: 'KYC',     icon: 'document-text', nav: 'PanditKYC' },
-            { label: 'Availability', icon: 'time', nav: 'PanditAvailability' },
-            { label: 'Earnings', icon: 'bar-chart', nav: 'PanditEarnings' },
-            { label: 'Referrals', icon: 'people', nav: 'PanditReferralTab' },
-            { label: 'My Blogs', icon: 'newspaper', nav: 'PanditMyBlogs' },
-            { label: 'Festivals', icon: 'calendar', nav: 'Festivals' },
-            { label: 'Panchang', icon: 'sunny', nav: 'Panchang' },
-          ].map((a) => (
-            <TouchableOpacity
-              key={a.label}
-              style={[styles.quickBtn, { backgroundColor: C.surface, borderColor: C.border }]}
-              onPress={() => navigation.navigate(a.nav)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name={a.icon} size={20} color={C.primary} />
-              <Text style={[styles.quickLabel, { color: C.text }]}>{a.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
       </ScrollView>
     </View>
   );
 }
 
-function Section({ title, children, C, onSeeAll }) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionTitle, { color: C.text }]}>{title}</Text>
-        {onSeeAll && (
-          <TouchableOpacity onPress={onSeeAll}>
-            <Text style={[styles.seeAll, { color: C.primary }]}>See all</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      <View style={{ paddingHorizontal: 16, gap: 10 }}>{children}</View>
-    </View>
-  );
-}
-
-function BookingRow({ b, C, onPress, showDate = false }) {
-  return (
-    <TouchableOpacity style={[styles.bookingRow, { backgroundColor: C.surface, borderColor: C.border }]} onPress={onPress} activeOpacity={0.85}>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.bookingName, { color: C.text }]} numberOfLines={1}>{b.poojaId?.name || 'Pooja'}</Text>
-        <Text style={[styles.bookingUser, { color: C.textSecondary }]}>
-          {b.userId?.name || ''}{showDate && b.scheduledDate ? ` · ${formatDate(b.scheduledDate)}` : ''}
-        </Text>
-      </View>
-      <StatusBadge status={b.status} colorMap={bookingStatusColor} small />
-    </TouchableOpacity>
-  );
-}
-
-function ReferralStat({ label, value, C }) {
+function ReferralStat({ label, value }) {
   return (
     <View style={styles.referralStat}>
-      <Text style={[styles.referralValue, { color: C.text }]}>{value}</Text>
-      <Text style={[styles.referralLabel, { color: C.textSecondary }]}>{label}</Text>
+      <Heading style={{ fontSize: 18 }}>{value}</Heading>
+      <Caption>{label}</Caption>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root:         { flex: 1 },
+  root:   { flex: 1, backgroundColor: COLORS.background },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
+    paddingTop: 56, paddingHorizontal: SPACING.xl, paddingBottom: SPACING.md,
+    backgroundColor: COLORS.background,
   },
-  greeting:     { fontSize: 13 },
-  userName:     { fontSize: 22, fontWeight: '800' },
+  nameRow:      { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   onlineToggle: { alignItems: 'center', gap: 2 },
-  onlineLabel:  { fontSize: 10, fontWeight: '700' },
-  kycAlert: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    margin: 16, marginBottom: 8, padding: 14, borderRadius: 14, borderWidth: 1.5,
-  },
-  kycAlertText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#92400E' },
-  actionAlert: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginHorizontal: 16, marginBottom: 8, padding: 14, borderRadius: 14, borderWidth: 1.5,
-  },
-  actionAlertText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#991B1B' },
-  statsGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 12, padding: 16,
-  },
-  statCard: {
-    flex: 1, minWidth: '42%', borderRadius: 16, borderWidth: 1,
-    padding: 14, gap: 6, alignItems: 'center',
-  },
-  statValue:    { fontSize: 16, fontWeight: '800', textAlign: 'center' },
-  statLabel:    { fontSize: 11, textAlign: 'center' },
-  section:      { marginTop: 12 },
-  sectionHeader:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, marginBottom: 10 },
-  sectionTitle: { fontSize: 16, fontWeight: '700' },
-  seeAll:       { fontSize: 13, fontWeight: '600' },
-  bookingRow:   { flexDirection: 'row', alignItems: 'center', borderRadius: 14, borderWidth: 1, padding: 12 },
-  bookingName:  { fontSize: 14, fontWeight: '600' },
-  bookingUser:  { fontSize: 12, marginTop: 2 },
-  referralRow:  { flexDirection: 'row', borderRadius: 14, borderWidth: 1, borderColor: '#E5E7EB', padding: 14, gap: 10 },
-  referralStat: { flex: 1, alignItems: 'center' },
-  referralValue:{ fontSize: 18, fontWeight: '800' },
-  referralLabel:{ fontSize: 11, marginTop: 2 },
-  festivalRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 12, borderWidth: 1, padding: 10 },
-  festivalDate: { fontSize: 12, fontWeight: '800', width: 60 },
-  festivalName: { fontSize: 13, fontWeight: '600', flex: 1 },
-  notifRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 12, borderWidth: 1, padding: 10 },
-  notifTitle:   { fontSize: 13, fontWeight: '600', flex: 1, marginRight: 8 },
-  notifTime:    { fontSize: 11 },
-  quickRow: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: 12, padding: 16, marginTop: 4,
-  },
-  quickBtn: {
-    flex: 1, minWidth: '30%', alignItems: 'center', gap: 6,
-    padding: 14, borderRadius: 16, borderWidth: 1,
-  },
-  quickLabel:   { fontSize: 12, fontWeight: '600' },
+
+  scroll: { paddingHorizontal: SPACING.xl, paddingBottom: 120, gap: SPACING.base },
+
+  alertCard: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  alertText: { flex: 1, fontWeight: '600' },
+
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md },
+  statCol:   { width: '30%' },
+
+  section: { gap: 0 },
+
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.md },
+  actionCol:   { width: '22%' },
+
+  referralRow:  { flexDirection: 'row' },
+  referralStat: { flex: 1, alignItems: 'center', gap: 2 },
+
+  rowCard: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
+  festivalDate: { fontWeight: '800', width: 56 },
 });

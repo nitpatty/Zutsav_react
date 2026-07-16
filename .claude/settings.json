@@ -63,7 +63,18 @@
       "Bash(rm -f ./_test_upload_tmp.js /tmp/test-privacy.pdf /tmp/test-privacy.docx /tmp/resp.txt /tmp/resp2.txt /tmp/view_resp.txt /tmp/view_headers.txt /tmp/admin_token.txt /tmp/backend.pid /tmp/backend.log)",
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);j.documents.forEach\\(x=>console.log\\(x.documentType, x.exists, x.originalName\\)\\)}\\)\")",
       "Bash(curl -s http://localhost:3000/static/js/bundle.js -o /dev/null -w \"bundle.js status: %{http_code}\\\\n\")",
-      "Bash(curl -s http://localhost:3000/static/js/bundle.js)"
+      "Bash(curl -s http://localhost:3000/static/js/bundle.js)",
+      "Bash(rm -rf /tmp/expo-export-check)",
+      "Read(//c/Users/HP/AppData/Local/Temp/**)",
+      "Bash(xargs -I{} stat -c \"%Y %n\" {})",
+      "Bash(find \"/c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/887ec4d7-4c79-481d-ab30-f7c16f18dfe4\" -type f 2>/dev/null | head -50 *)",
+      "Read(//c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/887ec4d7-4c79-481d-ab30-f7c16f18dfe4/**)",
+      "Bash(mkdir -p /c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/7bfcebea-a61e-452e-a043-0d03d3728700/scratchpad)",
+      "Bash(curl -sS https://zutsav.com/home.html --max-time 10 -o /c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/7bfcebea-a61e-452e-a043-0d03d3728700/scratchpad/home_page.html)",
+      "Read(//c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/7bfcebea-a61e-452e-a043-0d03d3728700/scratchpad/**)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

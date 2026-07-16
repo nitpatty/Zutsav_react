@@ -23,6 +23,17 @@ const kitStatusColor = { pending:'bg-gray-100 text-gray-600', packed:'bg-blue-10
 const kitStatusLabel = { pending:'Pending', packed:'Packed', shipped:'Shipped', out_for_delivery:'Out for Delivery', delivered:'Delivered' };
 const panditStatus = { pending:'badge-pending', under_review:'badge-paid', approved:'badge-approved', rejected:'badge-rejected', suspended:'badge-rejected', reupload_required:'badge-pending' };
 
+// Booking Type badge — always reads the backend `bookingType` field ('normal' | 'urgent'),
+// never inferred/calculated. Icon + color together (never color alone) for accessibility.
+function BookingTypeBadge({ bookingType, className = '' }) {
+  const isUrgent = bookingType === 'urgent';
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${isUrgent ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'} ${className}`}>
+      {isUrgent ? '🔴 Urgent' : '🟢 Normal'}
+    </span>
+  );
+}
+
 export default function AdminDashboard() {
   const { user, refreshUser } = useAuth();
   const [searchParams] = useSearchParams();
@@ -278,6 +289,7 @@ function DashboardTab() {
     { label: 'Active Pandits',   value: stats.totalPandits,  icon: Users,          bgStyle: { background: '#ecfdf5' }, iconStyle: { color: '#059669' } },
     { label: 'Pending KYC',      value: stats.pendingPandits,icon: Clock,          bgStyle: { background: '#fefce8' }, iconStyle: { color: '#ca8a04' } },
     { label: 'Total Bookings',   value: stats.totalBookings, icon: BookOpen,       bgStyle: { background: '#f5f3ff' }, iconStyle: { color: '#7c3aed' } },
+    { label: 'Urgent Bookings',  value: stats.urgentBookings || 0, icon: Zap,      bgStyle: { background: '#fef2f2' }, iconStyle: { color: '#dc2626' } },
     { label: 'Total Orders',     value: stats.totalOrders || 0, icon: Package,     bgStyle: { background: 'rgba(249,115,22,0.1)' }, iconStyle: { color: '#ea580c' } },
     { label: 'Pending Orders',   value: stats.pendingOrders || 0, icon: Clock,     bgStyle: { background: '#fefce8' }, iconStyle: { color: '#d97706' } },
     { label: 'Low Stock Items',  value: stats.lowStockProducts || 0, icon: XCircle, bgStyle: { background: '#fef2f2' }, iconStyle: { color: '#dc2626' } },
@@ -311,9 +323,10 @@ function DashboardTab() {
 function BookingsTab() {
   const [bookings,       setBookings]       = useState([]);
   const [loading,        setLoading]        = useState(true);
-  const [filter,         setFilter]         = useState('paid');
-  const [referralFilter, setReferralFilter] = useState('');
-  const [search,         setSearch]         = useState('');
+  const [filter,           setFilter]           = useState('paid');
+  const [referralFilter,   setReferralFilter]   = useState('');
+  const [bookingTypeFilter, setBookingTypeFilter] = useState('');
+  const [search,           setSearch]           = useState('');
   const [selected,          setSelected]          = useState(null);
   const [pandits,           setPandits]           = useState([]);
   const [panditId,          setPanditId]          = useState('');
@@ -350,12 +363,13 @@ function BookingsTab() {
       params.set('status', filter);
     }
     if (referralFilter) params.set('referralFilter', referralFilter);
+    if (bookingTypeFilter) params.set('bookingType', bookingTypeFilter);
     API.get(`/admin/bookings?${params}`)
       .then(({ data }) => setBookings(data.bookings))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [filter, referralFilter]);
+  useEffect(() => { load(); }, [filter, referralFilter, bookingTypeFilter]);
 
   const q = search.trim().toLowerCase();
   const filteredBookings = q
@@ -370,8 +384,10 @@ function BookingsTab() {
 
   const exportExcel = async () => {
     try {
-      const params = filter === 'with_kit' ? '?withKit=true' : `?status=${filter}`;
-      const res = await API.get(`/admin/bookings/export${params}`, { responseType: 'blob' });
+      const params = new URLSearchParams();
+      if (filter === 'with_kit') params.set('withKit', 'true'); else params.set('status', filter);
+      if (bookingTypeFilter) params.set('bookingType', bookingTypeFilter);
+      const res = await API.get(`/admin/bookings/export?${params}`, { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
       const a   = document.createElement('a');
       a.href     = url;
@@ -629,6 +645,21 @@ function BookingsTab() {
         ))}
       </div>
 
+      {/* Booking Type sub-filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <span className="text-xs font-semibold text-gray-400 mr-1">Booking Type:</span>
+        {[
+          { val: '',       label: 'All' },
+          { val: 'normal', label: '🟢 Normal' },
+          { val: 'urgent', label: '🔴 Urgent' },
+        ].map(({ val, label }) => (
+          <button key={val || 'all'} onClick={() => setBookingTypeFilter(val)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${bookingTypeFilter === val ? 'bg-saffron-500 text-white border-saffron-500' : 'bg-white text-gray-500 border-gray-200 hover:border-saffron-300'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Search + Export row */}
       <div className="flex items-center gap-3 flex-wrap">
         <input
@@ -660,8 +691,11 @@ function BookingsTab() {
               </tr></thead>
               <tbody className="divide-y divide-gray-50">
                 {filteredBookings.map((b) => (
-                  <tr key={b._id} className="hover:bg-saffron-50/40 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">{b.bookingNumber}</td>
+                  <tr key={b._id} className={`hover:bg-saffron-50/40 transition-colors ${b.bookingType === 'urgent' ? 'border-l-4 border-l-red-300 bg-red-50/20' : ''}`}>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                      {b.bookingNumber}
+                      <div className="mt-1"><BookingTypeBadge bookingType={b.bookingType} /></div>
+                    </td>
                     <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">
                       {b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—'}
                     </td>
@@ -1791,7 +1825,7 @@ function OrderDetailsModal({ booking: b, onClose }) {
               <OdItem label="Language"      value={b.language || '—'} />
               <OdItem label="Ceremony Date" value={b.scheduledDate?.split('T')[0] || '—'} />
               <OdItem label="Ceremony Time" value={b.scheduledTime || '—'} />
-              <OdItem label="Booking Type"  value={b.isUrgent ? '⚡ Urgent' : 'Normal'} />
+              <OdItem label="Booking Type"  value={<BookingTypeBadge bookingType={b.bookingType} />} />
               <OdItem label="Booked On"     value={b.createdAt ? new Date(b.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'} />
               {b.specialNote && (
                 <div className="col-span-2">

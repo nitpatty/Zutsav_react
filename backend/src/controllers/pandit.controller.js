@@ -8,6 +8,7 @@ const path    = require('path');
 const fs      = require('fs');
 const { NotificationEngine } = require('../../notification-engine');
 const { normalizePanditPayload, normalizeBookingPayload } = require('../../notification-engine/variables/PayloadNormalizer');
+const { getPanditPayoutStatusLabel, healPanditPendingPayouts } = require('../utils/payoutUtils');
 
 // Fields a pandit must never see (financial & payment internals)
 const PANDIT_BOOKING_EXCLUDE = '-amount -razorpayOrderId -razorpayPaymentId -razorpaySignature -phonePeMerchantTransactionId -phonePeTransactionId -paymentProvider -panditRejections';
@@ -807,8 +808,10 @@ function fillDaySeries(rows, days) {
 exports.getMyDashboard = async (req, res, next) => {
   try {
     const pandit = await Pandit.findOne({ userId: req.user._id })
-      .select('_id name rating totalReviews kycStatus isAvailableForBookings isOnline');
+      .select('_id name rating totalReviews kycStatus isAvailableForBookings isOnline poojaCharges');
     if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    await healPanditPendingPayouts(pandit._id, pandit);
 
     const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
     const endOfToday    = new Date(startOfToday.getTime() + 86400000);
@@ -884,8 +887,10 @@ exports.getMyDashboard = async (req, res, next) => {
 // GET /api/pandits/me/payouts/stats
 exports.getPayoutStats = async (req, res, next) => {
   try {
-    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id');
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id poojaCharges');
     if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    await healPanditPendingPayouts(pandit._id, pandit);
 
     const [totalEarned, pendingAmt, paidAmt, pendingCount, paidCount] = await Promise.all([
       Booking.aggregate([
@@ -920,8 +925,10 @@ exports.getPayoutStats = async (req, res, next) => {
 // GET /api/pandits/me/payouts/pending
 exports.getPendingPayouts = async (req, res, next) => {
   try {
-    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id');
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id poojaCharges');
     if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    await healPanditPendingPayouts(pandit._id, pandit);
 
     const bookings = await Booking.find({
       panditId:        pandit._id,
@@ -933,7 +940,15 @@ exports.getPendingPayouts = async (req, res, next) => {
       .select('bookingNumber poojaId userId scheduledDate verifiedAt payout')
       .sort({ verifiedAt: -1 });
 
-    res.json({ success: true, bookings });
+    // approvedPayout/status are always derived from payout.amount — the pandit
+    // never sees a figure the admin hasn't actually approved.
+    const withStatus = bookings.map((b) => ({
+      ...b.toObject(),
+      approvedPayout: b.payout?.amount || 0,
+      status:         getPanditPayoutStatusLabel(b),
+    }));
+
+    res.json({ success: true, bookings: withStatus });
   } catch (err) { next(err); }
 };
 

@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, ScrollView, Platform, StatusBar
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import api from '../../api/axios';
 import { useAuthStore } from '../../store/authStore';
+import BackgroundDecorations from '../../components/auth/BackgroundDecorations';
+import ZutsavLogoMark from '../../components/auth/ZutsavLogoMark';
+import LoginCard from '../../components/auth/LoginCard';
+import { AUTH_COLORS } from '../../components/auth/colors';
 
 export default function LoginScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -16,6 +21,7 @@ export default function LoginScreen({ navigation }) {
   const [identifier, setIdentifier] = useState('');
   const [password,   setPassword]   = useState('');
   const [showPwd,    setShowPwd]     = useState(false);
+  const [remember,   setRemember]    = useState(false);
   const [loading,    setLoading]     = useState(false);
 
   // Deletion-pending restore flow
@@ -58,6 +64,11 @@ export default function LoginScreen({ navigation }) {
 
   const handleContinueLogout = () => setDeletionData(null);
 
+  // UI placeholder — no forgot-password flow wired up yet.
+  const handleForgotPassword = () => {
+    Toast.show({ type: 'info', text1: 'Coming soon' });
+  };
+
   if (deletionData) {
     const scheduled = deletionData.scheduledDeletionDate
       ? new Date(deletionData.scheduledDeletionDate).toLocaleDateString('en-IN', { day:'2-digit', month:'long', year:'numeric' })
@@ -84,85 +95,61 @@ export default function LoginScreen({ navigation }) {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]} keyboardShouldPersistTaps="handled">
-        <StatusBar barStyle="dark-content" backgroundColor="#FFF8E7" />
+    <View style={{ flex: 1 }}>
+      <StatusBar barStyle="dark-content" backgroundColor={AUTH_COLORS.bgTop} />
+      <BackgroundDecorations />
 
-        <View style={styles.header}>
-          <Text style={styles.brand}>Zutsav</Text>
-          <Text style={styles.tagline}>Welcome back</Text>
-        </View>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={[styles.container, { paddingTop: insets.top + 36, paddingBottom: insets.bottom + 28 }]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Animated.View entering={FadeIn.duration(800)} style={styles.header}>
+            <ZutsavLogoMark ringSize={92} wordmarkSize={30} />
+            <Text style={styles.heading}>Your Gateway to{'\n'}Divine Experiences</Text>
+            <Text style={styles.subtitle}>Continue your spiritual journey.</Text>
+          </Animated.View>
 
-        <View style={styles.form}>
-          <View style={styles.field}>
-            <Text style={styles.label}>Email or Phone</Text>
-            <TextInput
-              style={styles.input}
-              value={identifier}
-              onChangeText={setIdentifier}
-              placeholder="Enter email or 10-digit phone"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              returnKeyType="next"
+          <Animated.View entering={FadeInUp.duration(700).delay(200)}>
+            <LoginCard
+              identifier={identifier}
+              onChangeIdentifier={setIdentifier}
+              password={password}
+              onChangePassword={setPassword}
+              showPassword={showPwd}
+              onToggleShowPassword={() => setShowPwd(!showPwd)}
+              remember={remember}
+              onToggleRemember={() => setRemember(!remember)}
+              onForgotPassword={handleForgotPassword}
+              onLogin={handleLogin}
+              loading={loading}
+              onRegister={() => navigation.navigate('Register')}
             />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.pwdRow}>
-              <TextInput
-                style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Enter password"
-                secureTextEntry={!showPwd}
-                returnKeyType="done"
-                onSubmitEditing={handleLogin}
-              />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPwd(!showPwd)}>
-                <Ionicons name={showPwd ? 'eye-off' : 'eye'} size={20} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.loginBtn} onPress={handleLogin} disabled={loading} activeOpacity={0.85}>
-            <Text style={styles.loginBtnText}>{loading ? 'Logging in…' : 'Login'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.linkRow} onPress={() => navigation.navigate('Register')}>
-            <Text style={styles.linkText}>Don't have an account? <Text style={styles.link}>Register</Text></Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container:   { flexGrow: 1, backgroundColor: '#FFF8E7', paddingHorizontal: 24 },
-  header:      { alignItems: 'center', marginTop: 40, marginBottom: 40 },
-  brand:       { fontSize: 40, fontWeight: '800', color: '#1B1F3B', letterSpacing: 2 },
-  tagline:     { fontSize: 16, color: '#6B7280', marginTop: 4 },
-  form:        { gap: 16 },
-  field:       { gap: 6 },
-  label:       { fontSize: 13, fontWeight: '600', color: '#374151' },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5, borderColor: '#E5E7EB',
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 15, color: '#1C1917',
-    marginBottom: 0,
+  container:  { flexGrow: 1, paddingHorizontal: 24 },
+  header:     { alignItems: 'center', marginBottom: 32 },
+  heading: {
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: '800',
+    color: AUTH_COLORS.heading,
+    textAlign: 'center',
+    marginTop: 18,
+    fontFamily: Platform.select({ ios: 'Georgia', android: 'serif' }),
   },
-  pwdRow:      { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  eyeBtn:      { padding: 10 },
-  loginBtn: {
-    backgroundColor: '#1B1F3B',
-    borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 8,
+  subtitle: {
+    fontSize: 14,
+    color: AUTH_COLORS.subtitle,
+    marginTop: 8,
+    textAlign: 'center',
   },
-  loginBtnText: { color: '#D4AF37', fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
-  linkRow:     { alignItems: 'center', marginTop: 8 },
-  linkText:    { color: '#6B7280', fontSize: 14 },
-  link:        { color: '#1B1F3B', fontWeight: '700' },
 
   restoreOverlay: { flex: 1, backgroundColor: '#1B1F3B', justifyContent: 'center', padding: 24 },
   restoreCard: {

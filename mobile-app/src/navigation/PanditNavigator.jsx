@@ -3,8 +3,8 @@ import { View, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeStore } from '../store/themeStore';
 import { useNotificationStore } from '../store/notificationStore';
+import { COLORS, RADIUS, SHADOW, FONT } from '../theme/tokens';
 
 import PanditDashboardScreen  from '../screens/pandit/PanditDashboardScreen';
 import PanditBookingsScreen   from '../screens/pandit/PanditBookingsScreen';
@@ -113,18 +113,25 @@ function BadgeIcon({ name, color, size, count }) {
 }
 
 export default function PanditNavigator() {
-  const { theme } = useThemeStore();
-  const C = theme.colors;
   const { unreadCount } = useNotificationStore();
 
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { backgroundColor: C.tabBar, borderTopColor: C.border, height: 62, paddingBottom: 8 },
-        tabBarActiveTintColor:   C.tabBarActive,
-        tabBarInactiveTintColor: C.tabBarInactive,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginTop: -2 },
+        tabBarStyle: {
+          position: 'absolute',
+          left: 16, right: 16, bottom: 16,
+          height: 64,
+          paddingBottom: 8, paddingTop: 8,
+          backgroundColor: COLORS.surface,
+          borderTopWidth: 0,
+          borderRadius: RADIUS.xxl,
+          ...SHADOW.floating,
+        },
+        tabBarActiveTintColor:   COLORS.primary,
+        tabBarInactiveTintColor: COLORS.textMuted,
+        tabBarLabelStyle: { fontSize: FONT.size.label, fontWeight: FONT.weight.bold, marginTop: -2 },
       }}
     >
       <Tab.Screen

@@ -64,15 +64,24 @@ export default function PanditEarningsScreen() {
     pending.length === 0 ? (
       <Text style={[styles.empty, { color: C.textSecondary }]}>No pending payouts</Text>
     ) : (
-      pending.map((item) => (
-        <View key={item._id} style={[styles.txRow, { borderBottomColor: C.border }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.txName, { color: C.text }]}>{item.poojaId?.name || 'Booking Payout'}</Text>
-            <Text style={[styles.txDate, { color: C.textSecondary }]}>{formatDate(item.verifiedAt || item.scheduledDate)}</Text>
+      pending.map((item) => {
+        const approved = item.approvedPayout ?? item.payout?.amount ?? 0;
+        const waiting  = approved <= 0;
+        return (
+          <View key={item._id} style={[styles.txRow, { borderBottomColor: C.border }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.txName, { color: C.text }]}>{item.poojaId?.name || 'Booking Payout'}</Text>
+              <Text style={[styles.txDate, { color: C.textSecondary }]}>{formatDate(item.verifiedAt || item.scheduledDate)}</Text>
+              <Text style={[styles.txStatus, { color: waiting ? C.textSecondary : '#D97706' }]}>
+                {item.status || (waiting ? 'Waiting for Admin Approval' : 'Awaiting Admin Payout')}
+              </Text>
+            </View>
+            <Text style={[styles.txAmount, { color: waiting ? C.textSecondary : '#D97706' }]}>
+              {waiting ? '—' : formatCurrency(approved)}
+            </Text>
           </View>
-          <Text style={[styles.txAmount, { color: '#D97706' }]}>{formatCurrency(item.payout?.amount || 0)}</Text>
-        </View>
-      ))
+        );
+      })
     )
   );
 
@@ -211,6 +220,7 @@ const styles = StyleSheet.create({
   },
   txName:     { fontSize: 14, fontWeight: '500' },
   txDate:     { fontSize: 12, marginTop: 2 },
+  txStatus:   { fontSize: 11, fontWeight: '600', marginTop: 2 },
   txAmount:   { fontSize: 15, fontWeight: '800' },
   empty:      { textAlign: 'center', padding: 24, fontSize: 14 },
   reviewSummary: { alignItems: 'center', paddingBottom: 14, marginBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E7EB' },
