@@ -3,9 +3,7 @@ import React, {
 } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
-  ChevronLeft, Eye, Lock, X, Upload, ImageIcon,
-  Bold, Italic, Underline, Strikethrough,
-  List, ListOrdered, Quote, Code2, Link2, Undo2, Redo2,
+  ChevronLeft, Eye, Lock, X, ImageIcon,
   ChevronDown, ChevronUp, AlertTriangle,
 } from 'lucide-react';
 import API from '../api/axios';
@@ -13,6 +11,8 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import ZutsavLoader from '../components/shared/ZutsavLoader';
 import { getImageUrl } from '../config';
+import RichTextEditor from '../components/editor/RichTextEditor';
+import { isRichTextEmpty } from '../components/editor/isRichTextEmpty';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -28,31 +28,6 @@ function stripDangerousPatterns(html) {
     .replace(/on\w+='[^']*'/gi, '')
     .replace(/javascript:/gi, '')
     .replace(/<iframe[\s\S]*?<\/iframe>/gi, '');
-}
-
-// ─── Toolbar button ────────────────────────────────────────────────────────────
-
-function ToolbarBtn({ onClick, title, active, disabled, children }) {
-  return (
-    <button
-      type="button"
-      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
-      disabled={disabled}
-      title={title}
-      className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold transition-all select-none
-        ${active
-          ? 'bg-indigo-100 text-indigo-700'
-          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'}
-        ${disabled ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}
-      `}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ToolbarSep() {
-  return <div className="w-px h-5 bg-gray-200 mx-1 shrink-0" />;
 }
 
 // ─── Tag input component ───────────────────────────────────────────────────────
@@ -165,6 +140,12 @@ export default function BlogEditor() {
   const [seoTitle, setSeoTitle] = useState('');
   const [seoDescription, setSeoDescription] = useState('');
 
+  // ── Review workflow state (only meaningful when isEditing) ───────────────
+  const [blogStatus, setBlogStatus] = useState(null);
+  const [blogSlug, setBlogSlug] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [withdrawing, setWithdrawing] = useState(false);
+
   // ── Categories ────────────────────────────────────────────────────────────
   const [categories, setCategories] = useState([]);
 
@@ -176,14 +157,11 @@ export default function BlogEditor() {
   const [hasUnsaved, setHasUnsaved] = useState(false);
   const [seoOpen, setSeoOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [imageUploading, setImageUploading] = useState(false);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
-  const editorRef = useRef(null);
   const titleRef = useRef(null);
   const titleResizeRef = useRef(null);
   const featuredImageInputRef = useRef(null);
-  const inlineImageInputRef = useRef(null);
   const autoSaveTimerRef = useRef(null);
 
   const resizeTitle = useAutoResize(titleRef);
@@ -230,7 +208,6 @@ export default function BlogEditor() {
           if (parsed.title) setTitle(parsed.title);
           if (parsed.content) {
             setContent(parsed.content);
-            if (editorRef.current) editorRef.current.innerHTML = parsed.content;
           }
           if (parsed.category) setCategory(parsed.category);
           if (parsed.tags) setTags(parsed.tags);
@@ -241,7 +218,7 @@ export default function BlogEditor() {
       return;
     }
     setLoadingBlog(true);
-    API.get(`/blogs/${id}`)
+    API.get(`/blogs/id/${id}`)
       .then(({ data }) => {
         const b = data.blog;
         setTitle(b.title || '');
@@ -251,7 +228,9 @@ export default function BlogEditor() {
         setFeaturedImage(getImageUrl(b.featuredImage));
         setSeoTitle(b.seoTitle || '');
         setSeoDescription(b.seoDescription || '');
-        if (editorRef.current) editorRef.current.innerHTML = b.content || '';
+        setBlogStatus(b.status || 'draft');
+        setBlogSlug(b.slug || '');
+        setRejectionReason(b.rejectionReason || '');
       })
       .catch(() => {
         toast.error('Could not load blog for editing');
@@ -302,43 +281,6 @@ export default function BlogEditor() {
     setHasUnsaved(true);
   }, [title, content, category, tags, featuredImage, seoTitle, seoDescription]);
 
-  // ── Toolbar exec ──────────────────────────────────────────────────────────
-  const exec = useCallback((command, value = null) => {
-    editorRef.current?.focus();
-    document.execCommand(command, false, value);
-    setContent(editorRef.current?.innerHTML || '');
-  }, []);
-
-  const execBlock = useCallback((tag) => {
-    editorRef.current?.focus();
-    document.execCommand('formatBlock', false, tag);
-    setContent(editorRef.current?.innerHTML || '');
-  }, []);
-
-  const insertCodeBlock = useCallback(() => {
-    const sel = window.getSelection();
-    const selected = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).toString() : '';
-    const pre = document.createElement('pre');
-    const code = document.createElement('code');
-    code.textContent = selected || 'code here';
-    pre.appendChild(code);
-    if (sel && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      range.insertNode(pre);
-      sel.removeAllRanges();
-    } else {
-      editorRef.current?.appendChild(pre);
-    }
-    setContent(editorRef.current?.innerHTML || '');
-  }, []);
-
-  const insertLink = useCallback(() => {
-    const url = window.prompt('Enter URL (https://...)');
-    if (!url) return;
-    exec('createLink', url);
-  }, [exec]);
-
   // ── Featured image upload ──────────────────────────────────────────────────
   const handleFeaturedImageSelect = useCallback(async (e) => {
     const file = e.target.files?.[0];
@@ -352,53 +294,20 @@ export default function BlogEditor() {
     setFeaturedImageFile(file);
   }, []);
 
-  // ── Inline image upload ────────────────────────────────────────────────────
-  const handleInlineImageUpload = useCallback(async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
-    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be under 5MB'); return; }
-
-    setImageUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('image', file);
-      const { data } = await API.post('/blogs/upload-image', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      if (data.url) {
-        const img = document.createElement('img');
-        img.src = data.url;
-        img.alt = file.name;
-        img.style.maxWidth = '100%';
-        img.style.borderRadius = '12px';
-        editorRef.current?.focus();
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0) {
-          const range = sel.getRangeAt(0);
-          range.deleteContents();
-          range.insertNode(img);
-          range.setStartAfter(img);
-          range.collapse(true);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        } else {
-          editorRef.current?.appendChild(img);
-        }
-        setContent(editorRef.current?.innerHTML || '');
-      }
-    } catch {
-      toast.error('Image upload failed');
-    } finally {
-      setImageUploading(false);
-      if (e.target) e.target.value = '';
-    }
+  // ── Inline image upload (used by the RichTextEditor toolbar) ──────────────
+  const uploadInlineImage = useCallback(async (file) => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const { data } = await API.post('/blogs/upload-image', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data.url;
   }, []);
 
   // ── Validate ──────────────────────────────────────────────────────────────
   const validate = useCallback(() => {
     if (!title.trim()) { toast.error('Please add a title'); return false; }
-    if (!content.trim() || content === '<br>') { toast.error('Please write some content'); return false; }
+    if (isRichTextEmpty(content)) { toast.error('Please write some content'); return false; }
     if (!category) { toast.error('Please select a category'); return false; }
     return true;
   }, [title, content, category]);
@@ -462,15 +371,18 @@ export default function BlogEditor() {
     try {
       const imageUrl = await uploadFeaturedImageIfNeeded();
       const payload  = buildPayload(action, imageUrl);
-      if (isEditing) {
-        await API.put(`/blogs/${id}`, payload);
-      } else {
-        await API.post('/blogs', payload);
-      }
+      const res = isEditing
+        ? await API.put(`/blogs/${id}`, payload)
+        : await API.post('/blogs', payload);
       localStorage.removeItem(AUTOSAVE_KEY(id || null));
       setHasUnsaved(false);
       toast.success(requiresApproval ? 'Submitted for review!' : 'Blog published!');
-      navigate('/blog');
+      const savedSlug = res.data?.blog?.slug;
+      // Submitted-for-review posts land on the article page itself, which now
+      // (being the author's own submission) shows the Pending Review badge/
+      // banner and Withdraw action — rather than a silent redirect to /blog.
+      if (action === 'submit' && savedSlug) navigate(`/blog/${savedSlug}`);
+      else navigate('/blog');
     } catch (err) {
       if (err.response?.status !== 401) toast.error('Could not publish blog');
     } finally {
@@ -478,18 +390,21 @@ export default function BlogEditor() {
     }
   }, [validate, publishing, requiresApproval, buildPayload, uploadFeaturedImageIfNeeded, isEditing, id, navigate]);
 
-  // ── Query active commands for toolbar highlight ───────────────────────────
-  const [activeFormats, setActiveFormats] = useState({});
-  const updateActiveFormats = useCallback(() => {
-    setActiveFormats({
-      bold: document.queryCommandState('bold'),
-      italic: document.queryCommandState('italic'),
-      underline: document.queryCommandState('underline'),
-      strikeThrough: document.queryCommandState('strikeThrough'),
-      insertUnorderedList: document.queryCommandState('insertUnorderedList'),
-      insertOrderedList: document.queryCommandState('insertOrderedList'),
-    });
-  }, []);
+  // ── Withdraw a pending submission back to draft ───────────────────────────
+  const handleWithdraw = useCallback(async () => {
+    if (withdrawing) return;
+    if (!window.confirm('Withdraw this submission? It will return to draft so you can keep editing.')) return;
+    setWithdrawing(true);
+    try {
+      await API.put(`/blogs/${id}`, { action: 'withdraw' });
+      setBlogStatus('draft');
+      toast.success('Submission withdrawn — you can edit it again.');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not withdraw submission');
+    } finally {
+      setWithdrawing(false);
+    }
+  }, [id, withdrawing]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // LOADING / PERMISSION GATES
@@ -528,26 +443,64 @@ export default function BlogEditor() {
     );
   }
 
+  // Editing is disabled while a submission is under review — the author can
+  // still open it (this page), but only to withdraw it or navigate away;
+  // fields themselves aren't shown, matching "editing is disabled ... unless
+  // the author clicks Withdraw Submission".
+  if (isEditing && blogStatus === 'pending_review') {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center text-center px-4 font-sans" style={{ backgroundColor: '#FAF8F5' }}>
+        <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full mb-5" style={{ background: '#FEF3C7', color: '#92400E' }}>
+          🟡 Pending Review
+        </span>
+        <h2 className="text-2xl font-bold text-gray-900 mb-3 max-w-md" style={{ fontFamily: '"Cormorant Garamond"' }}>
+          Waiting for Admin Approval
+        </h2>
+        <p className="text-gray-500 text-sm max-w-md mb-8 leading-relaxed">
+          Your blog has been submitted successfully. It is currently under review by the Zutsav editorial team.
+          You can view your article while it is under review, but editing is disabled until you withdraw it or receive feedback.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {blogSlug && (
+            <Link
+              to={`/blog/${blogSlug}`}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: '#1B1F3B' }}
+            >
+              View Article
+            </Link>
+          )}
+          <button
+            onClick={handleWithdraw}
+            disabled={withdrawing}
+            className="px-5 py-2.5 rounded-2xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            {withdrawing ? 'Withdrawing...' : 'Withdraw Submission'}
+          </button>
+          <Link
+            to="/my-blogs"
+            className="px-5 py-2.5 rounded-2xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            Back to My Blogs
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen flex flex-col font-sans" style={{ backgroundColor: '#FAF8F5' }}>
 
-      {/* Hidden file inputs */}
+      {/* Hidden file input (featured image — inline image upload is owned by RichTextEditor) */}
       <input
         ref={featuredImageInputRef}
         type="file"
         accept="image/*"
         className="hidden"
         onChange={handleFeaturedImageSelect}
-      />
-      <input
-        ref={inlineImageInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleInlineImageUpload}
       />
 
       {/* ══ Top bar ══ */}
@@ -633,6 +586,22 @@ export default function BlogEditor() {
         {/* ── Left: Editor ── */}
         <main className="flex-1 min-w-0 px-4 lg:px-8 py-8">
 
+          {/* Rejected banner — editing stays enabled, this just surfaces why
+              and encourages a resubmit. */}
+          {isEditing && blogStatus === 'rejected' && (
+            <div className="mb-6 rounded-2xl border p-4" style={{ background: '#FEF2F2', borderColor: '#FECACA' }}>
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full mb-2" style={{ background: '#FEE2E2', color: '#991B1B' }}>
+                🔴 Rejected
+              </span>
+              <p className="text-sm text-red-800">
+                {rejectionReason
+                  ? <>This blog wasn't approved: <span className="font-semibold">"{rejectionReason}"</span></>
+                  : "This blog wasn't approved."}
+                {' '}Make your edits below, then submit it for review again.
+              </p>
+            </div>
+          )}
+
           {/* Featured image zone */}
           <div className="mb-6">
             {featuredImage ? (
@@ -692,112 +661,15 @@ export default function BlogEditor() {
             }}
           />
 
-          {/* Rich text toolbar */}
-          <div
-            className="flex flex-wrap items-center gap-0.5 px-3 py-2 bg-white rounded-xl border border-gray-100 shadow-sm mb-4 sticky z-30"
-            style={{ top: '57px' }}
-          >
-            {/* Format */}
-            <ToolbarBtn onClick={() => exec('bold')} title="Bold (Ctrl+B)" active={activeFormats.bold}>
-              <Bold size={13} />
-            </ToolbarBtn>
-            <ToolbarBtn onClick={() => exec('italic')} title="Italic (Ctrl+I)" active={activeFormats.italic}>
-              <Italic size={13} />
-            </ToolbarBtn>
-            <ToolbarBtn onClick={() => exec('underline')} title="Underline (Ctrl+U)" active={activeFormats.underline}>
-              <Underline size={13} />
-            </ToolbarBtn>
-            <ToolbarBtn onClick={() => exec('strikeThrough')} title="Strikethrough" active={activeFormats.strikeThrough}>
-              <Strikethrough size={13} />
-            </ToolbarBtn>
-
-            <ToolbarSep />
-
-            {/* Headings */}
-            <ToolbarBtn onClick={() => execBlock('h2')} title="Heading 2">
-              <span className="text-xs font-black leading-none">H2</span>
-            </ToolbarBtn>
-            <ToolbarBtn onClick={() => execBlock('h3')} title="Heading 3">
-              <span className="text-xs font-black leading-none">H3</span>
-            </ToolbarBtn>
-            <ToolbarBtn onClick={() => execBlock('p')} title="Paragraph">
-              <span className="text-xs font-black leading-none">P</span>
-            </ToolbarBtn>
-
-            <ToolbarSep />
-
-            {/* Lists */}
-            <ToolbarBtn onClick={() => exec('insertUnorderedList')} title="Bullet list" active={activeFormats.insertUnorderedList}>
-              <List size={14} />
-            </ToolbarBtn>
-            <ToolbarBtn onClick={() => exec('insertOrderedList')} title="Ordered list" active={activeFormats.insertOrderedList}>
-              <ListOrdered size={14} />
-            </ToolbarBtn>
-
-            {/* Blockquote */}
-            <ToolbarBtn onClick={() => execBlock('blockquote')} title="Blockquote">
-              <Quote size={14} />
-            </ToolbarBtn>
-
-            {/* Code block */}
-            <ToolbarBtn onClick={insertCodeBlock} title="Code block">
-              <Code2 size={14} />
-            </ToolbarBtn>
-
-            <ToolbarSep />
-
-            {/* Link */}
-            <ToolbarBtn onClick={insertLink} title="Insert link">
-              <Link2 size={14} />
-            </ToolbarBtn>
-
-            {/* Inline image */}
-            <ToolbarBtn
-              onClick={() => inlineImageInputRef.current?.click()}
-              title="Insert image"
-              disabled={imageUploading}
-            >
-              {imageUploading
-                ? <span className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                : <Upload size={13} />
-              }
-            </ToolbarBtn>
-
-            <ToolbarSep />
-
-            {/* Undo / Redo */}
-            <ToolbarBtn onClick={() => exec('undo')} title="Undo (Ctrl+Z)">
-              <Undo2 size={14} />
-            </ToolbarBtn>
-            <ToolbarBtn onClick={() => exec('redo')} title="Redo (Ctrl+Y)">
-              <Redo2 size={14} />
-            </ToolbarBtn>
-          </div>
-
-          {/* Content editor */}
-          <div className="relative">
-            <div
-              ref={editorRef}
-              contentEditable
-              suppressContentEditableWarning
-              onInput={(e) => {
-                setContent(e.currentTarget.innerHTML);
-                setHasUnsaved(true);
-              }}
-              onKeyUp={updateActiveFormats}
-              onMouseUp={updateActiveFormats}
-              onFocus={updateActiveFormats}
-              className="outline-none blog-editor-content"
-              style={{
-                minHeight: 400,
-                lineHeight: '1.85',
-                fontSize: '1.0625rem',
-                color: '#374151',
-                fontFamily: 'inherit',
-              }}
-              data-placeholder="Start writing your story..."
-            />
-          </div>
+          {/* Rich text editor */}
+          <RichTextEditor
+            value={content}
+            onChange={setContent}
+            onImageUpload={uploadInlineImage}
+            placeholder="Start writing your story..."
+            minHeight={400}
+            className="blog-editor-content"
+          />
 
         </main>
 
@@ -940,86 +812,6 @@ export default function BlogEditor() {
           </div>
         </aside>
       </div>
-
-      {/* ══ Injected styles ══ */}
-      <style>{`
-        .blog-editor-content:empty:before {
-          content: attr(data-placeholder);
-          color: #9CA3AF;
-          pointer-events: none;
-          position: absolute;
-        }
-        .blog-editor-content h2 {
-          font-family: "Cormorant Garamond", Georgia, serif;
-          font-size: 1.7rem;
-          font-weight: 700;
-          color: #1B1F3B;
-          margin: 1.75rem 0 0.6rem;
-          letter-spacing: -0.02em;
-          line-height: 1.25;
-        }
-        .blog-editor-content h3 {
-          font-family: "Cormorant Garamond", Georgia, serif;
-          font-size: 1.3rem;
-          font-weight: 700;
-          color: #374151;
-          margin: 1.25rem 0 0.5rem;
-        }
-        .blog-editor-content p {
-          margin: 0 0 1rem;
-        }
-        .blog-editor-content blockquote {
-          margin: 1.5rem 0;
-          padding: 1rem 1.25rem;
-          border-left: 4px solid #D4AF37;
-          background: linear-gradient(135deg, #FFFBEB, #FEF9EC);
-          border-radius: 0 10px 10px 0;
-          font-style: italic;
-          color: #4B5563;
-        }
-        .blog-editor-content pre {
-          background: #1E1E2E;
-          border-radius: 10px;
-          padding: 1rem 1.25rem;
-          overflow-x: auto;
-          margin: 1.25rem 0;
-        }
-        .blog-editor-content code {
-          font-family: "JetBrains Mono", "Fira Code", monospace;
-          font-size: 0.875em;
-          background: #F1F0FF;
-          color: #5B21B6;
-          padding: 0.15em 0.45em;
-          border-radius: 5px;
-        }
-        .blog-editor-content pre code {
-          background: transparent;
-          color: #CDD6F4;
-          padding: 0;
-        }
-        .blog-editor-content ul {
-          list-style-type: disc;
-          padding-left: 1.5rem;
-          margin: 0.75rem 0 1rem;
-        }
-        .blog-editor-content ol {
-          list-style-type: decimal;
-          padding-left: 1.5rem;
-          margin: 0.75rem 0 1rem;
-        }
-        .blog-editor-content li {
-          margin-bottom: 0.3rem;
-        }
-        .blog-editor-content a {
-          color: #4F46E5;
-          text-decoration: underline;
-        }
-        .blog-editor-content img {
-          max-width: 100%;
-          border-radius: 10px;
-          margin: 1rem 0;
-        }
-      `}</style>
     </div>
   );
 }

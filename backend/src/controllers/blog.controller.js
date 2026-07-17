@@ -7,16 +7,9 @@ const User         = require('../models/User');
 const path         = require('path');
 const { urls }     = require('../config');
 const { isAdminRole } = require('../utils/roleUtils');
+const { sanitizeHtml: sanitizeHTML } = require('../utils/sanitizeHtml');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-function sanitizeHTML(html = '') {
-  // Strip script tags and dangerous event handlers (basic XSS protection)
-  return html
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
-    .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '')
-    .replace(/javascript:/gi, '');
-}
 
 async function enrichWithUserInteractions(blogs, userId) {
   if (!userId || !blogs.length) return blogs;
@@ -103,15 +96,40 @@ exports.getPopularTags = async (req, res, next) => {
 };
 
 // GET /api/blogs/:slug
+// Public for published posts. A non-published post (draft/pending_review/
+// rejected/archived/scheduled) is only visible to its author or an admin —
+// everyone else (including anonymous readers) gets the same 404 as a
+// genuinely nonexistent slug, so existence isn't leaked.
 exports.getBlogBySlug = async (req, res, next) => {
   try {
-    const blog = await Blog.findOne({ slug: req.params.slug, status: 'published' })
+    const blog = await Blog.findOne({ slug: req.params.slug })
       .populate('category', 'name slug icon color')
       .lean();
     if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
 
-    // Increment view count (fire-and-forget)
-    Blog.findByIdAndUpdate(blog._id, { $inc: { views: 1 } }).catch(() => {});
+    const isPublished = blog.status === 'published';
+    const isOwner    = !!req.user && String(blog.authorId) === String(req.user._id);
+    const isReviewer = !!req.user && isAdminRole(req.user.role);
+    if (!isPublished && !isOwner && !isReviewer) {
+      return res.status(404).json({ success: false, message: 'Blog not found' });
+    }
+
+    let related = [];
+    if (isPublished) {
+      // Increment view count (fire-and-forget) — only for genuinely public
+      // reads, not the author/admin previewing an unpublished post.
+      Blog.findByIdAndUpdate(blog._id, { $inc: { views: 1 } }).catch(() => {});
+
+      // Related blogs (same category, exclude current) — published-only.
+      const relatedQuery = { status: 'published', _id: { $ne: blog._id } };
+      if (blog.category) relatedQuery.category = blog.category._id || blog.category;
+      related = await Blog.find(relatedQuery)
+        .populate('category', 'name slug icon color')
+        .select('-content')
+        .sort({ publishedAt: -1 })
+        .limit(4)
+        .lean();
+    }
 
     let isLiked = false, isBookmarked = false;
     if (req.user?._id) {
@@ -123,17 +141,24 @@ exports.getBlogBySlug = async (req, res, next) => {
       isBookmarked = !!bookmark;
     }
 
-    // Related blogs (same category, exclude current)
-    const relatedQuery = { status: 'published', _id: { $ne: blog._id } };
-    if (blog.category) relatedQuery.category = blog.category._id || blog.category;
-    const related = await Blog.find(relatedQuery)
-      .populate('category', 'name slug icon color')
-      .select('-content')
-      .sort({ publishedAt: -1 })
-      .limit(4)
-      .lean();
-
     res.json({ success: true, blog: { ...blog, isLiked, isBookmarked }, related });
+  } catch (err) { next(err); }
+};
+
+// GET /api/blogs/id/:id — authenticated fetch by Mongo _id, for the editor's
+// "load for edit" flow. Owner or admin only (mirrors updateBlog's guard).
+exports.getBlogForEdit = async (req, res, next) => {
+  try {
+    const blog = await Blog.findById(req.params.id)
+      .populate('category', 'name slug icon color')
+      .lean();
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    if (String(blog.authorId) !== String(req.user._id) && !isAdminRole(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view this blog' });
+    }
+
+    res.json({ success: true, blog });
   } catch (err) { next(err); }
 };
 
@@ -200,6 +225,18 @@ exports.updateBlog = async (req, res, next) => {
     // Ownership check
     if (String(blog.authorId) !== String(req.user._id) && !isAdminRole(req.user.role)) {
       return res.status(403).json({ success: false, message: 'Not authorized to edit this blog' });
+    }
+
+    // Withdraw a pending submission back to draft. Standalone action — does
+    // not touch/require any other field, so it's handled before the generic
+    // field-update below (which assumes a full field payload).
+    if (req.body.action === 'withdraw') {
+      if (blog.status !== 'pending_review') {
+        return res.status(400).json({ success: false, message: 'Only a blog pending review can be withdrawn' });
+      }
+      blog.status = 'draft';
+      await blog.save();
+      return res.json({ success: true, blog });
     }
 
     const {

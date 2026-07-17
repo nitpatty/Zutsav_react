@@ -19,4 +19,9 @@ const festivalSchema = new mongoose.Schema({
   relatedPoojas: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Pooja' }],
 }, { timestamps: true });
 
+festivalSchema.index({ date: 1 });
+festivalSchema.index({ dataType: 1, date: 1 });
+festivalSchema.index({ source: 1 });
+festivalSchema.index({ isActive: 1, date: 1 });
+
 module.exports = mongoose.model('Festival', festivalSchema);

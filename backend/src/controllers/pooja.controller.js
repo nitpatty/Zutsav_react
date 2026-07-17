@@ -2,6 +2,18 @@ const PoojaCategory = require('../models/PoojaCategory');
 const Pooja         = require('../models/Pooja');
 const Booking       = require('../models/Booking');
 const AdminAuditLog = require('../models/AdminAuditLog');
+const { sanitizeHtml } = require('../utils/sanitizeHtml');
+
+const RICH_TEXT_FIELDS = ['description', 'vidhi', 'samagriNotes', 'benefitsContent', 'preparationNotes', 'dosAndDonts', 'additionalInfo'];
+
+function parseFaqs(faqs) {
+  if (!faqs) return [];
+  const arr = typeof faqs === 'string' ? JSON.parse(faqs) : faqs;
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((f) => ({ question: (f.question || '').trim(), answer: sanitizeHtml(f.answer || '') }))
+    .filter((f) => f.question && f.answer);
+}
 
 const auditLog = (req, action, target, note = '') =>
   AdminAuditLog.create({
@@ -498,9 +510,10 @@ exports.createPooja = async (req, res, next) => {
     const {
       name, categoryId, categoryIds: rawCatIds,
       description, shortDesc, price, mrp, salePrice,
-      taxEnabled, taxRate,
+      taxEnabled, taxRate, isActive,
       durationValue, durationUnit,
-      requirements, benefits, languages,
+      requirements, benefits, languages, gallery,
+      vidhi, samagriNotes, benefitsContent, preparationNotes, dosAndDonts, additionalInfo, faqs,
     } = req.body;
 
     const resolvedCategoryIds = parseCategoryIds(rawCatIds, categoryId);
@@ -516,19 +529,28 @@ exports.createPooja = async (req, res, next) => {
       slug,
       categoryIds: resolvedCategoryIds,
       categoryId:  resolvedCategoryIds[0],
-      description,
+      description: sanitizeHtml(description || ''),
       shortDesc,
       price:         +price,
       mrp:           mrp       ? +mrp       : undefined,
       salePrice:     salePrice ? +salePrice : undefined,
       taxEnabled:    taxEnabled === 'true' || taxEnabled === true,
       taxRate:       taxRate   ? +taxRate   : 0,
+      isActive:      isActive !== undefined ? (isActive === 'true' || isActive === true) : true,
       durationValue: durationValue ? +durationValue : undefined,
       durationUnit:  durationUnit  || undefined,
       image,
       requirements: requirements ? JSON.parse(requirements) : [],
       benefits:     benefits     ? JSON.parse(benefits)     : [],
       languages:    languages    ? JSON.parse(languages)    : [],
+      gallery:      gallery      ? JSON.parse(gallery)      : [],
+      vidhi:             sanitizeHtml(vidhi || ''),
+      samagriNotes:      sanitizeHtml(samagriNotes || ''),
+      benefitsContent:   sanitizeHtml(benefitsContent || ''),
+      preparationNotes:  sanitizeHtml(preparationNotes || ''),
+      dosAndDonts:       sanitizeHtml(dosAndDonts || ''),
+      additionalInfo:    sanitizeHtml(additionalInfo || ''),
+      faqs: parseFaqs(faqs),
     });
 
     await auditLog(req, 'create_pooja', pooja);
@@ -552,17 +574,24 @@ exports.updatePooja = async (req, res, next) => {
       delete updates.slug;
     }
 
-    ['requirements', 'benefits', 'languages'].forEach((k) => {
+    ['requirements', 'benefits', 'languages', 'gallery'].forEach((k) => {
       if (typeof updates[k] === 'string') {
         try { updates[k] = JSON.parse(updates[k]); } catch { updates[k] = []; }
       }
     });
+
+    RICH_TEXT_FIELDS.forEach((k) => {
+      if (typeof updates[k] === 'string') updates[k] = sanitizeHtml(updates[k]);
+    });
+    if (updates.faqs !== undefined) updates.faqs = parseFaqs(updates.faqs);
+
     if (updates.durationValue !== undefined) updates.durationValue = +updates.durationValue || undefined;
     if (updates.price     !== undefined) updates.price     = +updates.price;
     if (updates.mrp       !== undefined) updates.mrp       = updates.mrp ? +updates.mrp : undefined;
     if (updates.salePrice !== undefined) updates.salePrice = updates.salePrice ? +updates.salePrice : undefined;
     if (updates.taxRate   !== undefined) updates.taxRate   = +updates.taxRate || 0;
     if (updates.taxEnabled !== undefined) updates.taxEnabled = updates.taxEnabled === 'true' || updates.taxEnabled === true;
+    if (updates.isActive   !== undefined) updates.isActive   = updates.isActive === 'true' || updates.isActive === true;
 
     // Handle multi-category update (fix: do NOT delete categoryIds after setting)
     if (updates.categoryIds !== undefined || updates.categoryId !== undefined) {
@@ -581,6 +610,14 @@ exports.updatePooja = async (req, res, next) => {
     await auditLog(req, 'edit_pooja', pooja);
     res.json({ success: true, pooja });
   } catch (err) { next(err); }
+};
+
+// ── Inline image upload (for the rich text fields' editors) ────
+// POST /api/poojas/upload-image
+exports.uploadImage = async (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: 'No image provided' });
+  const url = `/uploads/poojas/${req.file.filename}`;
+  res.json({ success: true, url });
 };
 
 exports.deletePooja = async (req, res, next) => {

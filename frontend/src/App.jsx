@@ -45,6 +45,7 @@ import InvoicePage      from './pages/InvoicePage';
 import BlogHomePage     from './pages/BlogHomePage';
 import BlogDetailPage   from './pages/BlogDetailPage';
 import BlogEditor       from './pages/BlogEditor';
+import MyBlogsPage      from './pages/MyBlogsPage';
 import ReferralLanding  from './pages/ReferralLanding';
 
 /* ── Auth guard ─────────────────────────────────────── */
@@ -234,6 +235,9 @@ const AppRoutes = () => {
           } />
           <Route path="/blog/edit/:id" element={
             <ProtectedRoute><BlogEditor /></ProtectedRoute>
+          } />
+          <Route path="/my-blogs"      element={
+            <ProtectedRoute><MyBlogsPage /></ProtectedRoute>
           } />
 
           <Route path="*" element={<Navigate to="/" replace />} />

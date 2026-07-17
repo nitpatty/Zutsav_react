@@ -7,10 +7,25 @@ const MONTH_NAMES = [
   'july','august','september','october','november','december',
 ];
 
+// Real, currently-used values only (csv/drikpanchang exist on the schema but
+// no code path writes them today) — used to let `search` also match a
+// human-readable source label like "Google Sheets".
+const SOURCE_LABELS = { manual: 'Manual', csv: 'CSV', drikpanchang: 'Drik Panchang', googlesheets: 'Google Sheets' };
+const SORTABLE_FIELDS = ['name', 'date', 'dataType', 'source'];
+
 // GET /api/festivals  — public
+// All filter params below (dateFrom/dateTo/type/source/search/sortBy/sortDir/
+// page/pageSize) are additive and optional — the original date/upcoming/
+// year/month/limit behavior is unchanged when they're absent, and
+// page/pageSize are opt-in so unpaginated callers (e.g. the public
+// Festivals.jsx page) keep getting the full matching set exactly as before.
 exports.getFestivals = async (req, res, next) => {
   try {
-    const { year, month, date, upcoming, limit } = req.query;
+    const {
+      year, month, date, upcoming, limit,
+      dateFrom, dateTo, type, source, search,
+      sortBy, sortDir, page, pageSize,
+    } = req.query;
     const query = { isActive: true };
 
     if (date) {
@@ -23,6 +38,16 @@ exports.getFestivals = async (req, res, next) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       query.date = { $gte: today };
+    } else if (dateFrom || dateTo) {
+      // Proper independent date-range filter — takes precedence over the
+      // year/month shortcut below when either endpoint is given.
+      query.date = {};
+      if (dateFrom) query.date.$gte = new Date(dateFrom);
+      if (dateTo) {
+        const end = new Date(dateTo);
+        end.setHours(23, 59, 59, 999);
+        query.date.$lte = end;
+      }
     } else if (year || month) {
       const y = parseInt(year) || new Date().getFullYear();
       const m = month ? parseInt(month) - 1 : 0;
@@ -31,10 +56,36 @@ exports.getFestivals = async (req, res, next) => {
       query.date  = { $gte: start, $lte: end };
     }
 
-    let q = Festival.find(query).sort({ date: 1 });
-    if (limit) q = q.limit(parseInt(limit));
+    if (type)   query.dataType = type;
+    if (source) query.source   = source;
+
+    if (search) {
+      const rx = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const orClauses = [{ name: rx }, { tithiDate: rx }, { vrat: rx }];
+      const matchedSourceKeys = Object.entries(SOURCE_LABELS)
+        .filter(([key, label]) => rx.test(key) || rx.test(label))
+        .map(([key]) => key);
+      if (matchedSourceKeys.length) orClauses.push({ source: { $in: matchedSourceKeys } });
+      query.$or = orClauses;
+    }
+
+    const sortField = SORTABLE_FIELDS.includes(sortBy) ? sortBy : 'date';
+    const sortOrder = sortDir === 'desc' ? -1 : 1;
+
+    let q = Festival.find(query).sort({ [sortField]: sortOrder });
+
+    let total = null;
+    if (page && pageSize) {
+      total = await Festival.countDocuments(query);
+      const p  = Math.max(1, parseInt(page) || 1);
+      const ps = Math.max(1, parseInt(pageSize) || 50);
+      q = q.skip((p - 1) * ps).limit(ps);
+    } else if (limit) {
+      q = q.limit(parseInt(limit));
+    }
+
     const festivals = await q;
-    res.json({ success: true, festivals });
+    res.json({ success: true, festivals, total: total !== null ? total : festivals.length });
   } catch (err) {
     next(err);
   }

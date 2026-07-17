@@ -59,7 +59,10 @@ const uploadKYCDocs = multer({
 ]);
 
 const uploadBlog = multer({ storage: createStorage('blogs'), fileFilter: imageFilter, limits: { fileSize: 8 * 1024 * 1024 } });
+const uploadPooja = multer({ storage: createStorage('poojas'), fileFilter: imageFilter, limits: { fileSize: 8 * 1024 * 1024 } });
 const uploadHeroBanner = multer({ storage: createStorage('herobanners'), fileFilter: imageFilter, limits: { fileSize: 5 * 1024 * 1024 } });
+const uploadTemple = multer({ storage: createStorage('temples'), fileFilter: imageFilter, limits: { fileSize: 8 * 1024 * 1024 } })
+  .fields([{ name: 'coverImage', maxCount: 1 }, { name: 'images', maxCount: 8 }]);
 
 const legalDocFilter = (req, file, cb) => {
   const extOk = /\.(pdf|doc|docx)$/i.test(file.originalname);
@@ -69,4 +72,4 @@ const legalDocFilter = (req, file, cb) => {
 };
 const uploadLegalDocument = multer({ storage: createStorage('legaldocs'), fileFilter: legalDocFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 
-module.exports = { uploadLogo, uploadProfile, uploadGovtId, uploadProducts, uploadKits, uploadCSV, uploadKYCDocs, uploadBlog, uploadHeroBanner, uploadLegalDocument };
+module.exports = { uploadLogo, uploadProfile, uploadGovtId, uploadProducts, uploadKits, uploadCSV, uploadKYCDocs, uploadBlog, uploadPooja, uploadHeroBanner, uploadLegalDocument, uploadTemple };

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, Receipt, Ban, Archive, Copy, Bell, BellOff, Zap, Filter, Send, ChevronUp, Activity, Database, Lock, History, Calendar } from 'lucide-react';
+import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, ChevronLeft, Receipt, Ban, Archive, Copy, Bell, BellOff, Zap, Filter, Send, ChevronUp, Activity, Database, Lock, History, Calendar, AlignLeft, Flame, ListChecks, Info, HelpCircle, LayoutGrid, List } from 'lucide-react';
 import NotificationEngineAdmin from '../components/admin/NotificationEngineAdmin';
 import PoojaCategoriesManager from '../components/admin/PoojaCategoriesManager';
 import SystemConfigurationTab from '../components/admin/SystemConfigurationTab';
@@ -15,6 +15,28 @@ import ProfilePhoto from '../components/shared/ProfilePhoto';
 import MapPicker, { forwardGeocode } from '../components/shared/MapPicker';
 import PincodeInput from '../components/shared/PincodeInput';
 import { getImageUrl, handleImageError, thirdParty, company } from '../config';
+import RichTextEditor from '../components/editor/RichTextEditor';
+import { isRichTextEmpty } from '../components/editor/isRichTextEmpty';
+import FaqRepeater from './pooja-admin/FaqRepeater';
+import RepeatableItemList from './pooja-admin/RepeatableItemList';
+import MediaUploader from './pooja-admin/MediaUploader';
+import PoojaLivePreview from './pooja-admin/PoojaLivePreview';
+import { CompletionProgressCard, PublishingChecklistCard, TipsCard } from './pooja-admin/PoojaSidebarWidgets';
+import ProductTagInput from './marketplace-admin/TagInput';
+import ProductMediaUploader from './marketplace-admin/ProductMediaUploader';
+import ProductLivePreview from './marketplace-admin/ProductLivePreview';
+import ProductStatusCard from './marketplace-admin/ProductStatusCard';
+import QuantityStepper from './marketplace-admin/QuantityStepper';
+import KitProductPicker from './marketplace-admin/KitProductPicker';
+import KitImageUploader from './marketplace-admin/KitImageUploader';
+import KitLivePreview from './marketplace-admin/KitLivePreview';
+import KitInfoCard from './marketplace-admin/KitInfoCard';
+import ConfirmModal from '../components/shared/ConfirmModal';
+import TempleImageUploader from './temple-admin/TempleImageUploader';
+import TempleStatusCard from './temple-admin/TempleStatusCard';
+import TempleLivePreview from './temple-admin/TempleLivePreview';
+import TempleDetailView from './temple-admin/TempleDetailView';
+import TempleActionsMenu from './temple-admin/TempleActionsMenu';
 
 
 const statusColor  = { pending_payment:'badge-pending', paid:'badge-paid', pandit_assigned:'badge-assigned', pandit_accepted:'badge-approved', pending_reassignment:'badge-rejected', completion_requested:'badge-pending', completed:'badge-approved', cancelled:'badge-rejected' };
@@ -2914,108 +2936,307 @@ function UsersTab() {
 }
 
 // ─── Poojas Tab ───────────────────────────────────────────────
-const EMPTY_POOJA_FORM = { name:'', categoryIds:[], price:'', mrp:'', salePrice:'', taxEnabled:false, taxRate:'', durationValue:'', durationUnit:'hours', shortDesc:'', description:'', requirements:'', benefits:'', languages:'Hindi, English, Sanskrit' };
+const EMPTY_POOJA_FORM = {
+  name:'', categoryIds:[], price:'', mrp:'', salePrice:'', taxEnabled:false, taxRate:'',
+  durationValue:'', durationUnit:'hours', shortDesc:'', description:'',
+  requirements:[], benefits:[], languages:'Hindi, English, Sanskrit',
+  vidhi:'', samagriNotes:'', benefitsContent:'', preparationNotes:'', dosAndDonts:'', additionalInfo:'',
+  faqs: [], gallery: [],
+};
 const POOJA_STATUS_TABS = ['all','active','inactive','deleted','featured'];
 
-function PoojaFormFields({ form, setForm, categories, image, setImage }) {
+// Per-section done/pending — shared source of truth for the Completion
+// Progress bar and the Publishing Checklist (both frontend-only, no API calls).
+function getPoojaChecklist(form, image, isEditing, editingPooja) {
+  return [
+    { label: 'General Information',    done: !!form.name.trim() && form.categoryIds.length > 0 },
+    { label: 'Pricing & Duration',     done: !!form.salePrice },
+    { label: 'Description',            done: !isRichTextEmpty(form.description) },
+    { label: 'Vidhi',                  done: !isRichTextEmpty(form.vidhi) },
+    { label: 'Samagri & Benefits',     done: form.requirements.filter(Boolean).length > 0 || form.benefits.filter(Boolean).length > 0 },
+    { label: 'Requirements & Benefits',done: !isRichTextEmpty(form.samagriNotes) || !isRichTextEmpty(form.benefitsContent) },
+    { label: 'Preparation Guidelines', done: !isRichTextEmpty(form.preparationNotes) || !isRichTextEmpty(form.dosAndDonts) },
+    { label: 'Additional Information', done: !isRichTextEmpty(form.additionalInfo) },
+    { label: 'FAQ',                    done: (form.faqs || []).length > 0 },
+    { label: 'Media Upload',           done: !!image || !!(isEditing && editingPooja?.image) || (form.gallery || []).length > 0 },
+  ];
+}
+function calcPoojaCompletion(checklist) {
+  return Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
+}
+
+// Small colored icon badge + title, used at the top of every Pooja form card
+// to match the reference design's section headers.
+const SECTION_ICON_COLORS = {
+  indigo: 'bg-indigo-50 text-indigo-600',
+  amber:  'bg-amber-50 text-amber-600',
+  purple: 'bg-purple-50 text-purple-600',
+  orange: 'bg-orange-50 text-orange-600',
+  pink:   'bg-pink-50 text-pink-600',
+  blue:   'bg-blue-50 text-blue-600',
+  yellow: 'bg-yellow-50 text-yellow-600',
+  green:  'bg-green-50 text-green-600',
+  teal:   'bg-teal-50 text-teal-600',
+  violet: 'bg-violet-50 text-violet-600',
+};
+function SectionHeader({ icon: Icon, color = 'indigo', title, action }) {
+  return (
+    <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center gap-2.5">
+        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${SECTION_ICON_COLORS[color]}`}>
+          <Icon size={14} />
+        </div>
+        <h3 className="text-lg font-bold" style={{ color: 'var(--t-text)' }}>{title}</h3>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function PoojaFormFields({ form, setForm, categories, image, setImage, onImageUpload, isEditing, editingPooja }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const toggleCategory = (id) => setForm((f) => {
     const ids = f.categoryIds.includes(id) ? f.categoryIds.filter((x) => x !== id) : [...f.categoryIds, id];
     return { ...f, categoryIds: ids };
   });
+  const checklist = getPoojaChecklist(form, image, isEditing, editingPooja);
+  const completion = calcPoojaCompletion(checklist);
+  const addFaqRow = () => setForm((f) => ({ ...f, faqs: [...(f.faqs || []), { question: '', answer: '' }] }));
+
   return (
-    <div className="space-y-8">
-      {/* General Information */}
-      <section className="card p-6 md:p-8">
-        <h3 className="text-lg font-bold mb-5" style={{ color: 'var(--t-text)' }}>General Information</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-          <div><label className="label">Name *</label><input required className="input" value={form.name} onChange={set('name')} /></div>
-          <div>
-            <label className="label">Categories * <span className="text-gray-400 text-xs font-normal">(select one or more)</span></label>
-            <div className="border rounded-xl p-2 max-h-36 overflow-y-auto grid grid-cols-2 gap-1" style={{ borderColor: 'var(--t-border)' }}>
-              {categories.map((c) => (
-                <label key={c._id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:bg-saffron-50 text-xs">
-                  <input type="checkbox" checked={form.categoryIds.includes(c._id)} onChange={() => toggleCategory(c._id)} className="accent-saffron-500" />
-                  <span className="text-gray-700">{c.name}</span>
-                </label>
-              ))}
-            </div>
-            {form.categoryIds.length === 0 && <p className="text-xs text-red-500 mt-1">Select at least one category</p>}
-          </div>
-          <div><label className="label">Short Description</label><input className="input" value={form.shortDesc} onChange={set('shortDesc')} /></div>
-          <div><label className="label">Supported Languages <span className="text-gray-400 text-xs font-normal">(comma-separated)</span></label><input className="input" placeholder="Hindi, English, Sanskrit..." value={form.languages} onChange={set('languages')} /></div>
-        </div>
-      </section>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
 
-      {/* Pricing & Duration */}
-      <section className="card p-6 md:p-8">
-        <h3 className="text-lg font-bold mb-5" style={{ color: 'var(--t-text)' }}>Pricing &amp; Duration</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-          <div>
-            <label className="label">MRP (₹) <span className="text-gray-400 text-xs font-normal">(original/crossed price)</span></label>
-            <input type="number" min="0" className="input" placeholder="e.g. 5000" value={form.mrp} onChange={set('mrp')} />
+      {/* ── Column 1 ── */}
+      <div className="space-y-6">
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={FileText} color="indigo" title="General Information" />
+          <div className="space-y-5">
+            <div><label className="label">Name *</label><input required className="input" value={form.name} onChange={set('name')} /></div>
+            <div>
+              <label className="label">Categories * <span className="text-gray-400 text-xs font-normal">(select one or more)</span></label>
+              <div className="border rounded-xl p-2 max-h-36 overflow-y-auto grid grid-cols-2 gap-1" style={{ borderColor: 'var(--t-border)' }}>
+                {categories.map((c) => (
+                  <label key={c._id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:bg-saffron-50 text-xs">
+                    <input type="checkbox" checked={form.categoryIds.includes(c._id)} onChange={() => toggleCategory(c._id)} className="accent-saffron-500" />
+                    <span className="text-gray-700">{c.name}</span>
+                  </label>
+                ))}
+              </div>
+              {form.categoryIds.length === 0 && <p className="text-xs text-red-500 mt-1">Select at least one category</p>}
+            </div>
+            <div><label className="label">Short Description</label><input className="input" value={form.shortDesc} onChange={set('shortDesc')} /></div>
+            <div><label className="label">Supported Languages <span className="text-gray-400 text-xs font-normal">(comma-separated)</span></label><input className="input" placeholder="Hindi, English, Sanskrit..." value={form.languages} onChange={set('languages')} /></div>
           </div>
-          <div>
-            <label className="label">Sale Price (₹) *</label>
-            <input required type="number" min="0" className="input" placeholder="e.g. 3999" value={form.salePrice} onChange={set('salePrice')} />
-          </div>
-          <div>
-            <label className="label">Tax / GST</label>
-            <div className="flex items-center gap-3 mt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={form.taxEnabled}
-                  onChange={(e) => setForm((f) => ({ ...f, taxEnabled: e.target.checked }))}
-                  className="accent-saffron-500 w-4 h-4"
-                />
-                <span className="text-sm text-gray-700">Apply GST on pooja price</span>
-              </label>
-              {form.taxEnabled && (
-                <div className="flex items-center gap-1">
+        </section>
+
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={IndianRupee} color="amber" title="Pricing & Duration" />
+          <div className="space-y-5">
+            <div>
+              <label className="label">MRP (₹) <span className="text-gray-400 text-xs font-normal">(original/crossed price)</span></label>
+              <input type="number" min="0" className="input" placeholder="e.g. 5000" value={form.mrp} onChange={set('mrp')} />
+            </div>
+            <div>
+              <label className="label">Sale Price (₹) *</label>
+              <input required type="number" min="0" className="input" placeholder="e.g. 3999" value={form.salePrice} onChange={set('salePrice')} />
+            </div>
+            <div>
+              <label className="label">Tax / GST</label>
+              <div className="flex items-center gap-3 mt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
-                    type="number" min="0" max="100" step="0.5"
-                    className="input w-20 text-sm"
-                    placeholder="18"
-                    value={form.taxRate}
-                    onChange={set('taxRate')}
+                    type="checkbox"
+                    checked={form.taxEnabled}
+                    onChange={(e) => setForm((f) => ({ ...f, taxEnabled: e.target.checked }))}
+                    className="accent-saffron-500 w-4 h-4"
                   />
-                  <span className="text-sm text-gray-500">%</span>
-                </div>
-              )}
+                  <span className="text-sm text-gray-700">Apply GST on pooja price</span>
+                </label>
+                {form.taxEnabled && (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number" min="0" max="100" step="0.5"
+                      className="input w-20 text-sm"
+                      placeholder="18"
+                      value={form.taxRate}
+                      onChange={set('taxRate')}
+                    />
+                    <span className="text-sm text-gray-500">%</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="label">Duration</label>
+              <div className="flex gap-2">
+                <input type="number" min="1" max="30" className="input w-24" placeholder="e.g. 2" value={form.durationValue} onChange={set('durationValue')} />
+                <select className="input flex-1" value={form.durationUnit} onChange={set('durationUnit')}>
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                </select>
+              </div>
             </div>
           </div>
-          <div>
-            <label className="label">Duration</label>
-            <div className="flex gap-2">
-              <input type="number" min="1" max="30" className="input w-24" placeholder="e.g. 2" value={form.durationValue} onChange={set('durationValue')} />
-              <select className="input flex-1" value={form.durationUnit} onChange={set('durationUnit')}>
-                <option value="hours">Hours</option>
-                <option value="days">Days</option>
-              </select>
+        </section>
+
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={Package} color="pink" title="Samagri & Benefits" />
+          <div className="space-y-6">
+            <div>
+              <label className="label">Samagri Items</label>
+              <RepeatableItemList
+                items={form.requirements}
+                onChange={(items) => setForm((f) => ({ ...f, requirements: items }))}
+                placeholder="e.g. Rice, Ghee, Flowers..."
+                addLabel="Add Item"
+              />
+            </div>
+            <div>
+              <label className="label">Benefits</label>
+              <RepeatableItemList
+                items={form.benefits}
+                onChange={(items) => setForm((f) => ({ ...f, benefits: items }))}
+                placeholder="e.g. Peace of mind"
+                addLabel="Add Benefit"
+              />
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Description & Details */}
-      <section className="card p-6 md:p-8">
-        <h3 className="text-lg font-bold mb-5" style={{ color: 'var(--t-text)' }}>Description &amp; Details</h3>
-        <div className="space-y-5">
-          <div><label className="label">Full Description</label><textarea rows={4} className="input resize-none" value={form.description} onChange={set('description')} /></div>
-          <div><label className="label">Requirements (comma-separated)</label><input className="input" placeholder="Rice, Ghee, Flowers..." value={form.requirements} onChange={set('requirements')} /></div>
-          <div><label className="label">Benefits (comma-separated)</label><input className="input" value={form.benefits} onChange={set('benefits')} /></div>
-        </div>
-      </section>
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={ShieldCheck} color="green" title="Preparation Guidelines" />
+          <div className="space-y-6">
+            <div>
+              <label className="label">Preparation Notes</label>
+              <RichTextEditor
+                value={form.preparationNotes}
+                onChange={(html) => setForm((f) => ({ ...f, preparationNotes: html }))}
+                onImageUpload={onImageUpload}
+                className="pooja-editor-content"
+                minHeight={160}
+                placeholder="What the devotee should prepare before the pooja..."
+              />
+            </div>
+            <div>
+              <label className="label">Do's and Don'ts</label>
+              <RichTextEditor
+                value={form.dosAndDonts}
+                onChange={(html) => setForm((f) => ({ ...f, dosAndDonts: html }))}
+                onImageUpload={onImageUpload}
+                className="pooja-editor-content"
+                minHeight={160}
+                placeholder="Do's and don'ts for this ritual..."
+              />
+            </div>
+          </div>
+        </section>
 
-      {/* Media */}
-      <section className="card p-6 md:p-8">
-        <h3 className="text-lg font-bold mb-5" style={{ color: 'var(--t-text)' }}>Media</h3>
-        <label className="flex items-center justify-center gap-2 border-2 border-dashed rounded-xl px-4 py-8 cursor-pointer hover:border-saffron-400 transition-colors" style={{ borderColor: 'var(--t-border)' }}>
-          <input type="file" accept="image/*" onChange={(e) => setImage(e.target.files[0])} className="hidden" />
-          <span className="text-sm text-gray-500">{image ? image.name : 'Click to upload a pooja image'}</span>
-        </label>
-      </section>
+        <section className="card p-6 md:p-8">
+          <SectionHeader
+            icon={HelpCircle} color="violet" title="FAQ"
+            action={<button type="button" onClick={addFaqRow} className="btn-outline text-xs px-3 py-1.5 flex items-center gap-1.5"><Plus size={13} /> Add FAQ</button>}
+          />
+          <FaqRepeater
+            faqs={form.faqs}
+            onChange={(faqs) => setForm((f) => ({ ...f, faqs }))}
+            onImageUpload={onImageUpload}
+            hideAddButton
+          />
+        </section>
+
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={Image} color="indigo" title="Media Upload" />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Cover Image</label>
+              <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed rounded-xl px-3 py-5 cursor-pointer hover:border-saffron-400 transition-colors text-center" style={{ borderColor: 'var(--t-border)' }}>
+                <Upload size={18} className="text-gray-400" />
+                <input type="file" accept="image/*" onChange={(e) => setImage(e.target.files[0])} className="hidden" />
+                <span className="text-xs text-gray-500">{image ? image.name : 'Click to upload'}</span>
+              </label>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* ── Column 2 — main content ── */}
+      <div className="space-y-6">
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={AlignLeft} color="purple" title="Description" />
+          <RichTextEditor
+            value={form.description}
+            onChange={(html) => setForm((f) => ({ ...f, description: html }))}
+            onImageUpload={onImageUpload}
+            className="pooja-editor-content"
+            minHeight={220}
+            placeholder="Describe this pooja in detail..."
+          />
+        </section>
+
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={Flame} color="orange" title="Vidhi (Ceremony Procedure)" />
+          <RichTextEditor
+            value={form.vidhi}
+            onChange={(html) => setForm((f) => ({ ...f, vidhi: html }))}
+            onImageUpload={onImageUpload}
+            className="pooja-editor-content"
+            minHeight={200}
+            placeholder="Step-by-step ritual procedure — headings, steps, and images..."
+          />
+        </section>
+
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={ListChecks} color="blue" title="Requirements" />
+          <p className="text-xs text-gray-400 mb-3">Detailed samagri notes — shown in addition to the quick item list. Use for images, quantities, or notes.</p>
+          <RichTextEditor
+            value={form.samagriNotes}
+            onChange={(html) => setForm((f) => ({ ...f, samagriNotes: html }))}
+            onImageUpload={onImageUpload}
+            className="pooja-editor-content"
+            minHeight={180}
+            placeholder="Detailed samagri list with images, quantities, notes..."
+          />
+        </section>
+
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={Star} color="yellow" title="Benefits" />
+          <p className="text-xs text-gray-400 mb-3">Detailed benefits — shown in addition to the quick benefits list above.</p>
+          <RichTextEditor
+            value={form.benefitsContent}
+            onChange={(html) => setForm((f) => ({ ...f, benefitsContent: html }))}
+            onImageUpload={onImageUpload}
+            className="pooja-editor-content"
+            minHeight={180}
+            placeholder="Elaborate on the benefits — highlight boxes, notes..."
+          />
+        </section>
+
+        <section className="card p-6 md:p-8">
+          <SectionHeader icon={Info} color="teal" title="Additional Information" />
+          <RichTextEditor
+            value={form.additionalInfo}
+            onChange={(html) => setForm((f) => ({ ...f, additionalInfo: html }))}
+            onImageUpload={onImageUpload}
+            className="pooja-editor-content"
+            minHeight={160}
+            placeholder="Any other information devotees should know..."
+          />
+        </section>
+      </div>
+
+      {/* ── Column 3 — sidebar ── */}
+      <div className="space-y-6 lg:sticky lg:top-4">
+        <PoojaLivePreview
+          form={form}
+          categories={categories}
+          image={image}
+          isEditing={isEditing}
+          editingPooja={editingPooja}
+        />
+        <CompletionProgressCard completion={completion} />
+        <PublishingChecklistCard checklist={checklist} />
+        <TipsCard />
+      </div>
     </div>
   );
 }
@@ -3068,32 +3289,61 @@ function PoojasTab() {
   };
 
   // ── Pooja CRUD ──
-  const buildPoojaFD = (form, image) => {
+  const uploadPoojaInlineImage = async (file) => {
+    const fd = new FormData();
+    fd.append('image', file);
+    const { data } = await API.post('/poojas/upload-image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return data.url;
+  };
+
+  const validatePoojaForm = (form) => {
+    if (!form.name.trim()) { toast.error('Please add a pooja name'); return false; }
+    if (form.categoryIds.length === 0) { toast.error('Select at least one category'); return false; }
+    if (isRichTextEmpty(form.description)) { toast.error('Please add a description'); return false; }
+    for (const [i, f] of (form.faqs || []).entries()) {
+      if (!f.question.trim() || isRichTextEmpty(f.answer)) {
+        toast.error(`FAQ #${i + 1} needs both a question and an answer`);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const buildPoojaFD = (form, image, isActive) => {
     const fd = new FormData();
     if (form.name)         fd.append('name', form.name);
     fd.append('price', form.salePrice || form.mrp || form.price || '0');
     if (form.mrp)          fd.append('mrp', form.mrp);
     if (form.salePrice)    fd.append('salePrice', form.salePrice);
     fd.append('taxEnabled', String(form.taxEnabled));
+    fd.append('isActive', String(isActive));
     if (form.taxEnabled && form.taxRate) fd.append('taxRate', form.taxRate);
     if (form.durationValue)fd.append('durationValue', form.durationValue);
     if (form.durationUnit) fd.append('durationUnit', form.durationUnit);
     if (form.shortDesc)    fd.append('shortDesc', form.shortDesc);
     if (form.description)  fd.append('description', form.description);
+    if (form.vidhi)             fd.append('vidhi', form.vidhi);
+    if (form.samagriNotes)      fd.append('samagriNotes', form.samagriNotes);
+    if (form.benefitsContent)   fd.append('benefitsContent', form.benefitsContent);
+    if (form.preparationNotes)  fd.append('preparationNotes', form.preparationNotes);
+    if (form.dosAndDonts)       fd.append('dosAndDonts', form.dosAndDonts);
+    if (form.additionalInfo)    fd.append('additionalInfo', form.additionalInfo);
     fd.set('categoryIds',    JSON.stringify(form.categoryIds));
-    fd.set('requirements',   JSON.stringify(form.requirements.split(',').map((s) => s.trim()).filter(Boolean)));
-    fd.set('benefits',       JSON.stringify(form.benefits.split(',').map((s) => s.trim()).filter(Boolean)));
+    fd.set('requirements',   JSON.stringify((form.requirements || []).filter(Boolean)));
+    fd.set('benefits',       JSON.stringify((form.benefits     || []).filter(Boolean)));
     fd.set('languages',      JSON.stringify(form.languages.split(',').map((s) => s.trim()).filter(Boolean)));
+    fd.set('faqs',            JSON.stringify(form.faqs || []));
+    fd.set('gallery',         JSON.stringify(form.gallery || []));
     if (image) fd.append('image', image);
     return fd;
   };
 
-  const handleCreatePooja = async (e) => {
-    e.preventDefault();
+  const handleCreatePooja = async (isActive, skipValidation) => {
+    if (!skipValidation && !validatePoojaForm(poojaForm)) return;
     setSaving(true);
     try {
-      await API.post('/poojas', buildPoojaFD(poojaForm, poojaImage), { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success('Pooja added!');
+      await API.post('/poojas', buildPoojaFD(poojaForm, poojaImage, isActive), { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success(isActive ? 'Pooja published!' : 'Pooja saved as draft');
       setPoojaForm(EMPTY_POOJA_FORM); setPoojaImage(null);
       setTab2('poojas');
       reload();
@@ -3119,20 +3369,28 @@ function PoojasTab() {
       durationUnit:  p.durationUnit || 'hours',
       shortDesc:     p.shortDesc || '',
       description:   p.description || '',
-      requirements:  (p.requirements || []).join(', '),
-      benefits:      (p.benefits     || []).join(', '),
+      requirements:  p.requirements || [],
+      benefits:      p.benefits     || [],
       languages:     (p.languages    || []).join(', ') || 'Hindi, English, Sanskrit',
+      vidhi:             p.vidhi            || '',
+      samagriNotes:      p.samagriNotes     || '',
+      benefitsContent:   p.benefitsContent  || '',
+      preparationNotes:  p.preparationNotes || '',
+      dosAndDonts:       p.dosAndDonts      || '',
+      additionalInfo:    p.additionalInfo   || '',
+      faqs:              p.faqs             || [],
+      gallery:           p.gallery          || [],
     });
     setPoojaImage(null);
     setTab2('edit-pooja');
   };
 
-  const handleUpdatePooja = async (e) => {
-    e.preventDefault();
+  const handleUpdatePooja = async (isActive, skipValidation) => {
+    if (!skipValidation && !validatePoojaForm(poojaForm)) return;
     setSaving(true);
     try {
-      await API.patch(`/poojas/${editingPooja._id}`, buildPoojaFD(poojaForm, poojaImage), { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success('Pooja updated!');
+      await API.patch(`/poojas/${editingPooja._id}`, buildPoojaFD(poojaForm, poojaImage, isActive), { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success(isActive ? 'Pooja published!' : 'Pooja saved as draft');
       setEditingPooja(null); setPoojaForm(EMPTY_POOJA_FORM); setPoojaImage(null);
       setTab2('poojas');
       reload();
@@ -3280,31 +3538,54 @@ function PoojasTab() {
 
       {/* ── Add Pooja ── */}
       {tab2 === 'add-pooja' && (
-        <div className="max-w-5xl">
-          <h2 className="text-2xl font-bold mb-6" style={{ color: 'var(--t-text)' }}>Add Pooja</h2>
-          <form onSubmit={handleCreatePooja}>
-            <PoojaFormFields form={poojaForm} setForm={setPoojaForm} categories={categories} image={poojaImage} setImage={setPoojaImage} />
-            <div className="sticky bottom-0 z-10 mt-6 py-4 flex justify-end border-t" style={{ borderColor: 'var(--t-border)', background: 'var(--t-bg)' }}>
-              <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2"><Plus size={16} />{saving ? 'Adding...' : 'Add Pooja'}</button>
+        <form onSubmit={(e) => { e.preventDefault(); handleCreatePooja(true, false); }}>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold" style={{ color: 'var(--t-text)' }}>Pooja Management – Add New Pooja</h2>
+              <p className="text-sm text-gray-400">Create and manage pooja services</p>
             </div>
-          </form>
-        </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setTab2('poojas')} className="btn-outline text-sm">Cancel</button>
+              <button type="button" disabled={saving} onClick={() => handleCreatePooja(false, true)} className="btn-outline text-sm">
+                {saving ? 'Saving...' : 'Save Draft'}
+              </button>
+              <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
+                <Plus size={16} />{saving ? 'Publishing...' : 'Publish'}
+              </button>
+            </div>
+          </div>
+          <PoojaFormFields
+            form={poojaForm} setForm={setPoojaForm} categories={categories}
+            image={poojaImage} setImage={setPoojaImage} onImageUpload={uploadPoojaInlineImage}
+            isEditing={false} editingPooja={null}
+          />
+        </form>
       )}
 
       {/* ── Edit Pooja ── */}
       {tab2 === 'edit-pooja' && editingPooja && (
-        <div className="max-w-5xl">
-          <div className="flex items-center gap-3 mb-6">
-            <button onClick={() => { setTab2('poojas'); setEditingPooja(null); }} className="text-sm text-saffron-600 hover:underline">← Back</button>
-            <h2 className="text-2xl font-bold" style={{ color: 'var(--t-text)' }}>Edit: {editingPooja.name}</h2>
-          </div>
-          <form onSubmit={handleUpdatePooja}>
-            <PoojaFormFields form={poojaForm} setForm={setPoojaForm} categories={categories} image={poojaImage} setImage={setPoojaImage} />
-            <div className="sticky bottom-0 z-10 mt-6 py-4 flex justify-end border-t" style={{ borderColor: 'var(--t-border)', background: 'var(--t-bg)' }}>
-              <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2"><Save size={16} />{saving ? 'Saving...' : 'Save Changes'}</button>
+        <form onSubmit={(e) => { e.preventDefault(); handleUpdatePooja(true, false); }}>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold" style={{ color: 'var(--t-text)' }}>Pooja Management – Edit Pooja</h2>
+              <p className="text-sm text-gray-400">{editingPooja.name}</p>
             </div>
-          </form>
-        </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => { setTab2('poojas'); setEditingPooja(null); }} className="btn-outline text-sm">Cancel</button>
+              <button type="button" disabled={saving} onClick={() => handleUpdatePooja(false, true)} className="btn-outline text-sm">
+                {saving ? 'Saving...' : 'Save Draft'}
+              </button>
+              <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
+                <Save size={16} />{saving ? 'Publishing...' : 'Publish'}
+              </button>
+            </div>
+          </div>
+          <PoojaFormFields
+            form={poojaForm} setForm={setPoojaForm} categories={categories}
+            image={poojaImage} setImage={setPoojaImage} onImageUpload={uploadPoojaInlineImage}
+            isEditing={true} editingPooja={editingPooja}
+          />
+        </form>
       )}
     </div>
   );
@@ -3338,10 +3619,45 @@ function SyncResultCard({ result, onDismiss }) {
   );
 }
 
+const SOURCE_OPTIONS = [
+  { value: 'manual',       label: 'Manual' },
+  { value: 'googlesheets', label: 'Google Sheets' },
+  { value: 'csv',          label: 'CSV' },
+  { value: 'drikpanchang', label: 'Drik Panchang' },
+];
+const TYPE_OPTIONS = [
+  { value: 'festival', label: 'Festival' },
+  { value: 'tithi',     label: 'Tithi' },
+  { value: 'vrat',      label: 'Vrat' },
+  { value: 'panchang',  label: 'Panchang' },
+  { value: 'mixed',     label: 'Mixed' },
+];
+// Sync Status is a relabeled alias of the same `source` field — there is no
+// per-record "pending" state in the data model (only manual entries or
+// completed Google Sheets sync upserts exist), so only these two real states
+// are offered, sharing the same underlying filter value as the Source select.
+const SYNC_STATUS_OPTIONS = [
+  { value: 'googlesheets', label: 'Synced' },
+  { value: 'manual',       label: 'Manual Entry' },
+];
+const QUICK_FILTERS = [
+  { key: 'today',     label: 'Today' },
+  { key: 'tomorrow',  label: 'Tomorrow' },
+  { key: 'week',      label: 'This Week' },
+  { key: 'month',     label: 'This Month' },
+  { key: 'nextmonth', label: 'Next Month' },
+  { key: 'upcoming',  label: 'Upcoming' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'all',       label: 'All' },
+];
+const FESTIVAL_PAGE_SIZE = 50;
+
 function FestivalsTab() {
   const currentYear = new Date().getFullYear();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [view,       setView]       = useState('sync');
   const [festivals,  setFestivals]  = useState([]);
+  const [festivalsTotal, setFestivalsTotal] = useState(0);
   const [syncLogs,   setSyncLogs]   = useState([]);
   const [form,       setForm]       = useState({ name:'', date:'', tithiDate:'', panchang:'', description:'' });
   const [syncMonth,  setSyncMonth]  = useState(new Date().getMonth() + 1);
@@ -3351,12 +3667,106 @@ function FestivalsTab() {
   const [warnCache,  setWarnCache]  = useState(null);
   const years = Array.from({ length: 10 }, (_, i) => currentYear - 2 + i);
 
+  // ── Filter state (initialized from the URL so a refresh preserves filters) ──
+  const [search,       setSearch]       = useState(searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  const [yearFilter,   setYearFilter]   = useState(searchParams.get('year') ?? String(currentYear));
+  const [monthFilter,  setMonthFilter]  = useState(searchParams.get('month') || '');
+  const [dateFrom,     setDateFrom]     = useState(searchParams.get('dateFrom') || '');
+  const [dateTo,       setDateTo]       = useState(searchParams.get('dateTo') || '');
+  const [typeFilter,   setTypeFilter]   = useState(searchParams.get('type') || '');
+  const [sourceFilter, setSourceFilter] = useState(searchParams.get('source') || '');
+  const [sortBy,       setSortBy]       = useState(searchParams.get('sortBy') || 'date');
+  const [sortDir,      setSortDir]      = useState(searchParams.get('sortDir') || 'asc');
+  const [fPage,        setFPage]        = useState(parseInt(searchParams.get('fpage')) || 1);
+  const [activeQuickFilter, setActiveQuickFilter] = useState('');
+
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset to page 1 whenever a filter (other than the page itself) changes
+  useEffect(() => { setFPage(1); }, [debouncedSearch, yearFilter, monthFilter, dateFrom, dateTo, typeFilter, sourceFilter]);
+
   const reload = () => {
-    API.get('/festivals').then(({ data }) => setFestivals(data.festivals));
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    if (yearFilter)      params.set('year', yearFilter);
+    if (monthFilter)     params.set('month', monthFilter);
+    if (dateFrom)        params.set('dateFrom', dateFrom);
+    if (dateTo)          params.set('dateTo', dateTo);
+    if (typeFilter)      params.set('type', typeFilter);
+    if (sourceFilter)    params.set('source', sourceFilter);
+    params.set('sortBy', sortBy);
+    params.set('sortDir', sortDir);
+    params.set('page', String(fPage));
+    params.set('pageSize', String(FESTIVAL_PAGE_SIZE));
+
+    API.get(`/festivals?${params.toString()}`).then(({ data }) => {
+      setFestivals(data.festivals || []);
+      setFestivalsTotal(data.total ?? (data.festivals || []).length);
+    });
     API.get('/festivals/sync-logs').then(({ data }) => setSyncLogs(data.logs || [])).catch(() => {});
+
+    // Mirror filters into the URL (merging with, not clobbering, ?tab= and
+    // other top-level params already present).
+    const next = new URLSearchParams(searchParams);
+    ['search','year','month','dateFrom','dateTo','type','source','sortBy','sortDir'].forEach((k) => next.delete(k));
+    next.delete('fpage');
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    if (yearFilter)      next.set('year', yearFilter);
+    if (monthFilter)     next.set('month', monthFilter);
+    if (dateFrom)        next.set('dateFrom', dateFrom);
+    if (dateTo)          next.set('dateTo', dateTo);
+    if (typeFilter)      next.set('type', typeFilter);
+    if (sourceFilter)    next.set('source', sourceFilter);
+    if (sortBy !== 'date')  next.set('sortBy', sortBy);
+    if (sortDir !== 'asc')  next.set('sortDir', sortDir);
+    if (fPage !== 1)        next.set('fpage', String(fPage));
+    setSearchParams(next, { replace: true });
   };
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => { reload(); }, [debouncedSearch, yearFilter, monthFilter, dateFrom, dateTo, typeFilter, sourceFilter, sortBy, sortDir, fPage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const applyQuickFilter = (key) => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const fmt = (d) => d.toISOString().slice(0, 10);
+    let from = null, to = null;
+    if (key === 'today') { from = today; to = today; }
+    else if (key === 'tomorrow') { const t = new Date(today); t.setDate(t.getDate() + 1); from = t; to = t; }
+    else if (key === 'week') { const end = new Date(today); end.setDate(end.getDate() + (6 - today.getDay())); from = today; to = end; }
+    else if (key === 'month') { from = new Date(today.getFullYear(), today.getMonth(), 1); to = new Date(today.getFullYear(), today.getMonth() + 1, 0); }
+    else if (key === 'nextmonth') { from = new Date(today.getFullYear(), today.getMonth() + 1, 1); to = new Date(today.getFullYear(), today.getMonth() + 2, 0); }
+    else if (key === 'upcoming') { from = today; to = null; }
+    else if (key === 'completed') { from = null; to = new Date(today.getTime() - 86400000); }
+    // 'all' → from/to stay null, clearing the date range entirely
+
+    setDateFrom(from ? fmt(from) : '');
+    setDateTo(to ? fmt(to) : '');
+    setYearFilter('');
+    setMonthFilter('');
+    setActiveQuickFilter(key);
+  };
+
+  const resetFilters = () => {
+    setSearch('');
+    setYearFilter(String(currentYear));
+    setMonthFilter('');
+    setDateFrom('');
+    setDateTo('');
+    setTypeFilter('');
+    setSourceFilter('');
+    setSortBy('date');
+    setSortDir('asc');
+    setActiveQuickFilter('');
+  };
+
+  const toggleSort = (field) => {
+    if (sortBy === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortBy(field); setSortDir('asc'); }
+  };
 
   const doSync = async (force = false) => {
     setSyncing(true);
@@ -3547,42 +3957,160 @@ function FestivalsTab() {
 
       {/* ── All Records ── */}
       {view === 'list' && (
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-saffron-50 text-xs text-gray-500 text-left border-b">
-                {['Festival / Entry','Date','Tithi / Vrat','Type','Source','Actions'].map(h => (
-                  <th key={h} className="px-4 py-3">{h}</th>
-                ))}
-              </tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                {festivals.map((f) => (
-                  <tr key={f._id}>
-                    <td className="px-4 py-3 font-semibold text-gray-800 max-w-[200px] truncate">
-                      {f.name || <span className="text-gray-400 italic text-xs">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{new Date(f.date).toLocaleDateString('en-IN')}</td>
-                    <td className="px-4 py-3 text-xs text-saffron-600 max-w-[140px] truncate">
-                      {f.tithiDate || f.vrat || '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${typeColor(f.dataType)}`}>
-                        {f.dataType || 'festival'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${sourceColor(f.source)}`}>{f.source}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button onClick={async () => { await API.delete(`/festivals/${f._id}`); reload(); toast.success('Removed'); }}
-                        className="text-xs text-red-500 hover:underline">Remove</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {festivals.length === 0 && (
-              <p className="text-center py-8 text-gray-400">No festival data yet. Use Festival Data Sync to fetch data.</p>
+        <div className="space-y-3">
+          {/* Filter toolbar */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input className="input pl-9 text-sm" placeholder="Search festival, tithi, vrat..."
+                  value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
+              <select className="input text-sm w-auto" value={yearFilter} onChange={(e) => { setYearFilter(e.target.value); setActiveQuickFilter(''); }}>
+                <option value="">All Years</option>
+                {years.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <select className="input text-sm w-auto" value={monthFilter} onChange={(e) => { setMonthFilter(e.target.value); setActiveQuickFilter(''); }}>
+                <option value="">All Months</option>
+                {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+              <div className="flex items-center gap-1">
+                <input type="date" className="input text-sm w-auto" value={dateFrom}
+                  onChange={(e) => { setDateFrom(e.target.value); setActiveQuickFilter(''); }} />
+                <span className="text-gray-400 text-xs">to</span>
+                <input type="date" className="input text-sm w-auto" value={dateTo}
+                  onChange={(e) => { setDateTo(e.target.value); setActiveQuickFilter(''); }} />
+              </div>
+              <select className="input text-sm w-auto" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+                <option value="">All Types</option>
+                {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <select className="input text-sm w-auto" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+                <option value="">All Sources</option>
+                {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <select className="input text-sm w-auto" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+                <option value="">All Sync Status</option>
+                {SYNC_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+
+            {/* Quick filter chips */}
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_FILTERS.map((q) => (
+                <button key={q.key} onClick={() => applyQuickFilter(q.key)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${activeQuickFilter === q.key ? 'bg-saffron-500 text-white' : 'bg-gray-50 border text-gray-500 hover:border-saffron-300'}`}>
+                  {q.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Active filter chips + reset */}
+            {(search || yearFilter || monthFilter || dateFrom || dateTo || typeFilter || sourceFilter) && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-gray-100">
+                {search && (
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                    Search: {search}
+                    <button onClick={() => setSearch('')}><X size={10} /></button>
+                  </span>
+                )}
+                {yearFilter && (
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                    Year: {yearFilter}
+                    <button onClick={() => setYearFilter('')}><X size={10} /></button>
+                  </span>
+                )}
+                {monthFilter && (
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                    Month: {MONTH_NAMES[+monthFilter - 1]}
+                    <button onClick={() => setMonthFilter('')}><X size={10} /></button>
+                  </span>
+                )}
+                {(dateFrom || dateTo) && (
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                    Date: {dateFrom || '…'} → {dateTo || '…'}
+                    <button onClick={() => { setDateFrom(''); setDateTo(''); setActiveQuickFilter(''); }}><X size={10} /></button>
+                  </span>
+                )}
+                {typeFilter && (
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                    Type: {TYPE_OPTIONS.find((o) => o.value === typeFilter)?.label}
+                    <button onClick={() => setTypeFilter('')}><X size={10} /></button>
+                  </span>
+                )}
+                {sourceFilter && (
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                    Source: {SOURCE_OPTIONS.find((o) => o.value === sourceFilter)?.label}
+                    <button onClick={() => setSourceFilter('')}><X size={10} /></button>
+                  </span>
+                )}
+                <button onClick={resetFilters} className="text-xs text-red-500 hover:underline ml-auto">Reset Filters</button>
+              </div>
+            )}
+          </div>
+
+          {/* Record counter */}
+          <p className="text-xs text-gray-400">
+            Showing <span className="font-semibold text-gray-600">{festivals.length}</span> of <span className="font-semibold text-gray-600">{festivalsTotal.toLocaleString('en-IN')}</span> Festivals
+          </p>
+
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-saffron-50 text-xs text-gray-500 text-left border-b">
+                  {[['name','Festival / Entry'],['date','Date'],null,['dataType','Type'],['source','Source'],null].map((col, i) => (
+                    col ? (
+                      <th key={col[0]} className="px-4 py-3 cursor-pointer select-none hover:text-gray-700" onClick={() => toggleSort(col[0])}>
+                        <span className="flex items-center gap-1">
+                          {col[1]}
+                          {sortBy === col[0] && (sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />)}
+                        </span>
+                      </th>
+                    ) : <th key={`h${i}`} className="px-4 py-3">{i === 2 ? 'Tithi / Vrat' : 'Actions'}</th>
+                  ))}
+                </tr></thead>
+                <tbody className="divide-y divide-gray-50">
+                  {festivals.map((f) => (
+                    <tr key={f._id}>
+                      <td className="px-4 py-3 font-semibold text-gray-800 max-w-[200px] truncate">
+                        {f.name || <span className="text-gray-400 italic text-xs">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{new Date(f.date).toLocaleDateString('en-IN')}</td>
+                      <td className="px-4 py-3 text-xs text-saffron-600 max-w-[140px] truncate">
+                        {f.tithiDate || f.vrat || '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${typeColor(f.dataType)}`}>
+                          {f.dataType || 'festival'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${sourceColor(f.source)}`}>{f.source}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button onClick={async () => { await API.delete(`/festivals/${f._id}`); reload(); toast.success('Removed'); }}
+                          className="text-xs text-red-500 hover:underline">Remove</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {festivals.length === 0 && (
+                <p className="text-center py-8 text-gray-400">No festival data matches these filters.</p>
+              )}
+            </div>
+            {festivalsTotal > FESTIVAL_PAGE_SIZE && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
+                <button disabled={fPage <= 1} onClick={() => setFPage((p) => Math.max(1, p - 1))}
+                  className="text-xs font-medium text-saffron-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:underline">
+                  ← Previous
+                </button>
+                <span className="text-xs text-gray-400">Page {fPage} of {Math.ceil(festivalsTotal / FESTIVAL_PAGE_SIZE)}</span>
+                <button disabled={fPage >= Math.ceil(festivalsTotal / FESTIVAL_PAGE_SIZE)} onClick={() => setFPage((p) => p + 1)}
+                  className="text-xs font-medium text-saffron-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:underline">
+                  Next →
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -5358,7 +5886,7 @@ const VISIBILITY_META = {
 
 const EMPTY_PRODUCT_FORM = {
   name: '', category: '', price: '', salePrice: '', stock: '',
-  description: '', tags: '', visibilityType: 'marketplace', taxRate: '', variants: [],
+  description: '', tags: [], visibilityType: 'marketplace', taxRate: '', variants: [],
 };
 
 function VariantBuilder({ variants, setVariants }) {
@@ -5411,75 +5939,218 @@ function VariantBuilder({ variants, setVariants }) {
   );
 }
 
-function ProductForm({ form, setForm, images, setImages, onSubmit, submitLabel, loading, categories = [] }) {
+function ProductForm({ form, setForm, categories = [], onImageUpload }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const variants    = form.variants || [];
   const setVariants = (fn) => setForm((f) => ({ ...f, variants: typeof fn === 'function' ? fn(f.variants || []) : fn }));
   const hasVariants = variants.length > 0;
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div><label className="label">Name *</label><input required className="input" value={form.name} onChange={set('name')} /></div>
-        <div>
-          <label className="label">Category *</label>
-          <select required className="input" value={form.category} onChange={set('category')}>
-            <option value="">Select category…</option>
-            {categories.map((c) => (
-              <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>
-            ))}
-          </select>
+    <section className="card p-6 md:p-8">
+      <SectionHeader icon={Package} color="indigo" title="Add Product" />
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className="label">Name *</label><input required className="input" value={form.name} onChange={set('name')} /></div>
+          <div>
+            <label className="label">Category *</label>
+            <select required className="input" value={form.category} onChange={set('category')}>
+              <option value="">Select category…</option>
+              {categories.map((c) => (
+                <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
 
-      {/* Price/Stock (flat) — dimmed when variants present */}
-      {!hasVariants && (
-        <div className="grid grid-cols-3 gap-3">
-          <div><label className="label">Price (₹) *</label><input required type="number" min="0" className="input" value={form.price} onChange={set('price')} /></div>
-          <div><label className="label">Sale Price</label><input type="number" min="0" className="input" value={form.salePrice} onChange={set('salePrice')} /></div>
-          <div><label className="label">Stock *</label><input required type="number" min="0" className="input" value={form.stock} onChange={set('stock')} /></div>
+        {/* Price/Stock (flat) — dimmed when variants present */}
+        {!hasVariants && (
+          <div className="grid grid-cols-3 gap-4">
+            <div><label className="label">Price (₹) *</label><input required type="number" min="0" className="input" value={form.price} onChange={set('price')} /></div>
+            <div><label className="label">Sale Price (₹)</label><input type="number" min="0" className="input" value={form.salePrice} onChange={set('salePrice')} /></div>
+            <div><label className="label">Stock *</label><input required type="number" min="0" className="input" value={form.stock} onChange={set('stock')} /></div>
+          </div>
+        )}
+        {hasVariants && (
+          <div className="text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
+            Price and Stock are managed per-variant below.
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4 items-start">
+          <VariantBuilder variants={variants} setVariants={setVariants} />
+          <div>
+            <label className="label">Tax Rate (GST %)</label>
+            <input type="number" min="0" max="100" step="0.5" className="input" placeholder="e.g. 5, 12, 18" value={form.taxRate} onChange={set('taxRate')} />
+          </div>
         </div>
-      )}
-      {hasVariants && (
-        <div className="text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
-          Price and Stock are managed per-variant below.
-        </div>
-      )}
 
-      <VariantBuilder variants={variants} setVariants={setVariants} />
+        {form.sku && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">SKU:</span>
+            <code className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">{form.sku}</code>
+          </div>
+        )}
 
-      {form.sku && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">SKU:</span>
-          <code className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">{form.sku}</code>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Visibility *</label>
           <select className="input" value={form.visibilityType} onChange={set('visibilityType')}>
-            <option value="marketplace">Marketplace Product — visible to customers</option>
+            <option value="marketplace">Marketplace Product — visible to all</option>
             <option value="kit_only">Kit Only — not visible in marketplace</option>
             <option value="both">Both — visible in marketplace and kits</option>
           </select>
         </div>
+
         <div>
-          <label className="label">Tax Rate (GST %)</label>
-          <input type="number" min="0" max="100" step="0.5" className="input" placeholder="e.g. 5, 12, 18" value={form.taxRate} onChange={set('taxRate')} />
+          <label className="label">Description</label>
+          <RichTextEditor
+            value={form.description}
+            onChange={(html) => setForm((f) => ({ ...f, description: html }))}
+            onImageUpload={onImageUpload}
+            className="product-editor-content"
+            minHeight={160}
+            placeholder="Write a detailed description of the product..."
+          />
+        </div>
+
+        <div>
+          <label className="label">Tags</label>
+          <ProductTagInput
+            tags={form.tags}
+            onChange={(tags) => setForm((f) => ({ ...f, tags }))}
+            placeholder="e.g. pooja, brass, dhoop, religious"
+          />
+          <p className="text-[11px] text-gray-400 mt-1">Add tags to help customers find your product easily.</p>
         </div>
       </div>
-      <div><label className="label">Description</label><textarea rows={2} className="input resize-none" value={form.description} onChange={set('description')} /></div>
-      <div><label className="label">Tags (comma-separated)</label><input className="input" value={form.tags} onChange={set('tags')} /></div>
-      <div>
-        <label className="label">Images (up to 5)</label>
-        <input type="file" accept="image/*" multiple onChange={(e) => setImages([...e.target.files])} className="text-sm" />
-        {images.length > 0 && <p className="text-xs text-gray-400 mt-1">{images.length} file(s) selected</p>}
+    </section>
+  );
+}
+
+// ── Kit form fields (shared by add-kit / edit-kit) ────────────
+function KitFormFields({
+  kitForm, setKitForm, kitItems, setKitItems, kitBuilderProducts,
+  kitTotalCost, kitPriceOverride, setKitPriceOverride, kitSellingPrice, setKitSellingPrice,
+  availablePoojas, kitLinkedPoojas, setKitLinkedPoojas,
+  kitImage, setKitImage, currentImage,
+}) {
+  return (
+    <section className="card p-6 md:p-8">
+      <SectionHeader icon={ShoppingBag} color="indigo" title="Create Kit" />
+      <div className="space-y-5">
+        <div><label className="label">Kit Name *</label><input required className="input" value={kitForm.name} onChange={(e) => setKitForm({ ...kitForm, name: e.target.value })} /></div>
+        <div><label className="label">Description</label><textarea rows={3} className="input resize-none" placeholder="Enter a short description about this kit" value={kitForm.description} onChange={(e) => setKitForm({ ...kitForm, description: e.target.value })} /></div>
+
+        <div>
+          <label className="label">Kit Items * <span className="text-gray-400 font-normal text-xs">(includes kit-only products)</span></label>
+          <div className="space-y-2">
+            {kitItems.map((item, idx) => {
+              const selectValue = item.variantId ? `${item.productId}::${item.variantId}` : (item.productId || '');
+              return (
+                <div key={idx} className="flex gap-2 items-center">
+                  <KitProductPicker
+                    products={kitBuilderProducts}
+                    value={selectValue}
+                    onSelect={(opt) => {
+                      const n = [...kitItems];
+                      n[idx] = { ...n[idx], productId: opt.productId, variantId: opt.variantId, variantLabel: opt.variantLabel };
+                      setKitItems(n);
+                    }}
+                  />
+                  <QuantityStepper
+                    value={item.quantity}
+                    onChange={(qty) => { const n = [...kitItems]; n[idx].quantity = qty; setKitItems(n); }}
+                  />
+                  <button type="button" onClick={() => setKitItems(kitItems.filter((_, i) => i !== idx))}
+                    className="p-2 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <button type="button" onClick={() => setKitItems([...kitItems, { productId: '', quantity: 1 }])}
+            className="text-sm text-saffron-600 mt-2 hover:underline flex items-center gap-1">
+            <Plus size={13} /> Add Item
+          </button>
+        </div>
+
+        {kitTotalCost > 0 ? (
+          <div className="bg-saffron-50 border border-saffron-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-700">Product Total Cost</span>
+              <span className="text-lg font-bold text-gray-800">₹{kitTotalCost.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label text-xs">Discount Type</label>
+                <div className="flex gap-2">
+                  {[['percentage', '% Percent'], ['fixed', '₹ Fixed']].map(([val, lbl]) => (
+                    <button key={val} type="button" onClick={() => { setKitForm({ ...kitForm, discountType: val }); setKitPriceOverride(false); }}
+                      className={`flex-1 flex items-center justify-center gap-1 text-xs px-2 py-2 rounded-lg border font-medium transition-colors ${kitForm.discountType === val ? 'bg-saffron-500 text-white border-saffron-500' : 'bg-white text-gray-600 border-gray-300'}`}>
+                      {val === 'percentage' ? <Percent size={11} /> : <Tag size={11} />} {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="label text-xs">Discount Value</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">{kitForm.discountType === 'percentage' ? '%' : '₹'}</span>
+                  <input type="number" min="0" max={kitForm.discountType === 'percentage' ? 100 : kitTotalCost} className="input pl-7" value={kitForm.discountValue}
+                    onChange={(e) => { setKitForm({ ...kitForm, discountValue: e.target.value }); setKitPriceOverride(false); }} />
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between border-t border-saffron-200 pt-3">
+              <span className="text-sm font-semibold text-gray-700">Selling Price</span>
+              <input type="number" min="0"
+                className={`input w-32 text-right font-bold text-lg ${kitPriceOverride ? 'border-saffron-400 bg-yellow-50' : 'bg-green-50 border-green-300'}`}
+                value={kitSellingPrice}
+                onChange={(e) => { setKitSellingPrice(e.target.value); setKitPriceOverride(true); }}
+                onFocus={() => setKitPriceOverride(true)} />
+            </div>
+            {kitPriceOverride && <button type="button" onClick={() => setKitPriceOverride(false)} className="text-xs text-saffron-600 hover:underline">↺ Recalculate from discount</button>}
+            {+kitSellingPrice > kitTotalCost && <p className="text-xs text-orange-600 bg-orange-50 rounded-lg p-2">⚠ Selling price exceeds product total cost.</p>}
+          </div>
+        ) : (
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center text-sm text-gray-500 flex items-center justify-center gap-1.5">
+            <Info size={13} /> Select products above to see auto-calculated pricing
+          </div>
+        )}
+
+        <div>
+          <label className="label">Link to Poojas <span className="text-gray-400 font-normal text-xs">(kit will be offered during these bookings)</span></label>
+          <div className="border rounded-xl p-2 max-h-40 overflow-y-auto grid grid-cols-2 gap-1" style={{ borderColor: 'var(--t-border)' }}>
+            {availablePoojas.map((p) => (
+              <label key={p._id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:bg-saffron-50 text-xs">
+                <input type="checkbox" checked={kitLinkedPoojas.includes(p._id)}
+                  onChange={() => setKitLinkedPoojas((prev) => prev.includes(p._id) ? prev.filter((x) => x !== p._id) : [...prev, p._id])}
+                  className="accent-saffron-500" />
+                <span className="text-gray-700 truncate">{p.name}</span>
+              </label>
+            ))}
+            {availablePoojas.length === 0 && <p className="text-xs text-gray-400 col-span-2">No active poojas found</p>}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="label">Kit Image *</label>
+            <KitImageUploader currentImage={currentImage} file={kitImage} onFileChange={setKitImage} />
+          </div>
+          <div className="space-y-5">
+            <div>
+              <label className="label">Tax Rate (GST %)</label>
+              <input type="number" min="0" max="100" step="0.5" className="input" placeholder="e.g. 5, 12, 18" value={kitForm.taxRate} onChange={(e) => setKitForm({ ...kitForm, taxRate: e.target.value })} />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={kitForm.isFeatured} onChange={(e) => setKitForm({ ...kitForm, isFeatured: e.target.checked })} className="accent-saffron-500 w-4 h-4" />
+              <span className="text-sm text-gray-700 flex items-center gap-1">Featured Kit <Info size={12} className="text-gray-400" /></span>
+            </label>
+          </div>
+        </div>
       </div>
-      <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
-        <Plus size={16} /> {submitLabel}
-      </button>
-    </form>
+    </section>
   );
 }
 
@@ -5679,7 +6350,7 @@ function MarketplaceTab() {
       salePrice:      p.salePrice ? String(p.salePrice) : '',
       stock:          String(p.stock || ''),
       description:    p.description || '',
-      tags:           (p.tags || []).join(', '),
+      tags:           p.tags || [],
       visibilityType: p.visibilityType || 'marketplace',
       taxRate:        p.taxRate !== undefined ? String(p.taxRate) : '',
       variants:       (p.variants || []).map((v) => ({
@@ -5694,13 +6365,14 @@ function MarketplaceTab() {
     setView('edit-product');
   };
 
-  const buildProductFD = (form, images) => {
+  const buildProductFD = (form, images, isActive) => {
     const fd = new FormData();
     Object.entries(form).forEach(([k, v]) => {
-      if (k === 'variants' || k === 'sku') return; // handled separately
+      if (k === 'variants' || k === 'sku' || k === 'tags') return; // handled separately
       if (v !== '') fd.append(k, v);
     });
-    fd.set('tags', JSON.stringify(form.tags.split(',').map((s) => s.trim()).filter(Boolean)));
+    fd.set('tags', JSON.stringify(form.tags || []));
+    fd.append('isActive', String(isActive));
     if (form.variants?.length > 0) {
       fd.set('variants', JSON.stringify(form.variants));
     }
@@ -5708,12 +6380,29 @@ function MarketplaceTab() {
     return fd;
   };
 
-  const handleCreateProduct = async (e) => {
-    e.preventDefault();
+  const validateProductForm = (form) => {
+    if (!form.name.trim()) { toast.error('Please add a product name'); return false; }
+    if (!form.category) { toast.error('Please select a category'); return false; }
+    if (!form.variants?.length && !form.price) { toast.error('Please add a price'); return false; }
+    return true;
+  };
+
+  const uploadProductInlineImage = async (file) => {
+    // No standalone image-upload endpoint exists for Marketplace products —
+    // reuse the Pooja admin inline-image endpoint (also admin-only, purely
+    // generic multer + URL response) rather than adding a new one.
+    const fd = new FormData();
+    fd.append('image', file);
+    const { data } = await API.post('/poojas/upload-image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return data.url;
+  };
+
+  const handleCreateProduct = async (isActive, skipValidation) => {
+    if (!skipValidation && !validateProductForm(productForm)) return;
     setSaving(true);
     try {
-      await API.post('/marketplace/products', buildProductFD(productForm, productImages), { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success('Product created');
+      await API.post('/marketplace/products', buildProductFD(productForm, productImages, isActive), { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success(isActive ? 'Product published!' : 'Product saved as draft');
       setProductForm(EMPTY_PRODUCT_FORM);
       setProductImages([]);
       setView('products');
@@ -5722,12 +6411,12 @@ function MarketplaceTab() {
     finally { setSaving(false); }
   };
 
-  const handleUpdateProduct = async (e) => {
-    e.preventDefault();
+  const handleUpdateProduct = async (isActive, skipValidation) => {
+    if (!skipValidation && !validateProductForm(productForm)) return;
     setSaving(true);
     try {
-      await API.patch(`/marketplace/products/${editingProd._id}`, buildProductFD(productForm, productImages), { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success('Product updated');
+      await API.patch(`/marketplace/products/${editingProd._id}`, buildProductFD(productForm, productImages, isActive), { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success(isActive ? 'Product published!' : 'Product saved as draft');
       setEditingProd(null);
       setProductForm(EMPTY_PRODUCT_FORM);
       setProductImages([]);
@@ -5962,23 +6651,76 @@ function MarketplaceTab() {
 
       {/* ── Add Product ── */}
       {view === 'add-product' && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-xl">
-          <h2 className="font-bold text-gray-800 mb-4">Add Product</h2>
-          <ProductForm form={productForm} setForm={setProductForm} images={productImages} setImages={setProductImages}
-            onSubmit={handleCreateProduct} submitLabel="Add Product" loading={saving} categories={categories} />
-        </div>
+        <form onSubmit={(e) => { e.preventDefault(); handleCreateProduct(true, false); }}>
+          <p className="text-xs text-gray-400 mb-2">Marketplace &gt; Products &gt; Add Product</p>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold" style={{ color: 'var(--t-text)' }}>Marketplace Management</h2>
+              <p className="text-sm text-gray-400">Add and manage marketplace products</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setView('products')} className="btn-outline text-sm">Cancel</button>
+              <button type="button" disabled={saving} onClick={() => handleCreateProduct(false, true)} className="btn-outline text-sm">
+                {saving ? 'Saving...' : 'Save Draft'}
+              </button>
+              <button type="submit" disabled={saving}
+                className="px-5 py-2.5 rounded-2xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2">
+                <Plus size={16} /> {saving ? 'Publishing...' : 'Publish Product'}
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <div className="lg:col-span-2 space-y-6">
+              <ProductForm form={productForm} setForm={setProductForm} categories={categories} onImageUpload={uploadProductInlineImage} />
+              <section className="card p-6 md:p-8">
+                <SectionHeader icon={Image} color="purple" title="Media & Images" />
+                <p className="text-xs text-gray-400 mb-3">Upload high-quality images of your product. Recommended size: 1200x1200px</p>
+                <ProductMediaUploader currentImages={null} files={productImages} onFilesChange={setProductImages} />
+              </section>
+            </div>
+            <div className="space-y-6 lg:sticky lg:top-4">
+              <ProductLivePreview form={productForm} categories={categories} files={productImages} isEditing={false} editingProd={null} />
+              <ProductStatusCard isEditing={false} editingProd={null} />
+            </div>
+          </div>
+        </form>
       )}
 
       {/* ── Edit Product ── */}
       {view === 'edit-product' && editingProd && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-xl">
-          <div className="flex items-center gap-3 mb-4">
-            <button onClick={() => { setView('products'); setEditingProd(null); }} className="text-sm text-saffron-600 hover:underline">← Back</button>
-            <h2 className="font-bold text-gray-800">Edit: {editingProd.name}</h2>
+        <form onSubmit={(e) => { e.preventDefault(); handleUpdateProduct(true, false); }}>
+          <p className="text-xs text-gray-400 mb-2">Marketplace &gt; Products &gt; Edit Product</p>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold" style={{ color: 'var(--t-text)' }}>Marketplace Management</h2>
+              <p className="text-sm text-gray-400">{editingProd.name}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => { setView('products'); setEditingProd(null); }} className="btn-outline text-sm">Cancel</button>
+              <button type="button" disabled={saving} onClick={() => handleUpdateProduct(false, true)} className="btn-outline text-sm">
+                {saving ? 'Saving...' : 'Save Draft'}
+              </button>
+              <button type="submit" disabled={saving}
+                className="px-5 py-2.5 rounded-2xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2">
+                <Save size={16} /> {saving ? 'Publishing...' : 'Publish Product'}
+              </button>
+            </div>
           </div>
-          <ProductForm form={productForm} setForm={setProductForm} images={productImages} setImages={setProductImages}
-            onSubmit={handleUpdateProduct} submitLabel="Save Changes" loading={saving} categories={categories} />
-        </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <div className="lg:col-span-2 space-y-6">
+              <ProductForm form={productForm} setForm={setProductForm} categories={categories} onImageUpload={uploadProductInlineImage} />
+              <section className="card p-6 md:p-8">
+                <SectionHeader icon={Image} color="purple" title="Media & Images" />
+                <p className="text-xs text-gray-400 mb-3">Upload high-quality images of your product. Recommended size: 1200x1200px</p>
+                <ProductMediaUploader currentImages={editingProd.images} files={productImages} onFilesChange={setProductImages} />
+              </section>
+            </div>
+            <div className="space-y-6 lg:sticky lg:top-4">
+              <ProductLivePreview form={productForm} categories={categories} files={productImages} isEditing={true} editingProd={editingProd} />
+              <ProductStatusCard isEditing={true} editingProd={editingProd} />
+            </div>
+          </div>
+        </form>
       )}
 
       {/* ── Categories Management ── */}
@@ -6180,269 +6922,98 @@ function MarketplaceTab() {
 
       {/* ── Add Kit ── */}
       {view === 'add-kit' && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-2xl">
-          <h2 className="font-bold text-gray-800 mb-4">Create Kit</h2>
-          <form onSubmit={handleCreateKit} className="space-y-4">
-            <div><label className="label">Kit Name *</label><input required className="input" value={kitForm.name} onChange={(e)=>setKitForm({...kitForm,name:e.target.value})} /></div>
-            <div><label className="label">Description</label><textarea rows={2} className="input resize-none" value={kitForm.description} onChange={(e)=>setKitForm({...kitForm,description:e.target.value})} /></div>
-
+        <form onSubmit={handleCreateKit}>
+          <p className="text-xs text-gray-400 mb-2">Marketplace &gt; Kits &gt; Create New Kit</p>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
             <div>
-              <label className="label">Kit Items * <span className="text-gray-400 font-normal text-xs">(includes kit-only products)</span></label>
-              <div className="space-y-2">
-                {kitItems.map((item, idx) => {
-                  // Resolve the selected product and optionally selected variant
-                  const prod = kitBuilderProducts.find((p) => p._id === item.productId);
-                  const variant = prod?.variants?.find((v) => v.variantId === item.variantId);
-                  const unitPrice = variant ? variant.price : (prod ? (prod.salePrice || prod.price) : 0);
-                  // Kit dropdown value: "productId" for flat, "productId::variantId" for variants
-                  const selectValue = item.variantId ? `${item.productId}::${item.variantId}` : (item.productId || '');
-                  return (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <select className="input flex-1 text-sm" value={selectValue}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const [pid, vid] = val.includes('::') ? val.split('::') : [val, null];
-                          const p = kitBuilderProducts.find((p) => p._id === pid);
-                          const vt = vid ? p?.variants?.find((v) => v.variantId === vid) : null;
-                          const n = [...kitItems];
-                          n[idx] = { ...n[idx], productId: pid, variantId: vid || null, variantLabel: vt?.quantity || null };
-                          setKitItems(n);
-                        }}>
-                        <option value="">Select product</option>
-                        {kitBuilderProducts.map((p) =>
-                          p.variants?.length > 0 ? (
-                            <optgroup key={p._id} label={p.name + (p.visibilityType === 'kit_only' ? ' (Kit Only)' : '')}>
-                              {p.variants.filter((v) => v.isActive !== false && v.stock > 0).map((v) => (
-                                <option key={v.variantId} value={`${p._id}::${v.variantId}`}>
-                                  {v.quantity} — ₹{v.price} (Stock: {v.stock})
-                                </option>
-                              ))}
-                            </optgroup>
-                          ) : (
-                            <option key={p._id} value={p._id}>
-                              {p.name} — ₹{p.salePrice || p.price}{p.visibilityType === 'kit_only' ? ' (Kit Only)' : ''}
-                            </option>
-                          )
-                        )}
-                      </select>
-                      <input type="number" min="1" className="input w-20 text-sm" value={item.quantity}
-                        onChange={(e)=>{ const n=[...kitItems]; n[idx].quantity=+e.target.value||1; setKitItems(n); }} />
-                      {prod && <span className="text-xs text-saffron-600 font-medium whitespace-nowrap">₹{(unitPrice * item.quantity).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>}
-                      <button type="button" onClick={() => setKitItems(kitItems.filter((_,i)=>i!==idx))} className="text-red-400 hover:text-red-600 text-lg px-1">×</button>
-                    </div>
-                  );
-                })}
-              </div>
-              <button type="button" onClick={() => setKitItems([...kitItems,{productId:'',quantity:1}])} className="text-sm text-saffron-600 mt-2 hover:underline">+ Add Item</button>
+              <h2 className="text-2xl font-bold" style={{ color: 'var(--t-text)' }}>Marketplace Management</h2>
+              <p className="text-sm text-gray-400">Create and manage marketplace kits</p>
             </div>
-
-            {kitTotalCost > 0 && (
-              <div className="bg-saffron-50 border border-saffron-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-gray-700">Product Total Cost</span>
-                  <span className="text-lg font-bold text-gray-800">₹{kitTotalCost.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label text-xs">Discount Type</label>
-                    <div className="flex gap-2">
-                      {[['percentage','% Percent'],['fixed','₹ Fixed']].map(([val,lbl]) => (
-                        <button key={val} type="button" onClick={() => { setKitForm({...kitForm,discountType:val}); setKitPriceOverride(false); }}
-                          className={`flex-1 flex items-center justify-center gap-1 text-xs px-2 py-2 rounded-lg border font-medium transition-colors ${kitForm.discountType===val?'bg-saffron-500 text-white border-saffron-500':'bg-white text-gray-600 border-gray-300'}`}>
-                          {val==='percentage'?<Percent size={11}/>:<Tag size={11}/>} {lbl}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="label text-xs">Discount Value</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">{kitForm.discountType==='percentage'?'%':'₹'}</span>
-                      <input type="number" min="0" max={kitForm.discountType==='percentage'?100:kitTotalCost} className="input pl-7" value={kitForm.discountValue}
-                        onChange={(e)=>{ setKitForm({...kitForm,discountValue:e.target.value}); setKitPriceOverride(false); }} />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between border-t border-saffron-200 pt-3">
-                  <span className="text-sm font-semibold text-gray-700">Selling Price</span>
-                  <input type="number" min="0"
-                    className={`input w-32 text-right font-bold text-lg ${kitPriceOverride?'border-saffron-400 bg-yellow-50':'bg-green-50 border-green-300'}`}
-                    value={kitSellingPrice}
-                    onChange={(e)=>{ setKitSellingPrice(e.target.value); setKitPriceOverride(true); }}
-                    onFocus={()=>setKitPriceOverride(true)} />
-                </div>
-                {kitPriceOverride && <button type="button" onClick={()=>setKitPriceOverride(false)} className="text-xs text-saffron-600 hover:underline">↺ Recalculate from discount</button>}
-                {+kitSellingPrice > kitTotalCost && <p className="text-xs text-orange-600 bg-orange-50 rounded-lg p-2">⚠ Selling price exceeds product total cost.</p>}
-              </div>
-            )}
-            {kitTotalCost === 0 && <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center text-sm text-gray-500">Select products above to see auto-calculated pricing</div>}
-
-            <div>
-              <label className="label">Link to Poojas <span className="text-gray-400 font-normal text-xs">(kit will be offered during these bookings)</span></label>
-              <div className="border rounded-xl p-2 max-h-40 overflow-y-auto grid grid-cols-2 gap-1" style={{ borderColor: 'var(--t-border)' }}>
-                {availablePoojas.map((p) => (
-                  <label key={p._id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:bg-saffron-50 text-xs">
-                    <input type="checkbox" checked={kitLinkedPoojas.includes(p._id)}
-                      onChange={() => setKitLinkedPoojas((prev) => prev.includes(p._id) ? prev.filter((x) => x !== p._id) : [...prev, p._id])}
-                      className="accent-saffron-500" />
-                    <span className="text-gray-700 truncate">{p.name}</span>
-                  </label>
-                ))}
-                {availablePoojas.length === 0 && <p className="text-xs text-gray-400 col-span-2">No active poojas found</p>}
-              </div>
-              {kitLinkedPoojas.length > 0 && <p className="text-xs text-saffron-600 mt-1">{kitLinkedPoojas.length} pooja(s) linked</p>}
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setView('kits')} className="btn-outline text-sm">Cancel</button>
+              <button type="submit" disabled={saving}
+                className="px-5 py-2.5 rounded-2xl text-sm font-semibold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-2">
+                <Plus size={16} /> {saving ? 'Creating...' : 'Create Kit'}
+              </button>
             </div>
-
-            <div className="grid grid-cols-3 gap-3 items-end">
-              <div><label className="label">Kit Image</label><input type="file" accept="image/*" onChange={(e)=>setKitImage(e.target.files[0])} className="text-sm" /></div>
-              <div>
-                <label className="label">Tax Rate (GST %)</label>
-                <input type="number" min="0" max="100" step="0.5" className="input" placeholder="e.g. 5, 12, 18" value={kitForm.taxRate} onChange={(e)=>setKitForm({...kitForm,taxRate:e.target.value})} />
-              </div>
-              <div className="pb-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={kitForm.isFeatured} onChange={(e)=>setKitForm({...kitForm,isFeatured:e.target.checked})} />
-                  <span className="text-sm text-gray-700">Featured Kit</span>
-                </label>
-              </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <div className="lg:col-span-2 space-y-6">
+              <KitFormFields
+                kitForm={kitForm} setKitForm={setKitForm}
+                kitItems={kitItems} setKitItems={setKitItems}
+                kitBuilderProducts={kitBuilderProducts}
+                kitTotalCost={kitTotalCost}
+                kitPriceOverride={kitPriceOverride} setKitPriceOverride={setKitPriceOverride}
+                kitSellingPrice={kitSellingPrice} setKitSellingPrice={setKitSellingPrice}
+                availablePoojas={availablePoojas}
+                kitLinkedPoojas={kitLinkedPoojas} setKitLinkedPoojas={setKitLinkedPoojas}
+                kitImage={kitImage} setKitImage={setKitImage}
+                currentImage={null}
+              />
+              <button type="submit" disabled={saving}
+                className="w-full py-4 rounded-2xl text-base font-bold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                <Plus size={18} /> {saving ? 'Creating...' : 'Create Kit'}
+              </button>
             </div>
-            <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2 w-full justify-center"><Plus size={16}/>{saving?'Creating...':'Create Kit'}</button>
-          </form>
-        </div>
+            <div className="space-y-6 lg:sticky lg:top-4">
+              <KitLivePreview
+                kitForm={kitForm} kitItems={kitItems} kitLinkedPoojas={kitLinkedPoojas}
+                kitImage={kitImage} currentImage={null}
+                kitTotalCost={kitTotalCost} kitSellingPrice={kitSellingPrice}
+              />
+              <KitInfoCard />
+            </div>
+          </div>
+        </form>
       )}
 
       {/* ── Edit Kit ── */}
       {view === 'edit-kit' && editingKit && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-100 max-w-2xl">
-          <div className="flex items-center gap-3 mb-4">
-            <button onClick={() => { setView('kits'); setEditingKit(null); }} className="text-sm text-saffron-600 hover:underline">← Back</button>
-            <h2 className="font-bold text-gray-800">Edit Kit: {editingKit.name}</h2>
+        <form onSubmit={handleUpdateKit}>
+          <p className="text-xs text-gray-400 mb-2">Marketplace &gt; Kits &gt; Edit Kit</p>
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+            <div>
+              <h2 className="text-2xl font-bold" style={{ color: 'var(--t-text)' }}>Marketplace Management</h2>
+              <p className="text-sm text-gray-400">{editingKit.name}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => { setView('kits'); setEditingKit(null); }} className="btn-outline text-sm">Cancel</button>
+              <button type="submit" disabled={saving}
+                className="px-5 py-2.5 rounded-2xl text-sm font-semibold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-2">
+                <Save size={16} /> {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
           </div>
-          <form onSubmit={handleUpdateKit} className="space-y-4">
-            <div><label className="label">Kit Name *</label><input required className="input" value={kitForm.name} onChange={(e)=>setKitForm({...kitForm,name:e.target.value})} /></div>
-            <div><label className="label">Description</label><textarea rows={2} className="input resize-none" value={kitForm.description} onChange={(e)=>setKitForm({...kitForm,description:e.target.value})} /></div>
-
-            <div>
-              <label className="label">Kit Items * <span className="text-gray-400 font-normal text-xs">(includes kit-only products)</span></label>
-              <div className="space-y-2">
-                {kitItems.map((item, idx) => {
-                  const prod = kitBuilderProducts.find((p) => p._id === item.productId);
-                  const variant = prod?.variants?.find((v) => v.variantId === item.variantId);
-                  const unitPrice = variant ? variant.price : (prod ? (prod.salePrice || prod.price) : 0);
-                  const selectValue = item.variantId ? `${item.productId}::${item.variantId}` : (item.productId || '');
-                  return (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <select className="input flex-1 text-sm" value={selectValue}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          const [pid, vid] = val.includes('::') ? val.split('::') : [val, null];
-                          const p = kitBuilderProducts.find((p) => p._id === pid);
-                          const vt = vid ? p?.variants?.find((v) => v.variantId === vid) : null;
-                          const n = [...kitItems];
-                          n[idx] = { ...n[idx], productId: pid, variantId: vid || null, variantLabel: vt?.quantity || null };
-                          setKitItems(n);
-                        }}>
-                        <option value="">Select product</option>
-                        {kitBuilderProducts.map((p) =>
-                          p.variants?.length > 0 ? (
-                            <optgroup key={p._id} label={p.name + (p.visibilityType === 'kit_only' ? ' (Kit Only)' : '')}>
-                              {p.variants.filter((v) => v.isActive !== false && v.stock > 0).map((v) => (
-                                <option key={v.variantId} value={`${p._id}::${v.variantId}`}>
-                                  {v.quantity} — ₹{v.price} (Stock: {v.stock})
-                                </option>
-                              ))}
-                            </optgroup>
-                          ) : (
-                            <option key={p._id} value={p._id}>
-                              {p.name} — ₹{p.salePrice || p.price}{p.visibilityType === 'kit_only' ? ' (Kit Only)' : ''}
-                            </option>
-                          )
-                        )}
-                      </select>
-                      <input type="number" min="1" className="input w-20 text-sm" value={item.quantity}
-                        onChange={(e)=>{ const n=[...kitItems]; n[idx].quantity=+e.target.value||1; setKitItems(n); }} />
-                      {prod && <span className="text-xs text-saffron-600 font-medium whitespace-nowrap">₹{(unitPrice * item.quantity).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>}
-                      <button type="button" onClick={() => setKitItems(kitItems.filter((_,i)=>i!==idx))} className="text-red-400 hover:text-red-600 text-lg px-1">×</button>
-                    </div>
-                  );
-                })}
-              </div>
-              <button type="button" onClick={() => setKitItems([...kitItems,{productId:'',quantity:1}])} className="text-sm text-saffron-600 mt-2 hover:underline">+ Add Item</button>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <div className="lg:col-span-2 space-y-6">
+              <KitFormFields
+                kitForm={kitForm} setKitForm={setKitForm}
+                kitItems={kitItems} setKitItems={setKitItems}
+                kitBuilderProducts={kitBuilderProducts}
+                kitTotalCost={kitTotalCost}
+                kitPriceOverride={kitPriceOverride} setKitPriceOverride={setKitPriceOverride}
+                kitSellingPrice={kitSellingPrice} setKitSellingPrice={setKitSellingPrice}
+                availablePoojas={availablePoojas}
+                kitLinkedPoojas={kitLinkedPoojas} setKitLinkedPoojas={setKitLinkedPoojas}
+                kitImage={kitImage} setKitImage={setKitImage}
+                currentImage={editingKit.image}
+              />
+              <button type="submit" disabled={saving}
+                className="w-full py-4 rounded-2xl text-base font-bold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                <Save size={18} /> {saving ? 'Saving...' : 'Save Changes'}
+              </button>
             </div>
-
-            {kitTotalCost > 0 && (
-              <div className="bg-saffron-50 border border-saffron-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-gray-700">Product Total Cost</span>
-                  <span className="text-lg font-bold text-gray-800">₹{kitTotalCost.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label text-xs">Discount Type</label>
-                    <div className="flex gap-2">
-                      {[['percentage','% Percent'],['fixed','₹ Fixed']].map(([val,lbl]) => (
-                        <button key={val} type="button" onClick={() => { setKitForm({...kitForm,discountType:val}); setKitPriceOverride(false); }}
-                          className={`flex-1 flex items-center justify-center gap-1 text-xs px-2 py-2 rounded-lg border font-medium transition-colors ${kitForm.discountType===val?'bg-saffron-500 text-white border-saffron-500':'bg-white text-gray-600 border-gray-300'}`}>
-                          {val==='percentage'?<Percent size={11}/>:<Tag size={11}/>} {lbl}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="label text-xs">Discount Value</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">{kitForm.discountType==='percentage'?'%':'₹'}</span>
-                      <input type="number" min="0" className="input pl-7" value={kitForm.discountValue}
-                        onChange={(e)=>{ setKitForm({...kitForm,discountValue:e.target.value}); setKitPriceOverride(false); }} />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between border-t border-saffron-200 pt-3">
-                  <span className="text-sm font-semibold text-gray-700">Selling Price</span>
-                  <input type="number" min="0"
-                    className={`input w-32 text-right font-bold text-lg ${kitPriceOverride?'border-saffron-400 bg-yellow-50':'bg-green-50 border-green-300'}`}
-                    value={kitSellingPrice}
-                    onChange={(e)=>{ setKitSellingPrice(e.target.value); setKitPriceOverride(true); }} />
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="label">Link to Poojas <span className="text-gray-400 font-normal text-xs">(kit will be offered during these bookings)</span></label>
-              <div className="border rounded-xl p-2 max-h-40 overflow-y-auto grid grid-cols-2 gap-1" style={{ borderColor: 'var(--t-border)' }}>
-                {availablePoojas.map((p) => (
-                  <label key={p._id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg cursor-pointer hover:bg-saffron-50 text-xs">
-                    <input type="checkbox" checked={kitLinkedPoojas.includes(p._id)}
-                      onChange={() => setKitLinkedPoojas((prev) => prev.includes(p._id) ? prev.filter((x) => x !== p._id) : [...prev, p._id])}
-                      className="accent-saffron-500" />
-                    <span className="text-gray-700 truncate">{p.name}</span>
-                  </label>
-                ))}
-                {availablePoojas.length === 0 && <p className="text-xs text-gray-400 col-span-2">No active poojas found</p>}
-              </div>
-              {kitLinkedPoojas.length > 0 && <p className="text-xs text-saffron-600 mt-1">{kitLinkedPoojas.length} pooja(s) linked</p>}
+            <div className="space-y-6 lg:sticky lg:top-4">
+              <KitLivePreview
+                kitForm={kitForm} kitItems={kitItems} kitLinkedPoojas={kitLinkedPoojas}
+                kitImage={kitImage} currentImage={editingKit.image}
+                kitTotalCost={kitTotalCost} kitSellingPrice={kitSellingPrice}
+              />
+              <KitInfoCard />
             </div>
-
-            <div className="grid grid-cols-3 gap-3 items-end">
-              <div>
-                <label className="label">Kit Image</label>
-                {editingKit.image && <img src={getImageUrl(editingKit.image)} alt="" onError={handleImageError} className="w-16 h-16 object-cover rounded-lg mb-1" />}
-                <input type="file" accept="image/*" onChange={(e)=>setKitImage(e.target.files[0])} className="text-sm" />
-              </div>
-              <div>
-                <label className="label">Tax Rate (GST %)</label>
-                <input type="number" min="0" max="100" step="0.5" className="input" placeholder="e.g. 5, 12, 18" value={kitForm.taxRate} onChange={(e)=>setKitForm({...kitForm,taxRate:e.target.value})} />
-              </div>
-              <div className="pb-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={kitForm.isFeatured} onChange={(e)=>setKitForm({...kitForm,isFeatured:e.target.checked})} />
-                  <span className="text-sm text-gray-700">Featured Kit</span>
-                </label>
-              </div>
-            </div>
-            <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2 w-full justify-center"><Edit3 size={16}/>{saving?'Saving...':'Save Changes'}</button>
-          </form>
-        </div>
+          </div>
+        </form>
       )}
     </div>
   );
@@ -6451,19 +7022,110 @@ function MarketplaceTab() {
 // ─── Temples Tab ──────────────────────────────────────────────
 const INDIA_CENTER = { lat: 20.5937, lng: 78.9629 };
 
+const TEMPLE_STATUS_TABS = ['all', 'draft', 'published', 'hidden', 'archived', 'deleted'];
+const TEMPLE_STATUS_LABEL = { draft: 'Draft', published: 'Published', hidden: 'Hidden', archived: 'Archived', deleted: 'Deleted' };
+const TEMPLE_STATUS_BADGE = {
+  draft:     'bg-amber-100 text-amber-700',
+  published: 'bg-green-100 text-green-700',
+  hidden:    'bg-blue-100 text-blue-700',
+  archived:  'bg-gray-200 text-gray-600',
+};
+const TEMPLE_SORTS = [
+  { value: 'newest',  label: 'Newest' },
+  { value: 'oldest',  label: 'Oldest' },
+  { value: 'name',    label: 'Temple Name' },
+  { value: 'updated', label: 'Recently Updated' },
+];
+const EMPTY_TEMPLE_FORM = { name: '', address: '', city: '', state: '', pincode: '', description: '', category: '', primaryDeity: '', openingHours: '' };
+const TEMPLE_PAGE_SIZE = 12;
+
+function getTempleChecklist(form, coverFile, coverUrl, galleryCount) {
+  return [
+    { label: 'Temple name added',           done: !!form.name },
+    { label: 'City & state set',            done: !!(form.city && form.state) },
+    { label: 'Description added',           done: !!form.description },
+    { label: 'Cover image uploaded',        done: !!(coverFile || coverUrl) },
+    { label: 'At least one gallery image',  done: galleryCount > 0 },
+  ];
+}
+function calcTempleCompletion(checklist) {
+  return Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
+}
+
 function TemplesTab() {
+  // ── List state ──────────────────────────────────────────────
   const [temples, setTemples] = useState([]);
-  const [form,    setForm]    = useState({ name:'', address:'', city:'', state:'', pincode:'', description:'' });
+  const [total,   setTotal]   = useState(0);
+  const [page,    setPage]    = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [search,  setSearch]  = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [filterState,    setFilterState]    = useState('');
+  const [filterCity,     setFilterCity]     = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterStatus,   setFilterStatus]   = useState('all');
+  const [filterFeatured, setFilterFeatured] = useState('');
+  const [sort, setSort] = useState('newest');
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('temple_admin_view_mode') || 'grid');
+  const [filterOptions, setFilterOptions] = useState({ states: [], cities: [], categories: [] });
+
+  // ── Form state ───────────────────────────────────────────────
+  const [form,    setForm]    = useState(EMPTY_TEMPLE_FORM);
   const [mapCoords, setMapCoords] = useState(INDIA_CENTER);
-  const [images,  setImages]  = useState([]);
-  const [view,    setView]    = useState('list');
+  const [coverFile, setCoverFile] = useState(null);
+  const [coverUrl,  setCoverUrl]  = useState('');
+  const [existingImages, setExistingImages] = useState([]);
+  const [newImages, setNewImages] = useState([]);
+  const [status,  setStatus]  = useState('draft');
+  const [editingTemple, setEditingTemple] = useState(null);
+  const [view,    setView]    = useState('list'); // 'list' | 'add' | 'edit'
   const [saving,  setSaving]  = useState(false);
   const [geoStatus, setGeoStatus] = useState('idle'); // 'idle' | 'loading' | 'notfound'
   const geocodeTimerRef   = useRef(null);
   const userChangedFormRef = useRef(false);
 
-  const load = () => API.get('/temples?limit=50').then(({ data }) => setTemples(data.temples));
-  useEffect(() => { load(); }, []);
+  // ── Detail / delete modal state ─────────────────────────────
+  const [detailTemple, setDetailTemple] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    const params = { page, limit: TEMPLE_PAGE_SIZE, sort };
+    if (debouncedSearch) params.search = debouncedSearch;
+    if (filterState)     params.state = filterState;
+    if (filterCity)      params.city = filterCity;
+    if (filterCategory)  params.category = filterCategory;
+    if (filterStatus !== 'all') params.status = filterStatus;
+    if (filterFeatured)  params.featured = filterFeatured;
+    API.get('/temples/admin', { params })
+      .then(({ data }) => { setTemples(data.temples || []); setTotal(data.total || 0); })
+      .catch(() => toast.error('Failed to load temples'))
+      .finally(() => setLoading(false));
+  }, [page, sort, debouncedSearch, filterState, filterCity, filterCategory, filterStatus, filterFeatured]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, filterState, filterCity, filterCategory, filterStatus, filterFeatured, sort]);
+  useEffect(() => { localStorage.setItem('temple_admin_view_mode', viewMode); }, [viewMode]);
+
+  // One lightweight unfiltered fetch to populate filter dropdown option lists globally
+  // (the main list query is paginated/filtered, so it can't be used for this).
+  useEffect(() => {
+    API.get('/temples/admin', { params: { limit: 500 } }).then(({ data }) => {
+      const all = data.temples || [];
+      const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort();
+      setFilterOptions({
+        states: uniq(all.map((t) => t.state)),
+        cities: uniq(all.map((t) => t.city)),
+        categories: uniq(all.map((t) => t.category)),
+      });
+    }).catch(() => {});
+  }, []);
 
   // Debounced forward geocoding when address/city/state fields change
   useEffect(() => {
@@ -6515,155 +7177,415 @@ function TemplesTab() {
     }
   }, []);
 
-  const createTemple = async (e) => {
+  const resetForm = () => {
+    setEditingTemple(null);
+    setForm(EMPTY_TEMPLE_FORM);
+    setMapCoords(INDIA_CENTER);
+    setCoverFile(null);
+    setCoverUrl('');
+    setExistingImages([]);
+    setNewImages([]);
+    setStatus('draft');
+    setGeoStatus('idle');
+    userChangedFormRef.current = false;
+  };
+
+  const openAdd = () => { resetForm(); setView('add'); };
+
+  const openEdit = (t) => {
+    setEditingTemple(t);
+    setForm({
+      name: t.name || '', address: t.address || '', city: t.city || '', state: t.state || '',
+      pincode: t.pincode || '', description: t.description || '',
+      category: t.category || '', primaryDeity: t.primaryDeity || '', openingHours: t.openingHours || '',
+    });
+    setMapCoords(t.latitude && t.longitude ? { lat: t.latitude, lng: t.longitude } : INDIA_CENTER);
+    setCoverFile(null);
+    setCoverUrl(t.coverImage || '');
+    setExistingImages(t.images || []);
+    setNewImages([]);
+    setStatus(t.status || 'published');
+    setGeoStatus('idle');
+    userChangedFormRef.current = false;
+    setDetailTemple(null);
+    setView('edit');
+  };
+
+  const submitTemple = async (e) => {
     e.preventDefault();
     setSaving(true);
     const fd = new FormData();
     Object.entries(form).forEach(([k, v]) => { if (v) fd.append(k, v); });
     fd.append('latitude',  mapCoords.lat);
     fd.append('longitude', mapCoords.lng);
-    images.forEach((f) => fd.append('images', f));
+    fd.append('status', status);
+    if (coverFile) fd.append('coverImage', coverFile);
+    else if (view === 'edit' && coverUrl === '' && editingTemple?.coverImage) fd.append('coverImage', '');
+    if (view === 'edit') fd.append('existingImages', JSON.stringify(existingImages));
+    newImages.forEach((f) => fd.append('images', f));
     try {
-      await API.post('/temples', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      toast.success('Temple added with map location!');
-      setForm({ name:'', address:'', city:'', state:'', pincode:'', description:'' });
-      setMapCoords(INDIA_CENTER);
-      setImages([]);
+      if (view === 'edit' && editingTemple) {
+        await API.patch(`/temples/${editingTemple._id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        toast.success('Temple updated');
+      } else {
+        await API.post('/temples', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        toast.success(status === 'published' ? 'Temple published' : 'Temple saved as draft');
+      }
+      resetForm();
       setView('list');
       load();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
     finally { setSaving(false); }
   };
 
-  const deleteTemple = async (id) => {
-    if (!window.confirm('Remove temple?')) return;
-    await API.delete(`/temples/${id}`);
-    toast.success('Temple removed');
-    load();
+  const duplicateTemple = async (t) => {
+    try {
+      await API.post(`/temples/${t._id}/duplicate`);
+      toast.success('Temple duplicated as draft');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to duplicate'); }
   };
+
+  const togglePublish = async (t) => {
+    const next = t.status === 'published' ? 'draft' : 'published';
+    try {
+      await API.patch(`/temples/${t._id}/status`, { status: next });
+      toast.success(next === 'published' ? 'Temple published' : 'Temple unpublished');
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to update status'); }
+  };
+
+  const confirmDeleteTemple = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    try {
+      await API.delete(`/temples/${confirmDelete._id}`);
+      toast.success('Temple deleted');
+      setConfirmDelete(null);
+      load();
+    } catch (err) { toast.error(err.response?.data?.message || 'Failed to delete'); }
+    finally { setDeleting(false); }
+  };
+
+  const galleryCount = existingImages.length + newImages.length;
+  const checklist  = getTempleChecklist(form, coverFile, coverUrl, galleryCount);
+  const completion = calcTempleCompletion(checklist);
+  const totalPages = Math.max(1, Math.ceil(total / TEMPLE_PAGE_SIZE));
+  const noFiltersApplied = !debouncedSearch && !filterState && !filterCity && !filterCategory && filterStatus === 'all' && !filterFeatured;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Temple Directory</h1>
-        <button onClick={() => setView(view === 'add' ? 'list' : 'add')}
-          className={view === 'add' ? 'btn-outline text-sm px-4 py-2' : 'btn-primary text-sm px-4 py-2 flex items-center gap-2'}>
-          {view === 'add' ? '← Back to List' : <><Plus size={16} />Add Temple</>}
-        </button>
+        {view === 'list' ? (
+          <button onClick={openAdd} className="btn-primary text-sm px-4 py-2 flex items-center gap-2">
+            <Plus size={16} />Add Temple
+          </button>
+        ) : (
+          <button onClick={() => { resetForm(); setView('list'); }} className="btn-outline text-sm px-4 py-2">
+            ← Back to List
+          </button>
+        )}
       </div>
 
-      {view === 'add' && (
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* Left — form */}
-          <div className="bg-white rounded-2xl p-6 border border-gray-100">
-            <h2 className="font-bold text-gray-800 mb-4">Add Temple</h2>
-            <form onSubmit={createTemple} className="space-y-4">
-              <div>
-                <label className="label">Temple Name *</label>
-                <input required className="input" value={form.name} onChange={(e)=>setForm({...form,name:e.target.value})} />
-              </div>
-              <div>
-                <label className="label">Pincode</label>
-                <PincodeInput
-                  value={form.pincode}
-                  onChange={(v) => { userChangedFormRef.current = true; setForm((p) => ({ ...p, pincode: v })); }}
-                  onFill={({ state, city, district }) => {
-                    setForm((p) => ({ ...p, state, city }));
-                    handlePincodeFill({ state, city });
-                  }}
-                />
-              </div>
-              {(form.state || form.city) && (
+      {/* ── Add / Edit form ───────────────────────────────────── */}
+      {(view === 'add' || view === 'edit') && (
+        <form onSubmit={submitTemple} className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2 space-y-6">
+            <section className="card p-6 md:p-8">
+              <SectionHeader icon={FileText} color="indigo" title="General Information" />
+              <div className="space-y-5">
+                <div>
+                  <label className="label">Temple Name *</label>
+                  <input required className="input" value={form.name} onChange={handleFormChange('name')} />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label">City</label>
-                    <input className="input bg-saffron-50" value={form.city} onChange={handleFormChange('city')} />
+                    <label className="label">Category</label>
+                    <input className="input" value={form.category} onChange={handleFormChange('category')} placeholder="e.g. Shiva Temple" />
                   </div>
                   <div>
-                    <label className="label">State</label>
-                    <input className="input bg-saffron-50" value={form.state} onChange={handleFormChange('state')} />
+                    <label className="label">Primary Deity</label>
+                    <input className="input" value={form.primaryDeity} onChange={handleFormChange('primaryDeity')} placeholder="e.g. Lord Shiva" />
                   </div>
                 </div>
-              )}
-              {!form.state && !form.city && (
+                <div>
+                  <label className="label">Description</label>
+                  <textarea rows={4} className="input resize-none" value={form.description} onChange={handleFormChange('description')} />
+                </div>
+                <div>
+                  <label className="label">Opening Hours</label>
+                  <input className="input" value={form.openingHours} onChange={handleFormChange('openingHours')} placeholder="e.g. 6:00 AM - 9:00 PM" />
+                </div>
+              </div>
+            </section>
+
+            <section className="card p-6 md:p-8">
+              <SectionHeader icon={MapPin} color="teal" title="Location" />
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Pincode</label>
+                  <PincodeInput
+                    value={form.pincode}
+                    onChange={(v) => { userChangedFormRef.current = true; setForm((p) => ({ ...p, pincode: v })); }}
+                    onFill={({ state, city }) => {
+                      setForm((p) => ({ ...p, state, city }));
+                      handlePincodeFill({ state, city });
+                    }}
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="label">City *</label><input required className="input" value={form.city} onChange={handleFormChange('city')} /></div>
                   <div><label className="label">State *</label><input required className="input" value={form.state} onChange={handleFormChange('state')} /></div>
                 </div>
-              )}
-              <div>
-                <label className="label">Address</label>
-                <input className="input" value={form.address} onChange={handleFormChange('address')} placeholder="Auto-filled when pin is dragged" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label text-xs text-gray-500">Latitude</label>
-                  <input className="input bg-blue-50 text-sm font-mono" readOnly value={mapCoords.lat.toFixed(6)} />
+                  <label className="label">Address</label>
+                  <input className="input" value={form.address} onChange={handleFormChange('address')} placeholder="Auto-filled when pin is dragged" />
                 </div>
-                <div>
-                  <label className="label text-xs text-gray-500">Longitude</label>
-                  <input className="input bg-blue-50 text-sm font-mono" readOnly value={mapCoords.lng.toFixed(6)} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label text-xs text-gray-500">Latitude</label>
+                    <input className="input bg-blue-50 text-sm font-mono" readOnly value={mapCoords.lat.toFixed(6)} />
+                  </div>
+                  <div>
+                    <label className="label text-xs text-gray-500">Longitude</label>
+                    <input className="input bg-blue-50 text-sm font-mono" readOnly value={mapCoords.lng.toFixed(6)} />
+                  </div>
                 </div>
+                {geoStatus === 'loading' && (
+                  <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl">
+                    <ZutsavLoaderInline size={14} />
+                    Updating map location...
+                  </div>
+                )}
+                {geoStatus === 'notfound' && (
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-xl">
+                    Nearby location shown — enter more details for a precise pin.
+                  </div>
+                )}
+                <p className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                  <MapPin size={14} className="text-saffron-500" /> Drag pin or click to set exact location
+                </p>
+                <MapPicker lat={mapCoords.lat} lng={mapCoords.lng} onPinMove={handlePinMove} height="320px" />
               </div>
-              <div>
-                <label className="label">Description</label>
-                <textarea rows={3} className="input resize-none" value={form.description} onChange={(e)=>setForm({...form,description:e.target.value})} />
-              </div>
-              <div>
-                <label className="label">Temple Images (up to 5)</label>
-                <input type="file" accept="image/*" multiple onChange={(e)=>setImages([...e.target.files])} className="text-sm" />
-              </div>
-              <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2 w-full justify-center">
-                {saving ? 'Adding...' : <><Plus size={16} />Add Temple</>}
-              </button>
-            </form>
+            </section>
+
+            <section className="card p-6 md:p-8">
+              <SectionHeader icon={Image} color="violet" title="Temple Images" />
+              <TempleImageUploader
+                coverUrl={coverUrl}
+                coverFile={coverFile}
+                onCoverFileChange={(f) => { setCoverFile(f); setCoverUrl(''); }}
+                onCoverClear={() => { setCoverFile(null); setCoverUrl(''); }}
+                existingImages={existingImages}
+                onExistingImagesChange={setExistingImages}
+                newImages={newImages}
+                onNewImagesChange={setNewImages}
+              />
+            </section>
           </div>
 
-          {/* Right — map */}
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
-              <MapPin size={14} className="text-saffron-500" /> Drag pin or click to set exact location
-            </p>
-            {geoStatus === 'loading' && (
-              <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl">
-                <ZutsavLoaderInline size={14} />
-                Updating map location...
-              </div>
-            )}
-            {geoStatus === 'notfound' && (
-              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-xl">
-                Nearby location shown — enter more details for a precise pin.
-              </div>
-            )}
-            <MapPicker
-              lat={mapCoords.lat}
-              lng={mapCoords.lng}
-              onPinMove={handlePinMove}
-              height="440px"
-            />
+          <div className="space-y-6">
+            <TempleStatusCard status={status} onChange={setStatus} disabled={saving} />
+            <TempleLivePreview form={form} coverFile={coverFile} coverUrl={coverUrl} />
+            <CompletionProgressCard completion={completion} />
+            <PublishingChecklistCard checklist={checklist} />
+            <TipsCard />
+            <div className="flex gap-3">
+              <button type="button" onClick={() => { resetForm(); setView('list'); }} disabled={saving} className="btn-outline flex-1 disabled:opacity-50">
+                Cancel
+              </button>
+              <button type="submit" disabled={saving} className="btn-primary flex-1 disabled:opacity-50">
+                {saving ? 'Saving...' : (view === 'edit' ? 'Save Changes' : 'Save Temple')}
+              </button>
+            </div>
           </div>
-        </div>
+        </form>
       )}
 
+      {/* ── List view ──────────────────────────────────────────── */}
       {view === 'list' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {temples.map((t) => (
-            <div key={t._id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-              {t.images?.[0]
-                ? <img src={getImageUrl(t.images[0])} alt="" className="w-full h-36 object-cover" />
-                : <div className="w-full h-36 bg-saffron-50 flex items-center justify-center text-4xl">🛕</div>
-              }
-              <div className="p-4">
-                <p className="font-bold text-gray-800">{t.name}</p>
-                <p className="text-sm text-gray-500 mt-0.5">{t.city}, {t.state}</p>
-                {t.latitude && <p className="text-xs text-blue-500 mt-1">{t.latitude.toFixed(4)}, {t.longitude.toFixed(4)}</p>}
-                <button onClick={() => deleteTemple(t._id)} className="mt-2 text-xs text-red-500 hover:underline">Remove</button>
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by temple name, city, state, or deity..."
+                  className="input pl-9"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <select value={sort} onChange={(e) => setSort(e.target.value)} className="input text-sm w-auto">
+                  {TEMPLE_SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+                <div className="flex items-center rounded-xl border overflow-hidden shrink-0" style={{ borderColor: 'var(--t-border)' }}>
+                  <button type="button" onClick={() => setViewMode('grid')} title="Grid view"
+                    className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-saffron-500 text-white' : 'text-gray-400 hover:bg-gray-50'}`}>
+                    <LayoutGrid size={15} />
+                  </button>
+                  <button type="button" onClick={() => setViewMode('list')} title="List view"
+                    className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-saffron-500 text-white' : 'text-gray-400 hover:bg-gray-50'}`}>
+                    <List size={15} />
+                  </button>
+                </div>
               </div>
             </div>
-          ))}
-          {temples.length === 0 && <p className="col-span-3 text-center py-10 text-gray-400">No temples added yet.</p>}
+            <div className="flex flex-wrap gap-2">
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="input text-xs py-1.5 w-auto">
+                {TEMPLE_STATUS_TABS.map((s) => <option key={s} value={s}>{s === 'all' ? 'All Status' : TEMPLE_STATUS_LABEL[s]}</option>)}
+              </select>
+              <select value={filterState} onChange={(e) => setFilterState(e.target.value)} className="input text-xs py-1.5 w-auto">
+                <option value="">All States</option>
+                {filterOptions.states.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select value={filterCity} onChange={(e) => setFilterCity(e.target.value)} className="input text-xs py-1.5 w-auto">
+                <option value="">All Cities</option>
+                {filterOptions.cities.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="input text-xs py-1.5 w-auto">
+                <option value="">All Categories</option>
+                {filterOptions.categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={filterFeatured} onChange={(e) => setFilterFeatured(e.target.value)} className="input text-xs py-1.5 w-auto">
+                <option value="">Featured: Any</option>
+                <option value="true">Featured Only</option>
+                <option value="false">Not Featured</option>
+              </select>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="py-16 flex justify-center"><ZutsavLoaderInline size={24} /></div>
+          ) : temples.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">
+              <div className="text-5xl mb-3">🛕</div>
+              {total === 0 && noFiltersApplied ? (
+                <>
+                  <p className="text-gray-500 font-medium mb-4">No temples have been added yet.</p>
+                  <button onClick={openAdd} className="btn-primary text-sm px-4 py-2 inline-flex items-center gap-2">
+                    <Plus size={16} />Add First Temple
+                  </button>
+                </>
+              ) : (
+                <p className="text-gray-400">No temples match your search or filters.</p>
+              )}
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {temples.map((t) => (
+                <div key={t._id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+                  <div className="relative">
+                    {(t.coverImage || t.images?.[0])
+                      ? <img src={getImageUrl(t.coverImage || t.images[0])} alt="" className="w-full h-36 object-cover" />
+                      : <div className="w-full h-36 bg-saffron-50 flex items-center justify-center text-4xl">🛕</div>}
+                    <span className={`absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded-full font-semibold ${TEMPLE_STATUS_BADGE[t.status] || TEMPLE_STATUS_BADGE.published}`}>
+                      {TEMPLE_STATUS_LABEL[t.status] || 'Published'}
+                    </span>
+                    {t.isFeatured && (
+                      <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full font-semibold bg-white/95 text-amber-600 shadow">★ Featured</span>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-gray-800 truncate">{t.name}</p>
+                        <p className="text-sm text-gray-500 mt-0.5 truncate">{t.city}, {t.state}</p>
+                      </div>
+                      <TempleActionsMenu temple={t} onView={setDetailTemple} onEdit={openEdit} onDuplicate={duplicateTemple} onTogglePublish={togglePublish} onDelete={setConfirmDelete} />
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {t.category && <span className="text-[10px] px-2 py-0.5 rounded-full bg-saffron-50 text-saffron-700 font-medium">{t.category}</span>}
+                      {t.primaryDeity && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">🙏 {t.primaryDeity}</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-saffron-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                    <th className="px-4 py-3">Temple</th>
+                    <th className="px-4 py-3">Location</th>
+                    <th className="px-4 py-3">Deity</th>
+                    <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Featured</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {temples.map((t) => (
+                    <tr key={t._id} className="border-t" style={{ borderColor: 'var(--t-border)' }}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          {(t.coverImage || t.images?.[0])
+                            ? <img src={getImageUrl(t.coverImage || t.images[0])} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                            : <div className="w-9 h-9 rounded-lg bg-saffron-50 flex items-center justify-center text-lg shrink-0">🛕</div>}
+                          <span className="font-semibold text-gray-800">{t.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">{t.city}, {t.state}</td>
+                      <td className="px-4 py-3 text-gray-600">{t.primaryDeity || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600">{t.category || '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${TEMPLE_STATUS_BADGE[t.status] || TEMPLE_STATUS_BADGE.published}`}>
+                          {TEMPLE_STATUS_LABEL[t.status] || 'Published'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">{t.isFeatured ? <span className="text-amber-600 font-semibold text-xs">★ Yes</span> : <span className="text-gray-300 text-xs">—</span>}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end">
+                          <TempleActionsMenu temple={t} onView={setDetailTemple} onEdit={openEdit} onDuplicate={duplicateTemple} onTogglePublish={togglePublish} onDelete={setConfirmDelete} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {!loading && total > TEMPLE_PAGE_SIZE && (
+            <div className="flex items-center justify-between pt-1">
+              <p className="text-xs text-gray-400">
+                Showing {(page - 1) * TEMPLE_PAGE_SIZE + 1}-{Math.min(page * TEMPLE_PAGE_SIZE, total)} of {total}
+              </p>
+              <div className="flex items-center gap-2">
+                <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
+                  className="p-1.5 rounded-lg border disabled:opacity-30 transition-colors" style={{ borderColor: 'var(--t-border)' }}>
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="text-xs font-semibold text-gray-600">{page} / {totalPages}</span>
+                <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}
+                  className="p-1.5 rounded-lg border disabled:opacity-30 transition-colors" style={{ borderColor: 'var(--t-border)' }}>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      {detailTemple && (
+        <TempleDetailView temple={detailTemple} onClose={() => setDetailTemple(null)} onEdit={openEdit} />
+      )}
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        title="Delete Temple"
+        message={confirmDelete ? `Are you sure you want to delete` : ''}
+        itemName={confirmDelete?.name}
+        note="This action cannot be undone."
+        confirmLabel="Delete"
+        loading={deleting}
+        onConfirm={confirmDeleteTemple}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 }
@@ -7994,11 +8916,17 @@ function BlogListSubTab() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 flex-wrap">
-                        {/* View */}
+                        {/* View — rel="opener" (not "noreferrer") so this same-origin
+                            tab keeps window.opener, letting the browser copy over
+                            sessionStorage; otherwise an admin who hasn't checked
+                            "Remember Me" loses their session in the new tab and a
+                            pending/rejected blog (now access-controlled) 404s for
+                            them too. See the identical fix on the invoice "View" link. */}
+                        {/* eslint-disable-next-line react/jsx-no-target-blank -- same-origin internal link; keeping window.opener is intentional */}
                         <a
                           href={`/blog/${b.slug}`}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="opener"
                           className="px-2 py-1 text-[11px] rounded-lg font-medium border transition-all"
                           style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}
                         >
@@ -8585,7 +9513,13 @@ function InvoicesTab() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <a href={`/invoice/view/${inv.invoiceNumber}`} target="_blank" rel="noreferrer"
+                        {/* rel="opener" (not "noreferrer") is required here: this is a same-origin
+                            admin link, and the new tab must keep window.opener so the browser
+                            copies over sessionStorage — otherwise an admin who didn't check
+                            "Remember Me" (session lives in sessionStorage, not localStorage) loses
+                            their auth in the new tab and gets bounced to /login. */}
+                        {/* eslint-disable-next-line react/jsx-no-target-blank -- same-origin internal link; keeping window.opener is intentional, see comment above */}
+                        <a href={`/invoice/view/${inv.invoiceNumber}`} target="_blank" rel="opener"
                           className="p-1.5 rounded-lg border transition-colors"
                           style={{ borderColor:'var(--t-border)', color:'var(--t-muted)' }}
                           title="View Invoice">

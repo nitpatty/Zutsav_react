@@ -481,16 +481,24 @@ export default function BlogHomePage() {
             )}
           </div>
 
-          {/* Write button for authenticated users */}
+          {/* Write / My Blogs buttons for authenticated users */}
           {isAuthenticated && (
-            <Link
-              to="/blog/write"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-semibold text-sm transition-all hover:opacity-90 shadow-lg"
-              style={{ background: 'linear-gradient(135deg, #D4AF37, #FF6B00)', color: '#fff' }}
-            >
-              <PenSquare size={15} />
-              Write a Blog
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                to="/my-blogs"
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl font-semibold text-sm transition-all hover:bg-white/15 border border-white/15 text-white"
+              >
+                My Blogs
+              </Link>
+              <Link
+                to="/blog/write"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-semibold text-sm transition-all hover:opacity-90 shadow-lg"
+                style={{ background: 'linear-gradient(135deg, #D4AF37, #FF6B00)', color: '#fff' }}
+              >
+                <PenSquare size={15} />
+                Write a Blog
+              </Link>
+            </div>
           )}
         </div>
       </section>

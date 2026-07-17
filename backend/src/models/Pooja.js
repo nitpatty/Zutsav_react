@@ -22,6 +22,22 @@ const poojaSchema = new mongoose.Schema({
   requirements:[{ type: String }],          // samagri list
   benefits:    [{ type: String }],
   languages:   [{ type: String }],
+
+  // Rich (HTML) CMS content — authored via the shared TipTap editor.
+  // vidhi/samagriNotes/benefitsContent/preparationNotes/dosAndDonts/additionalInfo
+  // are additive: samagriNotes/benefitsContent sit alongside the plain
+  // requirements/benefits arrays above (which continue to power pill/badge
+  // UI elsewhere), rather than replacing them.
+  vidhi:            { type: String },
+  samagriNotes:     { type: String },
+  benefitsContent:  { type: String },
+  preparationNotes: { type: String },
+  dosAndDonts:      { type: String },
+  additionalInfo:   { type: String },
+  faqs: [{
+    question: { type: String, required: true, trim: true },
+    answer:   { type: String, required: true },
+  }],
   isActive:    { type: Boolean, default: true },
   isFeatured:  { type: Boolean, default: false },
   homepageRank:{ type: Number, default: null },      // curated "Popular Pujas" order; null = not curated

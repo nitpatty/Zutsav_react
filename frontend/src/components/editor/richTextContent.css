@@ -1,0 +1,265 @@
+/* Shared prose styling for all TipTap-authored rich text — both the live
+   editor (rendered inside TipTap's .ProseMirror wrapper) and read-only
+   dangerouslySetInnerHTML display surfaces (Blog post body, Pooja detail
+   tabs). Apply className="rte-content" (plus an optional surface-specific
+   class for future per-surface overrides) wherever this content appears. */
+
+.rte-content h2,
+.rte-content .ProseMirror h2 {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #1B1F3B;
+  margin: 1.75rem 0 0.75rem;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.rte-content h3,
+.rte-content .ProseMirror h3 {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #374151;
+  margin: 1.5rem 0 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.rte-content p,
+.rte-content .ProseMirror p {
+  margin: 0 0 1.25rem;
+}
+
+.rte-content a,
+.rte-content .ProseMirror a {
+  color: #4F46E5;
+  text-decoration: underline;
+  text-decoration-color: rgba(79, 70, 229, 0.35);
+  text-underline-offset: 2px;
+}
+
+.rte-content a:hover,
+.rte-content .ProseMirror a:hover {
+  color: #3730A3;
+  text-decoration-color: #3730A3;
+}
+
+.rte-content blockquote,
+.rte-content .ProseMirror blockquote {
+  margin: 1.75rem 0;
+  padding: 1rem 1.5rem;
+  border-left: 4px solid #D4AF37;
+  background: linear-gradient(135deg, #FFFBEB, #FEF9EC);
+  border-radius: 0 12px 12px 0;
+  font-style: italic;
+  color: #4B5563;
+  font-size: 1.05rem;
+}
+
+.rte-content pre,
+.rte-content .ProseMirror pre {
+  background: #1E1E2E;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+.rte-content code,
+.rte-content .ProseMirror code {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.875em;
+  background: #F1F0FF;
+  color: #5B21B6;
+  padding: 0.15em 0.45em;
+  border-radius: 5px;
+}
+
+.rte-content pre code,
+.rte-content .ProseMirror pre code {
+  background: transparent;
+  color: #CDD6F4;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+.rte-content ul,
+.rte-content ol,
+.rte-content .ProseMirror ul,
+.rte-content .ProseMirror ol {
+  padding-left: 1.5rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.rte-content ul,
+.rte-content .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.rte-content ol,
+.rte-content .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.rte-content li,
+.rte-content .ProseMirror li {
+  margin-bottom: 0.4rem;
+}
+
+.rte-content img,
+.rte-content .ProseMirror img {
+  max-width: 100%;
+  border-radius: 12px;
+  margin: 1.5rem 0;
+}
+
+/* ── Resizable image (figure/figcaption) ───────────────────────────
+   Applies to both the live editor (ResizableImageNodeView's rendered
+   <figure>) and read-only surfaces (Blog post body, Pooja detail tabs)
+   since both share this stylesheet via the .rte-content class. */
+.rte-content figure.rte-image,
+.rte-content .ProseMirror figure.rte-image {
+  position: relative;
+  margin: 1.5rem 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.rte-content figure.rte-image.align-left {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.rte-content figure.rte-image.align-center {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.rte-content figure.rte-image.align-right {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+.rte-content figure.rte-image .rte-image-inner {
+  position: relative;
+  line-height: 0;
+}
+
+.rte-content figure.rte-image img,
+.rte-content .ProseMirror figure.rte-image img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  margin: 0;
+}
+
+.rte-content figure.rte-image figcaption,
+.rte-content .rte-image-caption {
+  margin-top: 0.5rem;
+  text-align: center;
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: #9CA3AF;
+}
+
+/* Caption input (editor-only — a plain <input>, not a figcaption, until it's
+   committed via updateAttributes and serialized to a real <figcaption>). */
+.rte-content .rte-image-caption-input {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  border: none;
+  outline: none;
+  background: transparent;
+  text-align: center;
+  font-size: 0.8125rem;
+  font-style: italic;
+  color: #6B7280;
+}
+
+.rte-content .rte-image-caption-input::placeholder {
+  color: #C7CBD1;
+}
+
+/* Selection outline, resize handles, and the floating toolbar only ever
+   render inside the live editor's NodeView — they are never part of
+   editor.getHTML()'s serialized output, so no read-only-surface guard is
+   needed here. */
+.rte-content .ProseMirror figure.rte-image.is-selected .rte-image-inner img {
+  outline: 2px solid #6366F1;
+  outline-offset: 2px;
+}
+
+.rte-content .ProseMirror figure.rte-image.is-resizing .rte-image-inner img {
+  outline: 2px solid #4F46E5;
+}
+
+.rte-content .ProseMirror .rte-resize-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #4F46E5;
+  border: 2px solid white;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+
+.rte-content .ProseMirror .rte-resize-handle-nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.rte-content .ProseMirror .rte-resize-handle-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.rte-content .ProseMirror .rte-resize-handle-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.rte-content .ProseMirror .rte-resize-handle-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+
+.rte-content .ProseMirror .rte-image-toolbar {
+  position: absolute;
+  top: -44px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: white;
+  border: 1px solid #F3F4F6;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 20;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .rte-content .ProseMirror .rte-resize-handle {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.rte-content hr,
+.rte-content .ProseMirror hr {
+  border: none;
+  border-top: 1px solid #E5E7EB;
+  margin: 2rem 0;
+}
+
+.rte-content strong,
+.rte-content .ProseMirror strong {
+  font-weight: 700;
+  color: #111827;
+}
+
+/* TipTap Placeholder extension marks the empty first node with
+   is-editor-empty + data-placeholder; this replaces the old raw
+   contentEditable `:empty:before` trick. */
+.rte-content .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9CA3AF;
+  pointer-events: none;
+  height: 0;
+}
+
+.rte-content .ProseMirror {
+  outline: none;
+}

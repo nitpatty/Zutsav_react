@@ -5,6 +5,7 @@ import OverviewTab from './pooja-details/OverviewTab';
 import SamagriTab from './pooja-details/SamagriTab';
 import VidhiTab from './pooja-details/VidhiTab';
 import BenefitsTab from './pooja-details/BenefitsTab';
+import FaqTab from './pooja-details/FaqTab';
 import ReviewsTab from './pooja-details/ReviewsTab';
 import SimilarPoojasSidebar from './pooja-details/SimilarPoojasSidebar';
 import UpcomingFestivalsSidebar from './pooja-details/UpcomingFestivalsSidebar';
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'samagri',  label: 'Samagri' },
   { id: 'vidhi',    label: 'Vidhi' },
   { id: 'benefits', label: 'Benefits' },
+  { id: 'faqs',     label: 'FAQs' },
   { id: 'reviews',  label: 'Reviews' },
 ];
 
@@ -61,6 +63,7 @@ export default function PoojaDetailsStep({ pooja, pricing, similarPoojas, upcomi
               {tab === 'samagri'  && <SamagriTab pooja={pooja} />}
               {tab === 'vidhi'    && <VidhiTab pooja={pooja} />}
               {tab === 'benefits' && <BenefitsTab pooja={pooja} />}
+              {tab === 'faqs'     && <FaqTab pooja={pooja} />}
               {tab === 'reviews'  && <ReviewsTab reviewsData={reviewsData} reviewsLoading={reviewsLoading} />}
             </div>
           </div>

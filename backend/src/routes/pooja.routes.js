@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const ctrl   = require('../controllers/pooja.controller');
 const { protect, authorize } = require('../middleware/auth');
-const { uploadProfile } = require('../middleware/upload');
+const { uploadProfile, uploadPooja } = require('../middleware/upload');
 
 // ── Public ───────────────────────────────────────────────────
 router.get('/categories',      ctrl.getCategories);
@@ -26,6 +26,9 @@ router.get('/:slug',           ctrl.getPoojaBySlug);
 router.post('/categories',     protect, authorize('admin'), uploadProfile.single('image'), ctrl.createCategory);
 router.patch('/categories/:id',protect, authorize('admin'), uploadProfile.single('image'), ctrl.updateCategory);
 router.delete('/categories/:id',protect, authorize('admin'), ctrl.deleteCategory);
+
+// ── Admin: inline image upload for the rich text (TipTap) fields ─────
+router.post('/upload-image',   protect, authorize('admin'), uploadPooja.single('image'), ctrl.uploadImage);
 
 // ── Admin: pooja CRUD ─────────────────────────────────────────
 router.post('/',               protect, authorize('admin'), uploadProfile.single('image'), ctrl.createPooja);

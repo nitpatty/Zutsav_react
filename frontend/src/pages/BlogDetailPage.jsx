@@ -437,6 +437,23 @@ export default function BlogDetailPage() {
     }
   }, [commentText, isAuthenticated, replyingTo, blog?._id]);
 
+  // ── Withdraw a pending submission back to draft (author only) ─────────────
+  const [withdrawing, setWithdrawing] = useState(false);
+  const handleWithdraw = useCallback(async () => {
+    if (withdrawing || !blog) return;
+    if (!window.confirm('Withdraw this submission? It will return to draft so you can keep editing.')) return;
+    setWithdrawing(true);
+    try {
+      await API.put(`/blogs/${blog._id}`, { action: 'withdraw' });
+      toast.success('Submission withdrawn — you can edit it again.');
+      navigate(`/blog/edit/${blog._id}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not withdraw submission');
+    } finally {
+      setWithdrawing(false);
+    }
+  }, [blog, withdrawing, navigate]);
+
   // ── Delete comment ────────────────────────────────────────────────────────
   const handleDeleteComment = useCallback(async (commentId) => {
     if (!window.confirm('Delete this comment?')) return;
@@ -545,6 +562,70 @@ export default function BlogDetailPage() {
           {/* ══ Article column ══ */}
           <article className="flex-1 min-w-0" ref={articleRef}>
 
+            {/* Review-status banner — only ever rendered when the backend has
+                already decided this viewer is allowed to see a non-published
+                post (its author or an admin); everyone else gets a 404 for
+                any non-published slug, so reaching this branch at all implies
+                that authorization. */}
+            {blog.status !== 'published' && (() => {
+              const isOwnPost = isAuthenticated && user && String(blog.authorId) === String(user._id);
+              const META = {
+                pending_review: { icon: '🟡', label: 'Pending Review', bg: '#FFFBEB', border: '#FDE68A', text: '#92400E' },
+                rejected:       { icon: '🔴', label: 'Rejected',        bg: '#FEF2F2', border: '#FECACA', text: '#991B1B' },
+                draft:          { icon: '⚪', label: 'Draft',            bg: '#F9FAFB', border: '#E5E7EB', text: '#374151' },
+                archived:       { icon: '⚫', label: 'Archived',         bg: '#F3F4F6', border: '#D1D5DB', text: '#374151' },
+                scheduled:      { icon: '🔵', label: 'Scheduled',        bg: '#EFF6FF', border: '#BFDBFE', text: '#1E40AF' },
+              };
+              const m = META[blog.status] || META.draft;
+              return (
+                <div className="mb-6 rounded-2xl border p-5" style={{ background: m.bg, borderColor: m.border }}>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'white', color: m.text }}>
+                    {m.icon} {m.label}
+                  </span>
+                  <p className="text-sm leading-relaxed" style={{ color: m.text }}>
+                    {blog.status === 'pending_review' &&
+                      'Your blog has been submitted successfully. It is currently under review by the Zutsav editorial team. You can view your article while it is under review, but editing is disabled until you withdraw it or receive feedback.'}
+                    {blog.status === 'rejected' && (
+                      blog.rejectionReason
+                        ? <>This blog wasn't approved: <span className="font-semibold">"{blog.rejectionReason}"</span>. You can edit and resubmit it for review.</>
+                        : "This blog wasn't approved. You can edit and resubmit it for review."
+                    )}
+                    {blog.status === 'draft' && 'This is a draft — only visible to you. Continue writing or submit it for review when ready.'}
+                    {blog.status === 'archived' && 'This post is archived and not publicly visible.'}
+                    {blog.status === 'scheduled' && 'This post is scheduled to publish automatically at its scheduled time.'}
+                  </p>
+                  {isOwnPost && (
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      {['draft', 'rejected'].includes(blog.status) && (
+                        <Link
+                          to={`/blog/edit/${blog._id}`}
+                          className="px-4 py-2 rounded-xl text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                          style={{ background: '#1B1F3B' }}
+                        >
+                          Edit
+                        </Link>
+                      )}
+                      {blog.status === 'pending_review' && (
+                        <button
+                          onClick={handleWithdraw}
+                          disabled={withdrawing}
+                          className="px-4 py-2 rounded-xl text-xs font-semibold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                        >
+                          {withdrawing ? 'Withdrawing...' : 'Withdraw Submission'}
+                        </button>
+                      )}
+                      <Link
+                        to="/my-blogs"
+                        className="px-4 py-2 rounded-xl text-xs font-semibold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-colors"
+                      >
+                        Back to My Blogs
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Category badge */}
             {blog.category && (
               <Link
@@ -619,7 +700,7 @@ export default function BlogDetailPage() {
 
             {/* Article body */}
             <div
-              className="blog-content mb-10"
+              className="rte-content blog-content mb-10"
               style={{
                 maxWidth: '680px',
                 lineHeight: '1.85',
@@ -926,98 +1007,6 @@ export default function BlogDetailPage() {
           </section>
         )}
       </main>
-
-      {/* ══ Prose styles injected via <style> ══ */}
-      <style>{`
-        .blog-content h2 {
-          font-family: "Cormorant Garamond", Georgia, serif;
-          font-size: 1.7rem;
-          font-weight: 700;
-          color: #1B1F3B;
-          margin: 2rem 0 0.75rem;
-          letter-spacing: -0.02em;
-          line-height: 1.25;
-        }
-        .blog-content h3 {
-          font-family: "Cormorant Garamond", Georgia, serif;
-          font-size: 1.3rem;
-          font-weight: 700;
-          color: #374151;
-          margin: 1.5rem 0 0.5rem;
-          letter-spacing: -0.01em;
-        }
-        .blog-content p {
-          margin: 0 0 1.25rem;
-        }
-        .blog-content a {
-          color: #4F46E5;
-          text-decoration: underline;
-          text-decoration-color: rgba(79, 70, 229, 0.35);
-          text-underline-offset: 2px;
-        }
-        .blog-content a:hover {
-          color: #3730A3;
-          text-decoration-color: #3730A3;
-        }
-        .blog-content blockquote {
-          margin: 1.75rem 0;
-          padding: 1rem 1.5rem;
-          border-left: 4px solid #D4AF37;
-          background: linear-gradient(135deg, #FFFBEB, #FEF9EC);
-          border-radius: 0 12px 12px 0;
-          font-style: italic;
-          color: #4B5563;
-          font-size: 1.05rem;
-        }
-        .blog-content pre {
-          background: #1E1E2E;
-          border-radius: 12px;
-          padding: 1.25rem 1.5rem;
-          overflow-x: auto;
-          margin: 1.5rem 0;
-        }
-        .blog-content code {
-          font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
-          font-size: 0.875em;
-          background: #F1F0FF;
-          color: #5B21B6;
-          padding: 0.15em 0.45em;
-          border-radius: 5px;
-        }
-        .blog-content pre code {
-          background: transparent;
-          color: #CDD6F4;
-          padding: 0;
-          font-size: 0.875rem;
-        }
-        .blog-content ul, .blog-content ol {
-          padding-left: 1.5rem;
-          margin: 1rem 0 1.25rem;
-        }
-        .blog-content ul {
-          list-style-type: disc;
-        }
-        .blog-content ol {
-          list-style-type: decimal;
-        }
-        .blog-content li {
-          margin-bottom: 0.4rem;
-        }
-        .blog-content img {
-          max-width: 100%;
-          border-radius: 12px;
-          margin: 1.5rem 0;
-        }
-        .blog-content hr {
-          border: none;
-          border-top: 1px solid #E5E7EB;
-          margin: 2rem 0;
-        }
-        .blog-content strong {
-          font-weight: 700;
-          color: #111827;
-        }
-      `}</style>
     </div>
   );
 }
