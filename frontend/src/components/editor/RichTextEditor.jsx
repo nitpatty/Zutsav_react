@@ -7,6 +7,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import toast from 'react-hot-toast';
 import Toolbar from './Toolbar';
 import ResizableImage from './ResizableImageExtension';
+import { getImageUrl } from '../../config';
 import './richTextContent.css';
 
 // Shared TipTap rich text editor used by both the Blog editor and the Pooja
@@ -71,7 +72,12 @@ export default function RichTextEditor({
     setUploading(true);
     try {
       const url = await onImageUpload(file);
-      if (url) editor.chain().focus().setImage({ src: url, width: '70%', align: 'center' }).run();
+      // The upload endpoint returns a backend-relative path (e.g.
+      // `uploads/blogs/x.jpg`) — resolve it to an absolute URL before it's
+      // embedded in the document, since this <img src> gets serialized
+      // verbatim into the saved content HTML (unlike the cover image, which
+      // is a separate field resolved at render time on every read).
+      if (url) editor.chain().focus().setImage({ src: getImageUrl(url), width: '70%', align: 'center' }).run();
     } catch {
       toast.error('Image upload failed');
     } finally {

@@ -32,12 +32,35 @@ const ResizableImage = Image.extend({
         default: null,
         rendered: false,
       },
+      // 'left' | 'center' | 'right' float the image and wrap body text
+      // around it; 'inline' sits at natural size within the flow (no float,
+      // no forced full-width) — the classic editor's "None" placement.
       align: {
         default: 'center',
         rendered: false,
       },
       caption: {
         default: '',
+        rendered: false,
+      },
+      // Vertical breathing room around the image: 'tight' | 'normal' | 'loose'.
+      spacing: {
+        default: 'normal',
+        rendered: false,
+      },
+      // Free-drag nudge away from the image's normal in-flow position —
+      // offsetX as a % of the content column's width (so it scales sanely
+      // across screen sizes), offsetY in px (clamped small — see
+      // ResizableImageNodeView's DRAG_BOUNDS — since an unbounded px nudge
+      // would land in a wildly different spot on mobile vs desktop). Zero
+      // for both (the default) means "normal document flow", identical to
+      // every image before this feature existed.
+      offsetX: {
+        default: 0,
+        rendered: false,
+      },
+      offsetY: {
+        default: 0,
         rendered: false,
       },
     };
@@ -59,6 +82,9 @@ const ResizableImage = Image.extend({
             width: el.style.width || el.getAttribute('data-width') || null,
             align: el.getAttribute('data-align') || 'center',
             caption: el.querySelector('figcaption')?.textContent || '',
+            spacing: el.getAttribute('data-spacing') || 'normal',
+            offsetX: parseFloat(el.getAttribute('data-offset-x')) || 0,
+            offsetY: parseFloat(el.getAttribute('data-offset-y')) || 0,
           };
         },
       },
@@ -74,6 +100,9 @@ const ResizableImage = Image.extend({
             width: null,
             align: 'center',
             caption: '',
+            spacing: 'normal',
+            offsetX: 0,
+            offsetY: 0,
           };
         },
       },
@@ -81,13 +110,24 @@ const ResizableImage = Image.extend({
   },
 
   renderHTML({ node, HTMLAttributes }) {
-    const { width, align, caption } = node.attrs;
+    const { width, align, caption, spacing, offsetX, offsetY } = node.attrs;
     const figureAttrs = {
       'data-type': 'resizable-image',
       'data-align': align || 'center',
-      class: `rte-image align-${align || 'center'}`,
+      'data-spacing': spacing || 'normal',
+      class: `rte-image align-${align || 'center'} space-${spacing || 'normal'}`,
     };
-    if (width) figureAttrs.style = `width:${width};`;
+    const styleParts = [];
+    if (width) styleParts.push(`width:${width}`);
+    // A nudge takes the image out of normal in-flow positioning (`relative`
+    // reserves its original flow space but visually offsets it, exactly
+    // like the editor's live drag preview) and layers it above sibling text.
+    if (offsetX) { figureAttrs['data-offset-x'] = offsetX; }
+    if (offsetY) { figureAttrs['data-offset-y'] = offsetY; }
+    if (offsetX || offsetY) {
+      styleParts.push('position:relative', `left:${offsetX || 0}%`, `top:${offsetY || 0}px`, 'z-index:5');
+    }
+    if (styleParts.length) figureAttrs.style = `${styleParts.join(';')};`;
 
     const imgAttrs = mergeAttributes(HTMLAttributes);
     const children = [['img', imgAttrs]];

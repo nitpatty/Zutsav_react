@@ -135,7 +135,8 @@ export default function BlogEditor() {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('');
   const [tags, setTags] = useState([]);
-  const [featuredImage, setFeaturedImage] = useState(null); // URL string
+  const [featuredImagePath, setFeaturedImagePath] = useState(''); // raw backend-relative path — sent to the API
+  const [featuredImagePreview, setFeaturedImagePreview] = useState(null); // resolved <img> src for display only
   const [featuredImageFile, setFeaturedImageFile] = useState(null);
   const [seoTitle, setSeoTitle] = useState('');
   const [seoDescription, setSeoDescription] = useState('');
@@ -165,6 +166,24 @@ export default function BlogEditor() {
   const autoSaveTimerRef = useRef(null);
 
   const resizeTitle = useAutoResize(titleRef);
+
+  // Success toast with a "View My Blogs" CTA — so saving/publishing never
+  // feels like the post "disappeared"; there's always a one-click way back
+  // to the dashboard that lists it.
+  const notifyWithMyBlogsCTA = useCallback((message) => {
+    toast.success(
+      <span className="flex items-center gap-3">
+        <span>{message}</span>
+        <button
+          onClick={() => navigate('/my-blogs')}
+          className="text-xs font-bold underline text-indigo-700 shrink-0"
+        >
+          View My Blogs
+        </button>
+      </span>,
+      { duration: 6000 }
+    );
+  }, [navigate]);
 
   // ── Auth guard ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -225,7 +244,8 @@ export default function BlogEditor() {
         setContent(b.content || '');
         setCategory(b.category?._id || b.category || '');
         setTags(b.tags || []);
-        setFeaturedImage(getImageUrl(b.featuredImage));
+        setFeaturedImagePath(b.featuredImage || '');
+        setFeaturedImagePreview(getImageUrl(b.featuredImage));
         setSeoTitle(b.seoTitle || '');
         setSeoDescription(b.seoDescription || '');
         setBlogStatus(b.status || 'draft');
@@ -279,7 +299,7 @@ export default function BlogEditor() {
   // Mark unsaved on any change
   useEffect(() => {
     setHasUnsaved(true);
-  }, [title, content, category, tags, featuredImage, seoTitle, seoDescription]);
+  }, [title, content, category, tags, featuredImagePath, seoTitle, seoDescription]);
 
   // ── Featured image upload ──────────────────────────────────────────────────
   const handleFeaturedImageSelect = useCallback(async (e) => {
@@ -290,7 +310,7 @@ export default function BlogEditor() {
 
     // Preview immediately
     const objectUrl = URL.createObjectURL(file);
-    setFeaturedImage(objectUrl);
+    setFeaturedImagePreview(objectUrl);
     setFeaturedImageFile(file);
   }, []);
 
@@ -314,14 +334,15 @@ export default function BlogEditor() {
 
   // ── Upload featured image if user picked a new file ──────────────────────
   const uploadFeaturedImageIfNeeded = useCallback(async () => {
-    if (!featuredImageFile) return featuredImage || '';
+    if (!featuredImageFile) return featuredImagePath || '';
     const fd = new FormData();
     fd.append('image', featuredImageFile);
     const { data } = await API.post('/blogs/upload-image', fd);
     setFeaturedImageFile(null);
-    setFeaturedImage(data.url);
+    setFeaturedImagePath(data.url);
+    setFeaturedImagePreview(getImageUrl(data.url));
     return data.url;
-  }, [featuredImageFile, featuredImage]);
+  }, [featuredImageFile, featuredImagePath]);
 
   // ── Build payload (JSON, never FormData) ─────────────────────────────────
   const buildPayload = useCallback((action, imageUrl) => ({
@@ -331,9 +352,9 @@ export default function BlogEditor() {
     tags,
     seoTitle:       seoTitle.trim(),
     seoDescription: seoDescription.trim(),
-    featuredImage:  imageUrl ?? featuredImage ?? '',
+    featuredImage:  imageUrl ?? featuredImagePath ?? '',
     action,
-  }), [title, content, category, tags, seoTitle, seoDescription, featuredImage]);
+  }), [title, content, category, tags, seoTitle, seoDescription, featuredImagePath]);
 
   // ── Save draft ────────────────────────────────────────────────────────────
   const handleSaveDraft = useCallback(async () => {
@@ -349,13 +370,13 @@ export default function BlogEditor() {
         await API.post('/blogs', payload);
       }
       setHasUnsaved(false);
-      toast.success('Draft saved');
+      notifyWithMyBlogsCTA('Draft saved.');
     } catch (err) {
       if (err.response?.status !== 401) toast.error('Could not save draft');
     } finally {
       setSaving(false);
     }
-  }, [saving, doLocalSave, buildPayload, uploadFeaturedImageIfNeeded, isEditing, id]);
+  }, [saving, doLocalSave, buildPayload, uploadFeaturedImageIfNeeded, isEditing, id, notifyWithMyBlogsCTA]);
 
   // ── Publish / submit ──────────────────────────────────────────────────────
   const handlePublish = useCallback(async () => {
@@ -376,7 +397,9 @@ export default function BlogEditor() {
         : await API.post('/blogs', payload);
       localStorage.removeItem(AUTOSAVE_KEY(id || null));
       setHasUnsaved(false);
-      toast.success(requiresApproval ? 'Submitted for review!' : 'Blog published!');
+      notifyWithMyBlogsCTA(
+        requiresApproval ? 'Your blog has been submitted for review.' : 'Blog published!'
+      );
       const savedSlug = res.data?.blog?.slug;
       // Submitted-for-review posts land on the article page itself, which now
       // (being the author's own submission) shows the Pending Review badge/
@@ -388,7 +411,7 @@ export default function BlogEditor() {
     } finally {
       setPublishing(false);
     }
-  }, [validate, publishing, requiresApproval, buildPayload, uploadFeaturedImageIfNeeded, isEditing, id, navigate]);
+  }, [validate, publishing, requiresApproval, buildPayload, uploadFeaturedImageIfNeeded, isEditing, id, navigate, notifyWithMyBlogsCTA]);
 
   // ── Withdraw a pending submission back to draft ───────────────────────────
   const handleWithdraw = useCallback(async () => {
@@ -604,10 +627,10 @@ export default function BlogEditor() {
 
           {/* Featured image zone */}
           <div className="mb-6">
-            {featuredImage ? (
+            {featuredImagePreview ? (
               <div className="relative rounded-2xl overflow-hidden shadow-md group">
                 <img
-                  src={featuredImage}
+                  src={featuredImagePreview}
                   alt="Featured"
                   className="w-full object-cover"
                   style={{ maxHeight: 340 }}
@@ -622,7 +645,7 @@ export default function BlogEditor() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setFeaturedImage(null); setFeaturedImageFile(null); }}
+                    onClick={() => { setFeaturedImagePreview(null); setFeaturedImagePath(''); setFeaturedImageFile(null); }}
                     className="px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors"
                   >
                     Remove

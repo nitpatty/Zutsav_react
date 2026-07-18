@@ -1,3 +1,4 @@
+const mongoose     = require('mongoose');
 const Blog         = require('../models/Blog');
 const BlogCategory = require('../models/BlogCategory');
 const BlogComment  = require('../models/BlogComment');
@@ -40,7 +41,22 @@ exports.getBlogs = async (req, res, next) => {
     } = req.query;
 
     const query = { status: 'published' };
-    if (category)   query.category   = category;
+    if (category) {
+      // Frontend sends either the category's ObjectId or its slug (category
+      // pills / URL params use slug when available) — resolve a slug to its
+      // _id so `Blog.find` doesn't cast a non-ObjectId string and throw.
+      // (A strict 24-char hex check, not the looser `ObjectId.isValid` —
+      // that also accepts any 12-character string, which would misfire on
+      // a coincidentally 12-char category slug.)
+      if (/^[0-9a-fA-F]{24}$/.test(category)) {
+        query.category = category;
+      } else {
+        const cat = await BlogCategory.findOne({ slug: category }).select('_id').lean();
+        // Unknown category slug — resolve to an id no blog can have, so the
+        // query returns an empty result set instead of a cast error.
+        query.category = cat ? cat._id : new mongoose.Types.ObjectId();
+      }
+    }
     if (tag)        query.tags        = tag;
     if (author)     query.authorId    = author;
     if (featured === 'true')    query.isFeatured    = true;
@@ -267,6 +283,41 @@ exports.updateBlog = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// POST /api/blogs/:id/duplicate — clone as a new draft owned by the caller,
+// for the "Duplicate" action on My Blogs. Owner or admin only.
+exports.duplicateBlog = async (req, res, next) => {
+  try {
+    const blog = await Blog.findById(req.params.id).lean();
+    if (!blog) return res.status(404).json({ success: false, message: 'Blog not found' });
+
+    if (String(blog.authorId) !== String(req.user._id) && !isAdminRole(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const user = req.user;
+    const copy = await Blog.create({
+      title:          `${blog.title} (Copy)`,
+      content:        blog.content,
+      excerpt:        blog.excerpt,
+      featuredImage:  blog.featuredImage,
+      category:       blog.category,
+      tags:           blog.tags,
+      seoTitle:       blog.seoTitle,
+      seoDescription: blog.seoDescription,
+      ogImage:        blog.ogImage,
+      canonicalUrl:   blog.canonicalUrl,
+      authorId:       user._id,
+      authorRole:     user.role,
+      authorName:     user.name,
+      authorAvatar:   user.profilePhoto || '',
+      authorVerified: isAdminRole(user.role) || user.role === 'pandit',
+      status: 'draft',
+    });
+
+    res.status(201).json({ success: true, blog: copy });
+  } catch (err) { next(err); }
+};
+
 // DELETE /api/blogs/:id
 exports.deleteBlog = async (req, res, next) => {
   try {
@@ -456,7 +507,10 @@ exports.deleteComment = async (req, res, next) => {
 // POST /api/blogs/upload-image
 exports.uploadImage = async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'No image provided' });
-  const url = `/uploads/blogs/${req.file.filename}`;
+  // No leading slash — matches the storage-path convention used by every
+  // other upload endpoint in the app (temples, products, profiles, ...) so
+  // getImageUrl() resolves it the same way everywhere.
+  const url = `uploads/blogs/${req.file.filename}`;
   res.json({ success: true, url });
 };
 

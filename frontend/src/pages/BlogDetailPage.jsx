@@ -568,7 +568,8 @@ export default function BlogDetailPage() {
                 any non-published slug, so reaching this branch at all implies
                 that authorization. */}
             {blog.status !== 'published' && (() => {
-              const isOwnPost = isAuthenticated && user && String(blog.authorId) === String(user._id);
+              const isOwnPost  = isAuthenticated && user && String(blog.authorId) === String(user._id);
+              const isReviewer = isAuthenticated && !isOwnPost && isAdminRole(user?.role);
               const META = {
                 pending_review: { icon: '🟡', label: 'Pending Review', bg: '#FFFBEB', border: '#FDE68A', text: '#92400E' },
                 rejected:       { icon: '🔴', label: 'Rejected',        bg: '#FEF2F2', border: '#FECACA', text: '#991B1B' },
@@ -577,6 +578,28 @@ export default function BlogDetailPage() {
                 scheduled:      { icon: '🔵', label: 'Scheduled',        bg: '#EFF6FF', border: '#BFDBFE', text: '#1E40AF' },
               };
               const m = META[blog.status] || META.draft;
+
+              // Admin (or any non-author reviewer) previewing this post: the
+              // author-facing copy below ("Your blog has been submitted...",
+              // Withdraw/Edit actions) never applies to them — moderation
+              // itself happens from the admin Blog Management table, so this
+              // is just a neutral status tag plus a way back there.
+              if (isReviewer) {
+                return (
+                  <div className="mb-6 flex items-center justify-between gap-3 flex-wrap rounded-2xl border p-4" style={{ background: m.bg, borderColor: m.border }}>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full" style={{ background: 'white', color: m.text }}>
+                      {m.icon} {m.label} · Admin Preview
+                    </span>
+                    <Link
+                      to="/admin?tab=blog-management"
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
+                    >
+                      Back to Blog Management →
+                    </Link>
+                  </div>
+                );
+              }
+
               return (
                 <div className="mb-6 rounded-2xl border p-5" style={{ background: m.bg, borderColor: m.border }}>
                   <span className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full mb-3" style={{ background: 'white', color: m.text }}>

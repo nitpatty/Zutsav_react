@@ -120,14 +120,19 @@
 .rte-content figure.rte-image,
 .rte-content .ProseMirror figure.rte-image {
   position: relative;
-  margin: 1.5rem 0;
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
   max-width: 100%;
   box-sizing: border-box;
 }
 
+/* Horizontal placement — left/right float and let body text wrap around the
+   image (Medium/WordPress-style); center stays a full-width block; inline
+   sits at natural size within the surrounding text flow, like an emoji. */
 .rte-content figure.rte-image.align-left {
+  float: left;
   margin-left: 0;
-  margin-right: auto;
+  margin-right: 1.5rem;
 }
 
 .rte-content figure.rte-image.align-center {
@@ -136,8 +141,72 @@
 }
 
 .rte-content figure.rte-image.align-right {
-  margin-left: auto;
+  float: right;
+  margin-left: 1.5rem;
   margin-right: 0;
+}
+
+.rte-content figure.rte-image.align-inline {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 0.5rem;
+  margin-right: 0.5rem;
+}
+
+/* Sane default size for a floated/inline image the user hasn't explicitly
+   resized yet (an inline style — set once they drag a handle or pick a size
+   preset — always overrides this, since inline style outranks any
+   stylesheet rule regardless of selector specificity). Without this, an
+   un-resized floated figure with a width:100% <img> inside falls into the
+   shrink-to-fit-vs-percentage-width edge case and can render at the raw
+   source image's full pixel size instead of a sensible column fraction. */
+.rte-content figure.rte-image.align-left,
+.rte-content figure.rte-image.align-right {
+  width: 50%;
+}
+
+.rte-content figure.rte-image.align-inline {
+  width: 35%;
+}
+
+/* A block element after a floated image must clear it, or the next
+   paragraph/heading rides up alongside instead of starting below — but
+   floats and inline images are meant to have body text run past them, so
+   only genuinely block-level siblings (headings, blockquotes, lists, hr)
+   clear; plain paragraphs are left to wrap as intended. */
+.rte-content h2, .rte-content h3, .rte-content blockquote,
+.rte-content ul, .rte-content ol, .rte-content hr,
+.rte-content .ProseMirror h2, .rte-content .ProseMirror h3, .rte-content .ProseMirror blockquote,
+.rte-content .ProseMirror ul, .rte-content .ProseMirror ol, .rte-content .ProseMirror hr {
+  clear: both;
+}
+
+/* Vertical breathing room presets — override the 1.5rem default above.
+   Kept separate from the horizontal (align-*) margins so the two combine
+   without one clobbering the other. */
+.rte-content figure.rte-image.space-tight {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.rte-content figure.rte-image.space-normal {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.rte-content figure.rte-image.space-loose {
+  margin-top: 2.75rem;
+  margin-bottom: 2.75rem;
+}
+
+/* Prevents a trailing floated image from collapsing its container's height
+   (the classic "float parent has zero height" bug) on both the live editor
+   and read-only rendered content. */
+.rte-content::after,
+.rte-content .ProseMirror::after {
+  content: '';
+  display: table;
+  clear: both;
 }
 
 .rte-content figure.rte-image .rte-image-inner {
@@ -194,6 +263,31 @@
 
 .rte-content .ProseMirror figure.rte-image.is-resizing .rte-image-inner img {
   outline: 2px solid #4F46E5;
+}
+
+.rte-content .ProseMirror figure.rte-image.is-dragging .rte-image-inner img {
+  outline: 2px dashed #4F46E5;
+  opacity: 0.85;
+}
+
+.rte-content .ProseMirror .rte-image-move-handle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(31, 41, 55, 0.75);
+  color: white;
+  border-radius: 7px;
+  cursor: grab;
+  z-index: 11;
+}
+
+.rte-content .ProseMirror .rte-image-move-handle:active {
+  cursor: grabbing;
 }
 
 .rte-content .ProseMirror .rte-resize-handle {

@@ -10,7 +10,10 @@ import { serverOrigin } from './urls.config';
 export function getImageUrl(path) {
   if (!path) return null;
   if (path.startsWith('http')) return path;
-  return `${serverOrigin}/${path}`;
+  // Strip any leading slash(es) — the backend convention is to store paths
+  // without one (`uploads/blogs/x.jpg`), but a defensive strip here means a
+  // stray leading slash never produces a double-slash URL that 404s.
+  return `${serverOrigin}/${path.replace(/^\/+/, '')}`;
 }
 
 // Neutral placeholder shown when a resolved image URL 404s/fails to load at

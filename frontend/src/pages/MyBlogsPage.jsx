@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { PenSquare, Eye, Edit3, Trash2, ChevronLeft } from 'lucide-react';
+import { PenSquare, Eye, Edit3, Trash2, Copy, Clock, BarChart2, ChevronLeft } from 'lucide-react';
 import API from '../api/axios';
 import toast from 'react-hot-toast';
 import { ZutsavLoaderInline } from '../components/shared/ZutsavLoader';
 import { getImageUrl } from '../config';
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 const STATUS_TABS = ['all', 'draft', 'pending_review', 'rejected', 'published', 'archived', 'scheduled'];
 const STATUS_META = {
@@ -22,6 +27,7 @@ export default function MyBlogsPage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('all');
   const [deletingId, setDeletingId] = useState(null);
+  const [duplicatingId, setDuplicatingId] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -45,6 +51,19 @@ export default function MyBlogsPage() {
       toast.error(err.response?.data?.message || 'Could not delete blog');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleDuplicate = async (blog) => {
+    setDuplicatingId(blog._id);
+    try {
+      const { data } = await API.post(`/blogs/${blog._id}/duplicate`);
+      toast.success('Blog duplicated — opening the copy as a new draft.');
+      navigate(`/blog/edit/${data.blog._id}`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not duplicate blog');
+    } finally {
+      setDuplicatingId(null);
     }
   };
 
@@ -112,6 +131,8 @@ export default function MyBlogsPage() {
             {blogs.map((b) => {
               const meta = STATUS_META[b.status] || STATUS_META.draft;
               const canEdit = ['draft', 'rejected', 'scheduled', 'published'].includes(b.status);
+              const isSameDay = b.createdAt && b.updatedAt &&
+                new Date(b.createdAt).toDateString() === new Date(b.updatedAt).toDateString();
               return (
                 <div key={b._id} className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-4">
                   <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-gray-100 flex items-center justify-center">
@@ -120,19 +141,29 @@ export default function MyBlogsPage() {
                       : <span className="text-2xl">📝</span>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: meta.bg, color: meta.text }}>
+                    <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                      <span
+                        className="text-[11px] font-bold px-2.5 py-1 rounded-full border"
+                        style={{ background: meta.bg, color: meta.text, borderColor: meta.text + '33' }}
+                      >
                         {meta.icon} {meta.label}
                       </span>
                       {b.category?.name && <span className="text-[11px] text-gray-400">{b.category.name}</span>}
                     </div>
                     <p className="font-bold text-gray-800 truncate">{b.title || 'Untitled'}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {b.updatedAt ? new Date(b.updatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-                      {b.status === 'rejected' && b.rejectionReason && (
-                        <span className="text-red-500"> · {b.rejectionReason}</span>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-400 mt-1">
+                      {b.createdAt && <span>Created {formatDate(b.createdAt)}</span>}
+                      {!isSameDay && b.updatedAt && <span>· Updated {formatDate(b.updatedAt)}</span>}
+                      {b.readingTime && (
+                        <span className="flex items-center gap-1"><Clock size={10} />{b.readingTime} min read</span>
                       )}
-                    </p>
+                      {b.status === 'published' && (
+                        <span className="flex items-center gap-1"><BarChart2 size={10} />{b.views || 0} views</span>
+                      )}
+                    </div>
+                    {b.status === 'rejected' && b.rejectionReason && (
+                      <p className="text-xs text-red-500 mt-0.5">{b.rejectionReason}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     {b.slug && (
@@ -145,11 +176,19 @@ export default function MyBlogsPage() {
                         <Edit3 size={15} />
                       </Link>
                     )}
+                    <button
+                      onClick={() => handleDuplicate(b)}
+                      disabled={duplicatingId === b._id}
+                      title="Duplicate"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    >
+                      <Copy size={14} />
+                    </button>
                     {b.status !== 'published' && (
                       <button
                         onClick={() => handleDelete(b)}
                         disabled={deletingId === b._id}
-                        title="Delete"
+                        title={b.status === 'draft' ? 'Delete Draft' : 'Delete'}
                         className="w-8 h-8 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-50 transition-colors disabled:opacity-50"
                       >
                         <Trash2 size={15} />

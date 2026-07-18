@@ -30,6 +30,7 @@ router.get('/id/:id',            ctrl.getBlogForEdit);
 router.post('/',             blogPermission, ctrl.createBlog);
 router.put('/:id',           ctrl.updateBlog);
 router.delete('/:id',        ctrl.deleteBlog);
+router.post('/:id/duplicate', blogPermission, ctrl.duplicateBlog);
 
 // Engagement
 router.post('/:id/like',     ctrl.toggleLike);

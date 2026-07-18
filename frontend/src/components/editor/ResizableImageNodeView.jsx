@@ -2,29 +2,48 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import toast from 'react-hot-toast';
 import {
-  AlignLeft, AlignCenter, AlignRight, Maximize2,
-  RefreshCw, MessageSquare, Type, Trash2,
+  AlignLeft, AlignCenter, AlignRight, WrapText,
+  Maximize2, RefreshCw, MessageSquare, Type, Trash2, MoveVertical,
+  Move, RotateCcw,
 } from 'lucide-react';
 import { ToolbarBtn, ToolbarSep } from './Toolbar';
+import { getImageUrl } from '../../config';
 
 const SIZE_PRESETS = { small: '30%', medium: '50%', large: '70%' };
 const MIN_WIDTH_PX = 150;
 const HANDLES = ['nw', 'ne', 'sw', 'se'];
+const SPACING_ORDER = ['tight', 'normal', 'loose'];
+const SPACING_LABEL = { tight: 'Tight', normal: 'Normal', loose: 'Loose' };
+// Free-drag nudge range. offsetX is a % of the container width, offsetY is
+// px — kept deliberately small (not an unbounded page-canvas coordinate) so
+// a nudge that looks right in the editor doesn't land somewhere nonsensical
+// on a narrower reader viewport (mobile).
+const MAX_OFFSET_X_PCT = 40;
+const MAX_OFFSET_Y_PX = 200;
+const clampOffset = (x, y) => ({
+  x: Math.max(-MAX_OFFSET_X_PCT, Math.min(MAX_OFFSET_X_PCT, x)),
+  y: Math.max(-MAX_OFFSET_Y_PX, Math.min(MAX_OFFSET_Y_PX, y)),
+});
 
 // NodeView for the extended `image` node (see ResizableImageExtension.js).
-// `data-drag-handle` + the node's `draggable: true` is TipTap's own
-// documented mechanism for repositioning a node via native HTML5 drag —
-// ProseMirror's NodeView.onDragStart looks for the nearest
-// `[data-drag-handle]` ancestor of the drag target and turns it into a
-// NodeSelection move, so no custom drag-and-drop code is needed here.
+// Positioning is fully custom (mouse-tracked), not native HTML5
+// drag-and-drop — the browser's native DnD-inside-contenteditable behavior
+// is inconsistent across browsers, and a true "drag anywhere" free position
+// (rather than only reordering between blocks) isn't something native PM
+// node dragging supports anyway. The image's structural position in the
+// document never moves; only its visual offset does — see offsetX/offsetY
+// on the extension.
 export default function ResizableImageNodeView({ node, updateAttributes, deleteNode, selected, extension }) {
-  const { src, alt, width, align, caption } = node.attrs;
+  const { src, alt, width, align, caption, spacing, offsetX, offsetY } = node.attrs;
 
   const [liveWidthPx, setLiveWidthPx] = useState(null);
   const [resizing, setResizing] = useState(false);
+  const [liveOffset, setLiveOffset] = useState(null); // { x, y } during a position drag
+  const [dragging, setDragging] = useState(false);
   const [showCaption, setShowCaption] = useState(!!caption);
   const [captionDraft, setCaptionDraft] = useState(caption || '');
   const imgRef = useRef(null);
+  const figureRef = useRef(null);
   const replaceInputRef = useRef(null);
 
   useEffect(() => { setCaptionDraft(caption || ''); }, [caption]);
@@ -69,6 +88,46 @@ export default function ResizableImageNodeView({ node, updateAttributes, deleteN
     document.addEventListener('mouseup', onMouseUp);
   }, [updateAttributes]);
 
+  // Free-position drag: converts mouse-pixel movement into a % (x) / px (y)
+  // nudge away from the image's normal flow position — see the module-level
+  // comment on offsetX/offsetY for why these units and why they're clamped.
+  // Live-previewed via local state only; committed once on mouseup, same
+  // pattern as startResize above.
+  const startPositionDrag = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const container = figureRef.current?.closest('.ProseMirror') || figureRef.current?.parentElement;
+    const containerWidth = container?.clientWidth || 800;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const baseX = offsetX || 0;
+    const baseY = offsetY || 0;
+
+    setDragging(true);
+
+    const onMouseMove = (moveEvent) => {
+      const dxPct = ((moveEvent.clientX - startX) / containerWidth) * 100;
+      const dyPx = moveEvent.clientY - startY;
+      setLiveOffset(clampOffset(baseX + dxPct, baseY + dyPx));
+    };
+
+    const onMouseUp = (upEvent) => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      const dxPct = ((upEvent.clientX - startX) / containerWidth) * 100;
+      const dyPx = upEvent.clientY - startY;
+      const final = clampOffset(baseX + dxPct, baseY + dyPx);
+      updateAttributes({ offsetX: Math.round(final.x * 10) / 10, offsetY: Math.round(final.y) });
+      setLiveOffset(null);
+      setDragging(false);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [offsetX, offsetY, updateAttributes]);
+
+  const resetPosition = () => updateAttributes({ offsetX: 0, offsetY: 0 });
+
   const handleAltText = () => {
     const next = window.prompt('Alt text for this image', alt || '');
     if (next !== null) updateAttributes({ alt: next });
@@ -84,7 +143,9 @@ export default function ResizableImageNodeView({ node, updateAttributes, deleteN
     if (!uploadFn) return;
     try {
       const url = await uploadFn(file);
-      if (url) updateAttributes({ src: url });
+      // Same reasoning as the initial insert in RichTextEditor.jsx — resolve
+      // the backend-relative path to an absolute URL before it's embedded.
+      if (url) updateAttributes({ src: getImageUrl(url) });
     } catch {
       toast.error('Image upload failed');
     }
@@ -94,13 +155,26 @@ export default function ResizableImageNodeView({ node, updateAttributes, deleteN
     if (captionDraft !== (caption || '')) updateAttributes({ caption: captionDraft });
   };
 
+  const cycleSpacing = () => {
+    const idx = SPACING_ORDER.indexOf(spacing || 'normal');
+    updateAttributes({ spacing: SPACING_ORDER[(idx + 1) % SPACING_ORDER.length] });
+  };
+
+  const effectiveOffset = liveOffset || { x: offsetX || 0, y: offsetY || 0 };
+  const hasOffset = effectiveOffset.x !== 0 || effectiveOffset.y !== 0;
+
   return (
     <NodeViewWrapper
       as="figure"
-      className={`rte-image align-${align || 'center'} ${selected ? 'is-selected' : ''} ${resizing ? 'is-resizing' : ''}`}
-      style={{ width: liveWidthPx ? `${liveWidthPx}px` : (width || undefined) }}
-      draggable
-      data-drag-handle
+      ref={figureRef}
+      className={`rte-image align-${align || 'center'} space-${spacing || 'normal'} ${selected ? 'is-selected' : ''} ${resizing ? 'is-resizing' : ''} ${dragging ? 'is-dragging' : ''}`}
+      style={{
+        width: liveWidthPx ? `${liveWidthPx}px` : (width || undefined),
+        position: hasOffset ? 'relative' : undefined,
+        left: hasOffset ? `${effectiveOffset.x}%` : undefined,
+        top: hasOffset ? `${effectiveOffset.y}px` : undefined,
+        zIndex: hasOffset ? 5 : undefined,
+      }}
       contentEditable={false}
     >
       <div className="rte-image-inner">
@@ -115,6 +189,16 @@ export default function ResizableImageNodeView({ node, updateAttributes, deleteN
         ))}
 
         {selected && (
+          <div
+            className="rte-image-move-handle"
+            title="Drag to reposition freely"
+            onMouseDown={startPositionDrag}
+          >
+            <Move size={13} />
+          </div>
+        )}
+
+        {selected && (
           <div className="rte-image-toolbar" onMouseDown={(e) => e.stopPropagation()}>
             <ToolbarBtn title="Align left" active={align === 'left'} onClick={() => updateAttributes({ align: 'left' })}>
               <AlignLeft size={13} />
@@ -124,6 +208,9 @@ export default function ResizableImageNodeView({ node, updateAttributes, deleteN
             </ToolbarBtn>
             <ToolbarBtn title="Align right" active={align === 'right'} onClick={() => updateAttributes({ align: 'right' })}>
               <AlignRight size={13} />
+            </ToolbarBtn>
+            <ToolbarBtn title="Inline (flows with text)" active={align === 'inline'} onClick={() => updateAttributes({ align: 'inline' })}>
+              <WrapText size={13} />
             </ToolbarBtn>
             <ToolbarSep />
             <ToolbarBtn title="Small" active={width === SIZE_PRESETS.small} onClick={() => updateAttributes({ width: SIZE_PRESETS.small })}>
@@ -135,9 +222,18 @@ export default function ResizableImageNodeView({ node, updateAttributes, deleteN
             <ToolbarBtn title="Large" active={width === SIZE_PRESETS.large} onClick={() => updateAttributes({ width: SIZE_PRESETS.large })}>
               <span className="text-[10px] font-black">L</span>
             </ToolbarBtn>
-            <ToolbarBtn title="Full width" active={width === '100%'} onClick={() => updateAttributes({ width: '100%' })}>
+            <ToolbarBtn title="Full width" active={width === '100%'} onClick={() => updateAttributes({ width: '100%', align: 'center' })}>
               <Maximize2 size={13} />
             </ToolbarBtn>
+            <ToolbarSep />
+            <ToolbarBtn title={`Spacing: ${SPACING_LABEL[spacing || 'normal']} (click to cycle)`} onClick={cycleSpacing}>
+              <MoveVertical size={13} />
+            </ToolbarBtn>
+            {hasOffset && (
+              <ToolbarBtn title="Reset to normal position" onClick={resetPosition}>
+                <RotateCcw size={13} />
+              </ToolbarBtn>
+            )}
             <ToolbarSep />
             <ToolbarBtn title="Replace image" onClick={() => replaceInputRef.current?.click()}>
               <RefreshCw size={13} />

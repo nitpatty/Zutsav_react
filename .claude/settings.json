@@ -71,7 +71,24 @@
       "Read(//c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/887ec4d7-4c79-481d-ab30-f7c16f18dfe4/**)",
       "Bash(mkdir -p /c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/7bfcebea-a61e-452e-a043-0d03d3728700/scratchpad)",
       "Bash(curl -sS https://zutsav.com/home.html --max-time 10 -o /c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/7bfcebea-a61e-452e-a043-0d03d3728700/scratchpad/home_page.html)",
-      "Read(//c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/7bfcebea-a61e-452e-a043-0d03d3728700/scratchpad/**)"
+      "Read(//c/Users/HP/AppData/Local/Temp/claude/c--Users-HP-OneDrive-Documents-zutsav-updated/7bfcebea-a61e-452e-a043-0d03d3728700/scratchpad/**)",
+      "Bash(node -e \"require\\('./src/controllers/pooja.controller'\\); require\\('./src/routes/pooja.routes'\\); require\\('./src/controllers/blog.controller'\\); console.log\\('OK controllers/routes'\\)\")",
+      "Bash(npm run *)",
+      "Bash(npx --yes playwright install chromium)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\HP\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-HP-OneDrive-Documents-zutsav-updated\\\\074c0de8-3db1-441a-adeb-e7e84a0d0583\\\\scratchpad\\\\pw\")",
+      "Bash(npm init *)",
+      "Bash(node verify.js)",
+      "Bash(node debug.js)",
+      "Bash(node functional.js)",
+      "Bash(node publish.js)",
+      "Bash(node -e \"require\\('./src/controllers/marketplace.controller'\\); console.log\\('OK'\\)\")",
+      "Bash(curl -s -o /dev/null -w \"backend:%{http_code}\\\\n\" http://localhost:5000/api/poojas/categories)",
+      "Bash(node product-publish.js)",
+      "Bash(node product-edit.js)",
+      "Bash(node product-edit2.js)",
+      "Bash(timeout 30 grep -rln \"admin@zutsav.com\" backend/src backend/*.js)",
+      "Bash(node -e \"require\\('./src/controllers/festival.controller'\\); require\\('./src/models/Festival'\\); console.log\\('OK'\\)\")",
+      "Bash(git status *)"
     ],
     "additionalDirectories": [
       "\\tmp"
