@@ -45,14 +45,6 @@ export default function PoojaPriceCard({ pooja, pricing, onBookNow }) {
       <p className="text-[11px] text-gray-400 mt-1">Inclusive of all taxes</p>
 
       <div className="mt-5 space-y-3">
-        <button type="button" onClick={onBookNow} className="input flex items-center justify-between text-left w-full cursor-pointer">
-          <span className="flex items-center gap-2 text-gray-400"><Calendar size={14} /> Select a Date</span>
-          <ArrowRight size={13} className="text-gray-300" />
-        </button>
-        <button type="button" onClick={onBookNow} className="input flex items-center justify-between text-left w-full cursor-pointer">
-          <span className="flex items-center gap-2 text-gray-400"><Clock size={14} /> Select a Time</span>
-          <ArrowRight size={13} className="text-gray-300" />
-        </button>
         {pooja.languages?.length > 0 && (
           <button type="button" onClick={onBookNow} className="input flex items-center justify-between text-left w-full cursor-pointer">
             <span className="flex items-center gap-2 text-gray-500"><Globe size={14} /> {pooja.languages[0]}{pooja.languages.length > 1 ? ` +${pooja.languages.length - 1}` : ''}</span>

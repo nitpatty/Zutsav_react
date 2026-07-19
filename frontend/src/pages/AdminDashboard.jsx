@@ -5889,10 +5889,19 @@ const EMPTY_PRODUCT_FORM = {
   description: '', tags: [], visibilityType: 'marketplace', taxRate: '', variants: [],
 };
 
+// Explicit column widths at desktop width: Variant Value gets a generous
+// minimum (140-180px) so common values like "Pack of 5" / "250ml" never clip.
+const VARIANT_ROW_LG_COLS = 'lg:grid-cols-[minmax(160px,1.4fr)_110px_110px_90px_52px_32px]';
+
 function VariantBuilder({ variants, setVariants }) {
   const add = () => setVariants((v) => [...v, { quantity: '', price: '', salePrice: '', stock: '', isActive: true }]);
   const rm  = (i) => setVariants((v) => v.filter((_, idx) => idx !== i));
   const upd = (i, k, val) => setVariants((v) => v.map((item, idx) => idx === i ? { ...item, [k]: val } : item));
+
+  const normalized = variants.map((v) => (v.quantity || '').trim().toLowerCase());
+  const isEmpty = (i) => normalized[i] === '';
+  const isDuplicate = (i) => normalized[i] !== '' && normalized.filter((t) => t === normalized[i]).length > 1;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -5900,35 +5909,64 @@ function VariantBuilder({ variants, setVariants }) {
         <span className="text-xs text-gray-400">If variants are used, Price/Stock above are ignored</span>
       </div>
       {variants.length > 0 && (
-        <div className="space-y-2 mb-2">
-          <div className="grid gap-2 text-xs font-medium text-gray-400 px-1" style={{ gridTemplateColumns: '1fr 90px 90px 70px 40px 28px' }}>
-            <span>Quantity (5g, 50g, 1kg…)</span>
-            <span>Price (₹)</span>
+        <div className="space-y-3 mb-2">
+          <div className={`hidden lg:grid ${VARIANT_ROW_LG_COLS} gap-3 text-xs font-medium text-gray-400 px-1`}>
+            <span>Variant Value</span>
+            <span>MRP (₹)</span>
             <span>Sale Price</span>
             <span>Stock</span>
-            <span>Active</span>
+            <span className="text-center">Active</span>
             <span />
           </div>
-          {variants.map((v, i) => (
-            <div key={i} className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr 90px 90px 70px 40px 28px' }}>
-              <input className="input text-sm" placeholder="e.g. 50g" value={v.quantity}
-                onChange={(e) => upd(i, 'quantity', e.target.value)} />
-              <input type="number" min="0" className="input text-sm" placeholder="₹" value={v.price}
-                onChange={(e) => upd(i, 'price', e.target.value)} />
-              <input type="number" min="0" className="input text-sm" placeholder="₹ (opt)" value={v.salePrice || ''}
-                onChange={(e) => upd(i, 'salePrice', e.target.value)} />
-              <input type="number" min="0" className="input text-sm" placeholder="0" value={v.stock}
-                onChange={(e) => upd(i, 'stock', e.target.value)} />
-              <button type="button" onClick={() => upd(i, 'isActive', !v.isActive)}
-                className={`w-9 h-5 rounded-full transition-colors relative ${v.isActive !== false ? 'bg-green-500' : 'bg-gray-300'}`}>
-                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${v.isActive !== false ? 'left-4' : 'left-0.5'}`} />
-              </button>
-              <button type="button" onClick={() => rm(i)}
-                className="flex items-center justify-center w-7 h-7 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors text-lg leading-none shrink-0">
-                ×
-              </button>
-            </div>
-          ))}
+          {variants.map((v, i) => {
+            const empty = isEmpty(i);
+            const dup = isDuplicate(i);
+            return (
+              <div key={i}
+                className={`grid grid-cols-1 sm:grid-cols-2 ${VARIANT_ROW_LG_COLS} lg:items-center gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50/60 lg:p-0 lg:border-0 lg:bg-transparent`}>
+                <div className="sm:col-span-2 lg:col-span-1 flex flex-col gap-1">
+                  <label className="lg:hidden text-[11px] font-medium text-gray-400">Variant Value</label>
+                  <input
+                    className={`input text-sm w-full min-w-[140px] ${(empty || dup) ? '!border-red-400' : ''}`}
+                    placeholder="e.g. 500g, 1kg, XL, Pack of 5"
+                    value={v.quantity}
+                    onChange={(e) => upd(i, 'quantity', e.target.value)}
+                    onBlur={(e) => upd(i, 'quantity', e.target.value.trim())}
+                  />
+                  {empty && <p className="text-[11px] text-red-500">Variant value can't be empty</p>}
+                  {!empty && dup && <p className="text-[11px] text-red-500">Duplicate variant value</p>}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="lg:hidden text-[11px] font-medium text-gray-400">MRP (₹)</label>
+                  <input type="number" min="0" step="0.01" className="input text-sm w-full" placeholder="MRP" value={v.price}
+                    onChange={(e) => upd(i, 'price', e.target.value)} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="lg:hidden text-[11px] font-medium text-gray-400">Sale Price</label>
+                  <input type="number" min="0" step="0.01" className="input text-sm w-full" placeholder="Sale price (opt)" value={v.salePrice || ''}
+                    onChange={(e) => upd(i, 'salePrice', e.target.value)} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="lg:hidden text-[11px] font-medium text-gray-400">Stock</label>
+                  <input type="number" min="0" className="input text-sm w-full" placeholder="Qty in stock" value={v.stock}
+                    onChange={(e) => upd(i, 'stock', e.target.value)} />
+                </div>
+                <div className="flex items-center justify-between lg:justify-center gap-2">
+                  <span className="text-[11px] font-medium text-gray-400 lg:hidden">Active</span>
+                  <button type="button" onClick={() => upd(i, 'isActive', !v.isActive)}
+                    className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${v.isActive !== false ? 'bg-green-500' : 'bg-gray-300'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${v.isActive !== false ? 'left-4' : 'left-0.5'}`} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-end lg:justify-center">
+                  <button type="button" onClick={() => rm(i)}
+                    className="flex items-center justify-center w-8 h-8 lg:w-7 lg:h-7 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors text-lg leading-none shrink-0">
+                    ×
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
       <button type="button" onClick={add}
@@ -5965,8 +6003,8 @@ function ProductForm({ form, setForm, categories = [], onImageUpload }) {
         {/* Price/Stock (flat) — dimmed when variants present */}
         {!hasVariants && (
           <div className="grid grid-cols-3 gap-4">
-            <div><label className="label">Price (₹) *</label><input required type="number" min="0" className="input" value={form.price} onChange={set('price')} /></div>
-            <div><label className="label">Sale Price (₹)</label><input type="number" min="0" className="input" value={form.salePrice} onChange={set('salePrice')} /></div>
+            <div><label className="label">Price (₹) *</label><input required type="number" min="0" step="0.01" className="input" value={form.price} onChange={set('price')} /></div>
+            <div><label className="label">Sale Price (₹)</label><input type="number" min="0" step="0.01" className="input" value={form.salePrice} onChange={set('salePrice')} /></div>
             <div><label className="label">Stock *</label><input required type="number" min="0" className="input" value={form.stock} onChange={set('stock')} /></div>
           </div>
         )}
@@ -6103,7 +6141,7 @@ function KitFormFields({
             </div>
             <div className="flex items-center justify-between border-t border-saffron-200 pt-3">
               <span className="text-sm font-semibold text-gray-700">Selling Price</span>
-              <input type="number" min="0"
+              <input type="number" min="0" step="0.01"
                 className={`input w-32 text-right font-bold text-lg ${kitPriceOverride ? 'border-saffron-400 bg-yellow-50' : 'bg-green-50 border-green-300'}`}
                 value={kitSellingPrice}
                 onChange={(e) => { setKitSellingPrice(e.target.value); setKitPriceOverride(true); }}
@@ -6374,7 +6412,7 @@ function MarketplaceTab() {
     fd.set('tags', JSON.stringify(form.tags || []));
     fd.append('isActive', String(isActive));
     if (form.variants?.length > 0) {
-      fd.set('variants', JSON.stringify(form.variants));
+      fd.set('variants', JSON.stringify(form.variants.map((v) => ({ ...v, quantity: (v.quantity || '').trim() }))));
     }
     images.forEach((f) => fd.append('images', f));
     return fd;
@@ -6384,6 +6422,16 @@ function MarketplaceTab() {
     if (!form.name.trim()) { toast.error('Please add a product name'); return false; }
     if (!form.category) { toast.error('Please select a category'); return false; }
     if (!form.variants?.length && !form.price) { toast.error('Please add a price'); return false; }
+    if (form.variants?.length) {
+      const values = form.variants.map((v) => (v.quantity || '').trim());
+      if (values.some((v) => !v)) { toast.error('Every variant needs a value (e.g. 500g, 1kg, XL)'); return false; }
+      const seen = new Set();
+      for (const v of values) {
+        const key = v.toLowerCase();
+        if (seen.has(key)) { toast.error(`Duplicate variant value "${v}"`); return false; }
+        seen.add(key);
+      }
+    }
     return true;
   };
 

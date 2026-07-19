@@ -25,13 +25,25 @@ const YOGA_NAMES = [
   'Brahma','Indra','Vaidhriti',
 ];
 
-const KARANA_NAMES = [
-  'Bava','Balava','Kaulava','Taitila','Garaja','Vanija','Vishti',
-  'Shakuni','Chatushpada','Naga','Kimstughna',
-];
+// Karana is NOT a uniform 11-slot repeating cycle. Of the 60 half-tithis in a
+// lunar month, only 7 named karanas (Bava..Vishti) actually repeat (8 times,
+// covering half-tithis 2-57) — the other 4 are "fixed", occurring exactly
+// once each: Kimstughna at half-tithi 1, Shakuni/Chatushpada/Naga at 58-60.
+const KARANA_CYCLE = ['Bava','Balava','Kaulava','Taitila','Garaja','Vanija','Vishti'];
+const KARANA_FIXED = { 1: 'Kimstughna', 58: 'Shakuni', 59: 'Chatushpada', 60: 'Naga' };
 
 // Rahu Kaal start offset (in slots of 1.5h from sunrise), by day of week (0=Sun)
 const RAHU_KAAL_SLOT = [8, 2, 7, 5, 6, 4, 3]; // slot index (1-based)
+
+// Lahiri Ayanamsa (precession correction, degrees) — linear approximation,
+// epoch J2000. Hindu Nakshatra/Yoga are sidereal (nirayana); sunLongitude()/
+// moonLongitude() return tropical (sayana) longitude, so this must be
+// subtracted before deriving Nakshatra/Yoga. Tithi/Karana use the sun-moon
+// elongation, a relative angle the ayanamsa cancels out of — left untouched.
+const lahiriAyanamsa = (jd) => {
+  const yearsSinceJ2000 = (jd - 2451545.0) / 365.25;
+  return 23.853 + 0.013955 * yearsSinceJ2000;
+};
 
 /**
  * Julian Day Number for a given date
@@ -128,14 +140,20 @@ const computePanchang = (date, latDeg = 28.6139, lonDeg = 77.2090) => {
   const tithiIndex = Math.floor(elongation / 12) % 30;
   const tithiName  = tithiIndex < 15 ? `Shukla ${TITHI_NAMES[tithiIndex % 15]}` : `Krishna ${TITHI_NAMES[tithiIndex % 15]}`;
 
+  // Nakshatra & Yoga are sidereal — subtract the ayanamsa before dividing.
+  const ayanamsa    = lahiriAyanamsa(jd);
+  const siderealSun  = ((sunLon  - ayanamsa) % 360 + 360) % 360;
+  const siderealMoon = ((moonLon - ayanamsa) % 360 + 360) % 360;
+
   // Nakshatra — moon moves through 27 nakshatras
-  const nakshatraIndex = Math.floor((moonLon * 27) / 360) % 27;
+  const nakshatraIndex = Math.floor((siderealMoon * 27) / 360) % 27;
 
-  // Yoga — sum of sun+moon longitudes divided into 27 equal parts
-  const yogaIndex = Math.floor(((sunLon + moonLon) * 27 / 360)) % 27;
+  // Yoga — sum of sidereal sun+moon longitudes divided into 27 equal parts
+  const yogaIndex = Math.floor(((siderealSun + siderealMoon) * 27 / 360)) % 27;
 
-  // Karana — half a tithi (6° each)
-  const karanaIndex = Math.floor(elongation / 6) % 11;
+  // Karana — half a tithi (6° each); see KARANA_CYCLE/KARANA_FIXED above
+  const halfTithiIndex = Math.floor(elongation / 6) + 1; // 1..60
+  const karanaName     = KARANA_FIXED[halfTithiIndex] || KARANA_CYCLE[(halfTithiIndex - 2) % 7];
 
   const { sunrise, sunset } = getSunTimes(date, latDeg, lonDeg);
 
@@ -182,7 +200,7 @@ const computePanchang = (date, latDeg = 28.6139, lonDeg = 77.2090) => {
     tithi:      tithiName,
     nakshatra:  NAKSHATRA_NAMES[nakshatraIndex],
     yoga:       YOGA_NAMES[yogaIndex],
-    karana:     KARANA_NAMES[karanaIndex],
+    karana:     karanaName,
     moonPhase:  moonPhaseLabel,
     muhurta:    brahmaMuhurta,
     sunrise:    fmtTime(sunrise),

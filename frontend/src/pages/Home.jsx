@@ -25,17 +25,8 @@ import FinalCta from '../components/home/FinalCta';
 import StickyCta from '../components/home/StickyCta';
 import { useInView } from '../components/home/shared';
 
-// ─── Panchang static data (drives both the Hero cards and the Panchang dashboard) ───
-
-const RAHU_KAAL = [
-  '4:30 PM – 6:00 PM',   // Sun
-  '7:30 AM – 9:00 AM',   // Mon
-  '3:00 PM – 4:30 PM',   // Tue
-  '12:00 PM – 1:30 PM',  // Wed
-  '1:30 PM – 3:00 PM',   // Thu
-  '10:30 AM – 12:00 PM', // Fri
-  '9:00 AM – 10:30 AM',  // Sat
-];
+// ─── Devotional content rotation (unrelated to Panchang astronomical data —
+// actual Panchang values come from computePanchang() via GET /api/panchang) ───
 
 const WEEKLY_MANTRAS = [
   { deity: 'Surya Dev',  mantra: 'ॐ सूर्याय नमः',       en: 'Om Suryaya Namah' },
@@ -73,14 +64,16 @@ export default function Home() {
   const [poojaLoading,   setPoojaLoading]   = useState(true);
   const [festivalLoading,setFestivalLoading]= useState(true);
   const [templeLoading,  setTempleLoading]  = useState(true);
+  const [panchang,       setPanchang]       = useState(null);
+  const [panchangLoading,setPanchangLoading]= useState(true);
 
   const [heroRef, heroInView] = useInView();
 
-  // Computed panchang values
+  // Devotional content rotation (day-of-week) — not Panchang astronomical
+  // data, which is fetched from GET /api/panchang (computePanchang()) below.
   const today      = new Date();
   const dayOfWeek  = today.getDay();
   const mantra     = WEEKLY_MANTRAS[dayOfWeek];
-  const rahuKaal   = RAHU_KAAL[dayOfWeek];
   const quote      = SPIRITUAL_QUOTES[today.getDate() % SPIRITUAL_QUOTES.length];
   const dayNames   = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -115,6 +108,13 @@ export default function Home() {
     API.get('/marketplace/products?featured=true&limit=8')
       .then(({ data }) => setProducts(data.products || []))
       .catch(() => setProducts([]));
+
+    // Single Panchang fetch for today — computePanchang() is the only source
+    // of Sunrise/Sunset/Rahu Kaal/Muhurat; reused as-is, never recomputed here.
+    API.get('/panchang')
+      .then(({ data }) => setPanchang(data.panchang || null))
+      .catch(() => setPanchang(null))
+      .finally(() => setPanchangLoading(false));
   }, []);
 
   const handleAiSubmit = (q) => {
@@ -254,7 +254,7 @@ export default function Home() {
 
       <StatsBanner />
 
-      <PanchangDashboard mantra={mantra} rahuKaal={rahuKaal} quote={quote} dateStr={dateStr} />
+      <PanchangDashboard mantra={mantra} quote={quote} dateStr={dateStr} panchang={panchang} loading={panchangLoading} />
 
       <PujaCategoryGrid categories={categories} loading={catLoading} />
 

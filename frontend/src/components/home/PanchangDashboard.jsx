@@ -3,14 +3,17 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { EyebrowTag, useInView } from './shared';
 
-export default function PanchangDashboard({ mantra, rahuKaal, quote, dateStr }) {
+export default function PanchangDashboard({ mantra, quote, dateStr, panchang, loading }) {
   const [panchangRef, panchangInView] = useInView();
 
+  const val = (v) => (loading ? 'Loading…' : (v || 'Data Not Available'));
+  const rahuKaalStr = panchang?.rahuKaal ? `${panchang.rahuKaal.start} – ${panchang.rahuKaal.end}` : null;
+
   const cards = [
-    { icon: '🌅', title: 'Sunrise', value: '6:02 AM', sub: 'Brahma Muhurta: 4:26 AM', gFrom: 'from-yellow-50', gTo: 'to-orange-50', border: 'border-yellow-100', textColor: 'text-orange-600' },
-    { icon: '🌇', title: 'Sunset', value: '7:18 PM', sub: 'Golden hour: 6:30 PM', gFrom: 'from-rose-50', gTo: 'to-orange-50', border: 'border-rose-100', textColor: 'text-rose-600' },
-    { icon: '⚠️', title: 'Rahu Kaal', value: rahuKaal, sub: 'Avoid this period', gFrom: 'from-red-50', gTo: 'to-rose-50', border: 'border-red-100', textColor: 'text-red-600' },
-    { icon: '✨', title: 'Abhijit Muhurat', value: '11:36 – 12:24', sub: 'Most auspicious time', gFrom: 'from-emerald-50', gTo: 'to-green-50', border: 'border-emerald-100', textColor: 'text-emerald-600' },
+    { icon: '🌅', title: 'Sunrise', value: val(panchang?.sunrise), sub: 'Day begins', gFrom: 'from-yellow-50', gTo: 'to-orange-50', border: 'border-yellow-100', textColor: 'text-orange-600' },
+    { icon: '🌇', title: 'Sunset', value: val(panchang?.sunset), sub: 'Day ends', gFrom: 'from-rose-50', gTo: 'to-orange-50', border: 'border-rose-100', textColor: 'text-rose-600' },
+    { icon: '⚠️', title: 'Rahu Kaal', value: val(rahuKaalStr), sub: 'Avoid this period', gFrom: 'from-red-50', gTo: 'to-rose-50', border: 'border-red-100', textColor: 'text-red-600' },
+    { icon: '✨', title: 'Brahma Muhurta', value: val(panchang?.muhurta), sub: 'Most auspicious time', gFrom: 'from-emerald-50', gTo: 'to-green-50', border: 'border-emerald-100', textColor: 'text-emerald-600' },
     { icon: '📿', title: "Today's Deity", value: mantra.deity, sub: 'Day of devotion', gFrom: 'from-violet-50', gTo: 'to-purple-50', border: 'border-violet-100', textColor: 'text-violet-600' },
     { icon: '🕉️', title: "Today's Mantra", value: mantra.mantra, sub: mantra.en, isMantra: true, gFrom: 'from-saffron-50', gTo: 'to-amber-50', border: 'border-saffron-100', textColor: 'text-saffron-700' },
     { icon: '💬', title: "Today's Wisdom", value: quote.text, sub: `— ${quote.src}`, isQuote: true, gFrom: 'from-sky-50', gTo: 'to-blue-50', border: 'border-sky-100', textColor: 'text-sky-600' },
