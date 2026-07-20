@@ -9,6 +9,7 @@ const path         = require('path');
 const { urls }     = require('../config');
 const { isAdminRole } = require('../utils/roleUtils');
 const { sanitizeHtml: sanitizeHTML } = require('../utils/sanitizeHtml');
+const translationService = require('../services/translationService');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -83,7 +84,13 @@ exports.getBlogs = async (req, res, next) => {
     ]);
 
     const userId = req.user?._id;
-    const enriched = await enrichWithUserInteractions(blogs, userId);
+    let enriched = await enrichWithUserInteractions(blogs, userId);
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    if (lang !== 'en' && enriched.length) {
+      const map = await translationService.getTranslationsForDocs('blog', enriched, lang);
+      enriched = enriched.map((b) => (map[String(b._id)] ? { ...b, ...map[String(b._id)], translationLanguage: lang } : b));
+    }
 
     res.json({ success: true, blogs: enriched, total, page: +page, pages: Math.ceil(total / +limit) });
   } catch (err) { next(err); }
@@ -130,6 +137,8 @@ exports.getBlogBySlug = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Blog not found' });
     }
 
+    const lang = (req.query.lang || 'en').toLowerCase();
+
     let related = [];
     if (isPublished) {
       // Increment view count (fire-and-forget) — only for genuinely public
@@ -145,6 +154,11 @@ exports.getBlogBySlug = async (req, res, next) => {
         .sort({ publishedAt: -1 })
         .limit(4)
         .lean();
+
+      if (lang !== 'en' && related.length) {
+        const map = await translationService.getTranslationsForDocs('blog', related, lang);
+        related = related.map((b) => (map[String(b._id)] ? { ...b, ...map[String(b._id)], translationLanguage: lang } : b));
+      }
     }
 
     let isLiked = false, isBookmarked = false;
@@ -157,7 +171,24 @@ exports.getBlogBySlug = async (req, res, next) => {
       isBookmarked = !!bookmark;
     }
 
-    res.json({ success: true, blog: { ...blog, isLiked, isBookmarked }, related });
+    // Translated content only applies to published posts an anonymous
+    // reader would actually see — never translate an owner/admin's draft
+    // preview. Falls back to English internally on any failure, never throws.
+    let translated = null;
+    if (lang !== 'en' && isPublished) {
+      try {
+        const result = await translationService.getTranslation('blog', blog._id, lang);
+        translated = result.fields;
+      } catch (err) {
+        console.error(`[Blog] translation lookup failed for ${blog._id}/${lang}:`, err.message);
+      }
+    }
+
+    const responseBlog = translated
+      ? { ...blog, ...translated, isLiked, isBookmarked, translationLanguage: lang }
+      : { ...blog, isLiked, isBookmarked };
+
+    res.json({ success: true, blog: responseBlog, related });
   } catch (err) { next(err); }
 };
 
@@ -275,6 +306,16 @@ exports.updateBlog = async (req, res, next) => {
       updates.status      = 'published';
       updates.publishedAt = blog.publishedAt || new Date();
     }
+
+    // Bump the translation version only when a translatable field actually
+    // changed, so cached translations (see translationService.js) know to
+    // regenerate — status-only edits (publish/withdraw) must not invalidate them.
+    const { fields: translatableFields } = require('../config/translatable.config').blog;
+    const translatableChanged = Object.keys(translatableFields).some((key) => {
+      if (key === 'tags') return JSON.stringify(updates.tags) !== JSON.stringify(blog.tags);
+      return updates[key] !== undefined && updates[key] !== blog[key];
+    });
+    if (translatableChanged) updates.translationVersion = (blog.translationVersion || 1) + 1;
 
     Object.assign(blog, updates);
     await blog.save();

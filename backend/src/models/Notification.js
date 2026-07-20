@@ -7,6 +7,12 @@ const notificationSchema = new mongoose.Schema({
   message: { type: String, required: true },
   data:    { type: mongoose.Schema.Types.Mixed, default: {} },
   isRead:  { type: Boolean, default: false, index: true },
+
+  // Notifications are immutable once created, so this never needs bumping —
+  // present only so the shared translation-cache contract (translationService.js)
+  // applies uniformly. Used for the free-text fallback path (no NotificationMapping
+  // template exists for this notification's `type`).
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 // Compound index for efficient unread queries per user

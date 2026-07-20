@@ -2,25 +2,28 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingCart, X, Search, Flame, ChevronDown, ArrowRight, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import API from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useLanguage } from '../context/LanguageContext';
 import LoginModal from '../components/shared/LoginModal';
 import { getImageUrl } from '../config';
 
-const ALL_TAB = { slug: 'all', name: 'All', icon: '✨' };
+const ALL_TAB = { slug: 'all', name: 'All', i18nKey: 'marketplace.all', icon: '✨' };
 
 const SORT_OPTIONS = [
-  { value: '', label: 'Featured' },
-  { value: 'price_asc', label: 'Price: Low to High' },
-  { value: 'price_desc', label: 'Price: High to Low' },
-  { value: 'name_asc', label: 'Name: A–Z' },
+  { value: '', i18nKey: 'marketplace.sortFeatured', label: 'Featured' },
+  { value: 'price_asc', i18nKey: 'marketplace.sortPriceLowHigh', label: 'Price: Low to High' },
+  { value: 'price_desc', i18nKey: 'marketplace.sortPriceHighLow', label: 'Price: High to Low' },
+  { value: 'name_asc', i18nKey: 'marketplace.sortNameAZ', label: 'Name: A–Z' },
 ];
 
 // Cart key must match CartContext format: `${productId}::${variantId || ''}`
 const makeCKey = (productId, variantId) => `${productId}::${variantId || ''}`;
 
 export default function Marketplace() {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
   const { addProduct, productItems, updateProductQty, removeItem, cartCount } = useCart();
   const navigate = useNavigate();
@@ -39,14 +42,18 @@ export default function Marketplace() {
   const [selectedVariants, setSelectedVariants] = useState({});
   const [openVariant,      setOpenVariant]      = useState(null);
   const variantRef = useRef(null);
+  const { lang } = useLanguage();
 
   useEffect(() => {
+    let cancelled = false;
     API.get('/marketplace/categories')
-      .then(({ data }) => setCategories(data.categories || []))
+      .then(({ data }) => { if (!cancelled) setCategories(data.categories || []); })
       .catch(() => {});
-  }, []);
+    return () => { cancelled = true; };
+  }, [lang]);
 
   useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams();
     if (category !== 'all') params.set('category', category);
     if (search)             params.set('search', search);
@@ -54,10 +61,11 @@ export default function Marketplace() {
     setError(null);
     setLoading(true);
     API.get(`/marketplace/products?${params}`)
-      .then(({ data }) => setProducts(data.products ?? []))
-      .catch((err)     => setError(err.message))
-      .finally(()      => setLoading(false));
-  }, [category, search, sort]);
+      .then(({ data }) => { if (!cancelled) setProducts(data.products ?? []); })
+      .catch((err)     => { if (!cancelled) setError(err.message); })
+      .finally(()      => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [category, search, sort, lang]);
 
   // Initialize selected variants when products load
   useEffect(() => {
@@ -115,7 +123,7 @@ export default function Marketplace() {
           <button onClick={() => updateProductQty(cartItem.id, qty - 1)} className="px-2.5 py-1.5 text-white hover:opacity-80 font-bold text-base leading-none">−</button>
           <span className="text-white text-xs font-bold min-w-[20px] text-center font-sans">{qty}</span>
           <button onClick={() => {
-            if (currentStock && qty >= currentStock) { toast.error(`Only ${currentStock} in stock`); return; }
+            if (currentStock && qty >= currentStock) { toast.error(t('marketplace.onlyInStock', 'Only {{n}} in stock', { n: currentStock })); return; }
             updateProductQty(cartItem.id, qty + 1);
           }} className="px-2.5 py-1.5 text-white hover:opacity-80 font-bold text-base leading-none">+</button>
         </div>
@@ -124,7 +132,7 @@ export default function Marketplace() {
           className={`text-xs px-3.5 py-2 rounded-xl font-semibold transition-all duration-200 shrink-0 font-sans ${
             isOOS ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-saffron-50 text-saffron-700 border border-saffron-200 hover:bg-saffron-500 hover:text-white hover:border-saffron-500'
           }`}>
-          {isOOS ? 'Sold Out' : 'Add'}
+          {isOOS ? t('marketplace.soldOut', 'Sold Out') : t('marketplace.add', 'Add')}
         </button>
       )
     );
@@ -151,7 +159,7 @@ export default function Marketplace() {
           )}
           {isOOS && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <span className="bg-white text-gray-700 text-xs font-bold px-3 py-1.5 rounded-full font-sans">Out of Stock</span>
+              <span className="bg-white text-gray-700 text-xs font-bold px-3 py-1.5 rounded-full font-sans">{t('marketplace.outOfStock', 'Out of Stock')}</span>
             </div>
           )}
         </div>
@@ -223,18 +231,18 @@ export default function Marketplace() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 relative">
           <div className="flex items-center justify-between gap-6 flex-wrap">
             <div>
-              <p className="section-eyebrow">Sacred Marketplace</p>
+              <p className="section-eyebrow">{t('marketplace.eyebrow', 'Sacred Marketplace')}</p>
               <h1 style={{ fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', letterSpacing: '-0.025em', color: 'var(--t-text)', fontFamily: "'Cormorant Garamond', serif", fontWeight: 700 }}>
-                Spiritual Products
+                {t('marketplace.title', 'Spiritual Products')}
               </h1>
-              <p className="text-sm mt-1.5" style={{ color: 'var(--t-muted)' }}>Authentic samagri, rudraksha &amp; sacred items</p>
+              <p className="text-sm mt-1.5" style={{ color: 'var(--t-muted)' }}>{t('marketplace.subtitle', 'Authentic samagri, rudraksha & sacred items')}</p>
             </div>
 
             <button onClick={() => navigate('/cart')}
               className="relative flex items-center gap-2.5 font-semibold px-5 py-3 rounded-2xl transition-all duration-200 border"
               style={{ background: 'var(--t-card)', borderColor: 'var(--t-border)', color: 'var(--t-text)' }}>
               <ShoppingCart size={18} style={{ color: 'var(--t-primary)' }} />
-              <span>Cart</span>
+              <span>{t('marketplace.cart', 'Cart')}</span>
               {cartCount > 0 && (
                 <span className="absolute -top-2 -right-2 w-5 h-5 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-sm" style={{ background: 'var(--t-primary)' }}>
                   {cartCount}
@@ -247,7 +255,7 @@ export default function Marketplace() {
           <div className="mt-7 flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1 max-w-sm">
               <Search size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <input className="input pl-11 py-2.5 text-sm font-sans" placeholder="Search products..."
+              <input className="input pl-11 py-2.5 text-sm font-sans" placeholder={t('marketplace.searchPlaceholder', 'Search products...')}
                 value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <select
@@ -255,7 +263,7 @@ export default function Marketplace() {
               className="input py-2.5 text-sm font-sans sm:w-48 shrink-0"
               style={{ background: 'var(--t-card)', color: 'var(--t-text)', borderColor: 'var(--t-border)' }}
             >
-              {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{t(o.i18nKey, o.label)}</option>)}
             </select>
           </div>
 
@@ -271,7 +279,7 @@ export default function Marketplace() {
                   boxShadow:    category === c.slug ? '0 2px 8px rgba(27,31,59,0.2)' : 'none',
                 }}>
                 <span className="text-xl leading-none">{c.icon}</span>
-                <span className="text-[10px] font-semibold font-sans leading-tight text-center whitespace-nowrap">{c.name}</span>
+                <span className="text-[10px] font-semibold font-sans leading-tight text-center whitespace-nowrap">{c.i18nKey ? t(c.i18nKey, c.name) : c.name}</span>
               </button>
             ))}
           </div>
@@ -289,11 +297,11 @@ export default function Marketplace() {
                 <ShoppingCart size={16} style={{ color: 'var(--t-primary)' }} />
               </div>
               <p className="text-sm font-medium" style={{ color: 'var(--t-text)' }}>
-                Login to add items to your cart and place orders
+                {t('marketplace.loginToAddCart', 'Login to add items to your cart and place orders')}
               </p>
             </div>
-            <button onClick={() => requireAuth('Login to start shopping.')} className="btn-primary text-sm py-2 px-5 shrink-0">
-              Login to Shop <ArrowRight size={14} />
+            <button onClick={() => requireAuth(t('marketplace.loginToShop', 'Login to start shopping.'))} className="btn-primary text-sm py-2 px-5 shrink-0">
+              {t('marketplace.loginToShopBtn', 'Login to Shop')} <ArrowRight size={14} />
             </button>
           </div>
         )}
@@ -307,7 +315,7 @@ export default function Marketplace() {
             <div className="w-20 h-20 bg-gray-100 rounded-3xl flex items-center justify-center mx-auto mb-5">
               <Package size={36} className="text-gray-300" />
             </div>
-            <p className="font-display text-xl font-bold text-gray-700 mb-1">Unable to Load Products</p>
+            <p className="font-display text-xl font-bold text-gray-700 mb-1">{t('marketplace.unableToLoad', 'Unable to Load Products')}</p>
             <p className="text-sm text-gray-400 font-sans">{error}</p>
           </div>
         ) : products.length === 0 ? (
@@ -315,10 +323,10 @@ export default function Marketplace() {
             <div className="w-20 h-20 bg-saffron-50 rounded-3xl flex items-center justify-center mx-auto mb-5">
               <Package size={36} className="text-saffron-300" />
             </div>
-            <p className="font-display text-xl font-bold text-gray-700 mb-1">No Products Found</p>
-            <p className="text-sm text-gray-400 font-sans mt-1">Try a different category or search term</p>
+            <p className="font-display text-xl font-bold text-gray-700 mb-1">{t('marketplace.noProductsFound', 'No Products Found')}</p>
+            <p className="text-sm text-gray-400 font-sans mt-1">{t('marketplace.tryDifferentFilter', 'Try a different category or search term')}</p>
             <button onClick={() => { setCategory('all'); setSearch(''); }} className="btn-outline text-sm mt-5 font-sans">
-              Clear Filters
+              {t('marketplace.clearFilters', 'Clear Filters')}
             </button>
           </div>
         ) : category === 'all' ? (

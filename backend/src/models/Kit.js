@@ -22,6 +22,10 @@ const kitSchema = new mongoose.Schema({
   isFeatured:    { type: Boolean, default: false },
   // Poojas this kit is recommended for (admin-managed mapping)
   linkedPoojas:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'Pooja' }],
+
+  // Bumped only when a translatable field actually changes (see updateKit) —
+  // cached translations compare against this to detect staleness.
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true, toJSON: { virtuals: true } });
 
 module.exports = mongoose.model('Kit', kitSchema);

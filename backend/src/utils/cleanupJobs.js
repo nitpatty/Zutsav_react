@@ -263,6 +263,36 @@ const startBookingReminderJobs = () => {
   console.log('[Reminders] Booking reminder jobs started (24h/30min, 1h/10min, feedback+invoice/1h)');
 };
 
+// ── Translation Lock Sweep ────────────────────────────────────
+
+/**
+ * Recovers translation-cache locks left stuck in 'pending' by a process
+ * crash mid-Groq-call (see services/translationService.js). 2 minutes is
+ * comfortably above Groq's own 30s translation timeout, so this only fires
+ * on genuine crashes, not normal slow responses. The next read request for
+ * that entity/language sees 'failed' and retries — no separate retry queue.
+ */
+const sweepStaleTranslationLocks = async () => {
+  try {
+    const Translation = require('../models/Translation');
+    const staleBefore = new Date(Date.now() - 2 * MS_PER_MINUTE);
+    const result = await Translation.updateMany(
+      { status: 'pending', lockedAt: { $lt: staleBefore } },
+      { $set: { status: 'failed', lastError: 'stale lock recovered by sweep' } }
+    );
+    if (result.modifiedCount) {
+      console.log(`[Translation] Sweep recovered ${result.modifiedCount} stale lock(s)`);
+    }
+  } catch (err) {
+    console.error('[Translation] Lock sweep error:', err.message);
+  }
+};
+
+const startTranslationLockSweep = () => {
+  setInterval(sweepStaleTranslationLocks, 2 * MS_PER_MINUTE);
+  console.log('[Translation] Stale lock sweep job started (runs every 2 min)');
+};
+
 module.exports = {
   startDeletionCleanupJob,
   performDeletionCleanup,
@@ -271,4 +301,6 @@ module.exports = {
   run1hReminder,
   runFeedbackReminder,
   runInvoiceJob,
+  startTranslationLockSweep,
+  sweepStaleTranslationLocks,
 };

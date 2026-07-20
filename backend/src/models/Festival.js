@@ -17,6 +17,10 @@ const festivalSchema = new mongoose.Schema({
   // what data this entry actually contains (auto-set on import)
   dataType:    { type: String, enum: ['festival', 'tithi', 'panchang', 'vrat', 'mixed'], default: 'festival' },
   relatedPoojas: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Pooja' }],
+
+  // Bumped only when a translatable field actually changes (see updateFestival) —
+  // cached translations compare against this to detect staleness.
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 festivalSchema.index({ date: 1 });

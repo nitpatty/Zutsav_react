@@ -138,7 +138,43 @@ If the message doesn't clearly match any key, respond "unclear".`;
   }
 };
 
+const LANGUAGE_NAMES = {
+  hi: 'Hindi', mr: 'Marathi', gu: 'Gujarati', ta: 'Tamil', te: 'Telugu',
+  kn: 'Kannada', ml: 'Malayalam', pa: 'Punjabi', bn: 'Bengali', or: 'Odia',
+};
+
+/**
+ * Translate a single block of text into the target language, for the
+ * content-translation cache (services/translationService.js) — a separate
+ * concern from the chat assistant above. Any `<<<T{n}>>>` delimiter markers
+ * used by the caller to batch multiple text runs into one call are preserved
+ * character-for-character so the caller can split the response back apart.
+ * @param {string} text
+ * @param {string} targetLanguage - ISO 639-1 code, e.g. 'hi'
+ * @param {{ maxTokens?: number }} [opts]
+ * @returns {Promise<string>}
+ */
+const translateText = async (text, targetLanguage, { maxTokens = 1024 } = {}) => {
+  const languageName = LANGUAGE_NAMES[targetLanguage] || targetLanguage;
+  // Only mention the marker convention when the input actually contains one —
+  // describing it unconditionally caused the model to hallucinate <<<T0>>>
+  // tokens into plain single-field translations (title/excerpt/seoTitle/...)
+  // that never had any markers to begin with.
+  const hasMarkers = /<<<T\d+>>>/.test(text);
+  const markerInstruction = hasMarkers
+    ? ' The text contains marker tokens that look like <<<T0>>>, <<<T1>>>, etc. — copy each one character-for-character in the same relative position; never translate, alter, or invent them.'
+    : '';
+  const messages = [
+    {
+      role: 'system',
+      content: `You are a professional translator. Translate the user's text into ${languageName}. Preserve the exact meaning, tone, and formatting.${markerInstruction} Output ONLY the translated text, with no preamble, quotes, or explanation.`,
+    },
+    { role: 'user', content: text },
+  ];
+  return _callGroq(messages, { temperature: 0.3, max_tokens: maxTokens, timeout: 30000 });
+};
+
 // Alias kept so existing code that imported the old name still compiles
 const getGeminiResponse = getGroqResponse;
 
-module.exports = { getGroqResponse, getGeminiResponse, classifyIntent };
+module.exports = { getGroqResponse, getGeminiResponse, classifyIntent, translateText };

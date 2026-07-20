@@ -1,6 +1,7 @@
 const Festival = require('../models/Festival');
 const SyncLog  = require('../models/SyncLog');
 const axios    = require('axios');
+const translationService = require('../services/translationService');
 
 const MONTH_NAMES = [
   'january','february','march','april','may','june',
@@ -84,7 +85,14 @@ exports.getFestivals = async (req, res, next) => {
       q = q.limit(parseInt(limit));
     }
 
-    const festivals = await q;
+    let festivals = await q.lean();
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    if (lang !== 'en' && festivals.length) {
+      const map = await translationService.getTranslationsForDocs('festival', festivals, lang);
+      festivals = festivals.map((f) => (map[String(f._id)] ? { ...f, ...map[String(f._id)], translationLanguage: lang } : f));
+    }
+
     res.json({ success: true, festivals, total: total !== null ? total : festivals.length });
   } catch (err) {
     next(err);
@@ -108,6 +116,16 @@ exports.updateFestival = async (req, res, next) => {
   try {
     const updates = req.body;
     if (req.file) updates.image = `uploads/profiles/${req.file.filename}`;
+
+    // Bump the translation version only when a translatable field actually
+    // changed (see translationService.js).
+    const before = await Festival.findById(req.params.id).select('name description panchang translationVersion').lean();
+    if (before) {
+      const { fields: translatableFields } = require('../config/translatable.config').festival;
+      const translatableChanged = Object.keys(translatableFields).some((key) => updates[key] !== undefined && updates[key] !== before[key]);
+      if (translatableChanged) updates.translationVersion = (before.translationVersion || 1) + 1;
+    }
+
     const festival = await Festival.findByIdAndUpdate(req.params.id, updates, { new: true });
     res.json({ success: true, festival });
   } catch (err) {

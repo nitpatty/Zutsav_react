@@ -3,47 +3,48 @@ import {
   Sparkles, MessageSquare, Calendar, Star,
   Zap, ArrowRight, BookOpen, Clock,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const CAPABILITIES = [
   {
     icon: MessageSquare,
-    title: 'Pooja Guidance',
-    desc: 'Personalised pooja recommendations based on your needs, occasion, or planetary situation.',
+    i18nTitle: 'ai.cap1Title', title: 'Pooja Guidance',
+    i18nDesc: 'ai.cap1Desc', desc: 'Personalised pooja recommendations based on your needs, occasion, or planetary situation.',
   },
   {
     icon: Calendar,
-    title: 'Auspicious Timings',
-    desc: 'Find the best muhurat for ceremonies, travel, business launches, and life events.',
+    i18nTitle: 'ai.cap2Title', title: 'Auspicious Timings',
+    i18nDesc: 'ai.cap2Desc', desc: 'Find the best muhurat for ceremonies, travel, business launches, and life events.',
   },
   {
     icon: Star,
-    title: 'Festival Insights',
-    desc: 'Learn about upcoming festivals, their significance, rituals, and how to observe them.',
+    i18nTitle: 'ai.cap3Title', title: 'Festival Insights',
+    i18nDesc: 'ai.cap3Desc', desc: 'Learn about upcoming festivals, their significance, rituals, and how to observe them.',
   },
   {
     icon: Zap,
-    title: 'Instant Answers',
-    desc: 'Ask anything about Hindu traditions, mantras, graha doshas, and spiritual practices.',
+    i18nTitle: 'ai.cap4Title', title: 'Instant Answers',
+    i18nDesc: 'ai.cap4Desc', desc: 'Ask anything about Hindu traditions, mantras, graha doshas, and spiritual practices.',
   },
   {
     icon: BookOpen,
-    title: 'Mantra & Scripture',
-    desc: 'Understand the meaning and benefits of mantras, shlokas, and sacred texts.',
+    i18nTitle: 'ai.cap5Title', title: 'Mantra & Scripture',
+    i18nDesc: 'ai.cap5Desc', desc: 'Understand the meaning and benefits of mantras, shlokas, and sacred texts.',
   },
   {
     icon: Clock,
-    title: 'Daily Panchang',
-    desc: "Get today's tithi, nakshatra, yoga, karan, and rahukalam at a glance.",
+    i18nTitle: 'ai.cap6Title', title: 'Daily Panchang',
+    i18nDesc: 'ai.cap6Desc', desc: "Get today's tithi, nakshatra, yoga, karan, and rahukalam at a glance.",
   },
 ];
 
 const EXAMPLE_PROMPTS = [
-  'Which pooja should I do for career growth?',
-  'What is the significance of Ekadashi?',
-  'Tell me about Rudrabhishek and its benefits',
-  'Best muhurat for Griha Pravesh this month',
-  'What is Kaal Sarp Dosh and how to remedy it?',
-  'Explain the 16 Samskaras in Hinduism',
+  { i18nKey: 'ai.prompt1', text: 'Which pooja should I do for career growth?' },
+  { i18nKey: 'ai.prompt2', text: 'What is the significance of Ekadashi?' },
+  { i18nKey: 'ai.prompt3', text: 'Tell me about Rudrabhishek and its benefits' },
+  { i18nKey: 'ai.prompt4', text: 'Best muhurat for Griha Pravesh this month' },
+  { i18nKey: 'ai.prompt5', text: 'What is Kaal Sarp Dosh and how to remedy it?' },
+  { i18nKey: 'ai.prompt6', text: 'Explain the 16 Samskaras in Hinduism' },
 ];
 
 /* Open the global floating widget from any page */
@@ -51,6 +52,7 @@ const openWidget = () =>
   window.dispatchEvent(new CustomEvent('zutsav:openZutsavAI'));
 
 export default function AIAssistant() {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen" style={{ background: 'var(--t-bg)' }}>
 
@@ -88,7 +90,7 @@ export default function AIAssistant() {
               className="text-2xl md:text-3xl font-bold text-white"
               style={{ fontFamily: "'Cormorant Garamond', serif", letterSpacing: '-0.01em' }}
             >
-              Zutsav AI
+              {t('ai.title', 'Zutsav AI')}
             </h1>
             <span
               className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest select-none"
@@ -98,15 +100,15 @@ export default function AIAssistant() {
                 border: '1px solid rgba(212,175,55,0.32)',
               }}
             >
-              Beta
+              {t('ai.beta', 'Beta')}
             </span>
           </div>
 
           <p className="text-sm mb-2" style={{ color: 'rgba(255,255,255,0.55)' }}>
-            Your AI spiritual companion — available everywhere on Zutsav
+            {t('ai.tagline', 'Your AI spiritual companion — available everywhere on Zutsav')}
           </p>
           <p className="text-xs mb-8" style={{ color: 'rgba(255,255,255,0.3)' }}>
-            Powered by Groq AI · Hindu spiritual guidance
+            {t('ai.poweredBy', 'Powered by Groq AI · Hindu spiritual guidance')}
           </p>
 
           <button
@@ -119,7 +121,7 @@ export default function AIAssistant() {
             }}
           >
             <Sparkles size={15} />
-            Start Chatting
+            {t('ai.startChatting', 'Start Chatting')}
             <ArrowRight size={14} />
           </button>
         </div>
@@ -136,10 +138,10 @@ export default function AIAssistant() {
               fontFamily: "'Cormorant Garamond', serif",
             }}
           >
-            What Zutsav AI can help you with
+            {t('ai.capabilitiesTitle', 'What Zutsav AI can help you with')}
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {CAPABILITIES.map(({ icon: Icon, title, desc }) => (
+            {CAPABILITIES.map(({ icon: Icon, title, desc, i18nTitle, i18nDesc }) => (
               <button
                 key={title}
                 onClick={openWidget}
@@ -162,13 +164,13 @@ export default function AIAssistant() {
                   className="font-semibold text-sm mb-1"
                   style={{ color: 'var(--t-text)' }}
                 >
-                  {title}
+                  {t(i18nTitle, title)}
                 </h3>
                 <p
                   className="text-xs leading-relaxed"
                   style={{ color: 'var(--t-muted)' }}
                 >
-                  {desc}
+                  {t(i18nDesc, desc)}
                 </p>
               </button>
             ))}
@@ -181,12 +183,12 @@ export default function AIAssistant() {
             className="text-sm font-semibold mb-3"
             style={{ color: 'var(--t-muted)' }}
           >
-            Try asking…
+            {t('ai.tryAsking', 'Try asking…')}
           </h2>
           <div className="space-y-2">
-            {EXAMPLE_PROMPTS.map((p) => (
+            {EXAMPLE_PROMPTS.map(({ i18nKey, text }) => (
               <button
-                key={p}
+                key={i18nKey}
                 onClick={openWidget}
                 className="w-full text-left px-4 py-3 rounded-xl text-sm flex items-center justify-between gap-3 transition-all hover:shadow-sm active:scale-[0.99] group"
                 style={{
@@ -195,7 +197,7 @@ export default function AIAssistant() {
                   color: 'var(--t-text)',
                 }}
               >
-                <span>{p}</span>
+                <span>{t(i18nKey, text)}</span>
                 <ArrowRight
                   size={14}
                   className="shrink-0 transition-transform group-hover:translate-x-1"
@@ -219,21 +221,20 @@ export default function AIAssistant() {
             className="text-xs leading-relaxed mb-3"
             style={{ color: 'var(--t-muted)' }}
           >
-            🪔 Zutsav AI is available on <strong>every page</strong> via the floating{' '}
+            🪔 {t('ai.widgetTipPrefix', 'Zutsav AI is available on')} <strong>{t('ai.everyPage', 'every page')}</strong> {t('ai.widgetTipMiddle', 'via the floating')}{' '}
             <Sparkles
               size={11}
               className="inline"
               style={{ color: '#D4AF37', verticalAlign: 'middle' }}
             />{' '}
-            button in the bottom-right corner — so you can ask a question without
-            leaving what you're doing.
+            {t('ai.widgetTipSuffix', "button in the bottom-right corner — so you can ask a question without leaving what you're doing.")}
           </p>
           <button
             onClick={openWidget}
             className="inline-flex items-center gap-2 text-sm font-semibold transition-all hover:gap-3"
             style={{ color: '#1B1F3B' }}
           >
-            Open Chat Now
+            {t('ai.openChatNow', 'Open Chat Now')}
             <ArrowRight size={14} />
           </button>
         </div>

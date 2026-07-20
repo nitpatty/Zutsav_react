@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import './components/editor/richTextContent.css';
+import './i18n';
 import App from './App';
 
 ReactDOM.createRoot(document.getElementById('root')).render(

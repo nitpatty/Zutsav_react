@@ -1,6 +1,14 @@
 const axios  = require('axios');
 const Temple = require('../models/Temple');
 const { audit } = require('../services/auditService');
+const translationService = require('../services/translationService');
+
+async function withTempleTranslations(temples, langParam) {
+  const lang = (langParam || 'en').toLowerCase();
+  if (lang === 'en' || !temples.length) return temples;
+  const map = await translationService.getTranslationsForDocs('temple', temples, lang);
+  return temples.map((t) => (map[String(t._id)] ? { ...t, ...map[String(t._id)], translationLanguage: lang } : t));
+}
 
 const STATUS_VALUES = ['draft', 'published', 'hidden', 'archived'];
 
@@ -25,21 +33,26 @@ exports.getTemples = async (req, res, next) => {
     if (search) query.name   = new RegExp(search, 'i');
 
     if (homepageFeatured === 'true') {
-      const curated = await Temple.find({ ...query, isFeatured: true, homepageRank: { $ne: null } })
+      let curated = await Temple.find({ ...query, isFeatured: true, homepageRank: { $ne: null } })
         .sort({ homepageRank: 1 })
-        .limit(+limit);
+        .limit(+limit)
+        .lean();
       if (curated.length > 0) {
+        curated = await withTempleTranslations(curated, req.query.lang);
         return res.json({ success: true, temples: curated, total: curated.length, page: 1 });
       }
       // No curated set — fall back to latest temples
-      const latest = await Temple.find(query).sort({ createdAt: -1 }).limit(+limit);
+      let latest = await Temple.find(query).sort({ createdAt: -1 }).limit(+limit).lean();
+      latest = await withTempleTranslations(latest, req.query.lang);
       return res.json({ success: true, temples: latest, total: latest.length, page: 1 });
     }
 
-    const temples = await Temple.find(query)
+    let temples = await Temple.find(query)
       .sort({ name: 1 })
       .limit(+limit)
-      .skip((+page - 1) * +limit);
+      .skip((+page - 1) * +limit)
+      .lean();
+    temples = await withTempleTranslations(temples, req.query.lang);
 
     const total = await Temple.countDocuments(query);
     res.json({ success: true, temples, total, page: +page });
@@ -120,9 +133,21 @@ exports.setHomepageFeatured = async (req, res, next) => {
 // GET /api/temples/:id  — public
 exports.getTemple = async (req, res, next) => {
   try {
-    const temple = await Temple.findOne({ _id: req.params.id, isActive: true, isDeleted: { $ne: true } });
+    const temple = await Temple.findOne({ _id: req.params.id, isActive: true, isDeleted: { $ne: true } }).lean();
     if (!temple) return res.status(404).json({ success: false, message: 'Temple not found' });
-    res.json({ success: true, temple });
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    let responseTemple = temple;
+    if (lang !== 'en') {
+      try {
+        const { fields } = await translationService.getTranslation('temple', temple._id, lang);
+        responseTemple = { ...temple, ...fields, translationLanguage: lang };
+      } catch (err) {
+        console.error(`[Temple] translation lookup failed for ${temple._id}/${lang}:`, err.message);
+      }
+    }
+
+    res.json({ success: true, temple: responseTemple });
   } catch (err) {
     next(err);
   }
@@ -205,6 +230,13 @@ exports.updateTemple = async (req, res, next) => {
       if (coords.latitude) { updates.latitude = coords.latitude; updates.longitude = coords.longitude; }
     }
 
+    // Bump the translation version only when a translatable field actually
+    // changed (see translationService.js) — status/image/geocode-only edits
+    // must not invalidate cached translations.
+    const { fields: translatableFields } = require('../config/translatable.config').temple;
+    const translatableChanged = Object.keys(translatableFields).some((key) => updates[key] !== undefined && updates[key] !== before[key]);
+    if (translatableChanged) updates.translationVersion = (before.translationVersion || 1) + 1;
+
     const temple = await Temple.findByIdAndUpdate(req.params.id, updates, { new: true });
 
     audit(req, {
@@ -260,6 +292,9 @@ exports.duplicateTemple = async (req, res, next) => {
       isActive: false,
       isFeatured: false,
       homepageRank: null,
+      // A duplicate is a fresh source, not a continuation of the original's
+      // version history — starts with no cached translations of its own.
+      translationVersion: 1,
     });
 
     audit(req, {

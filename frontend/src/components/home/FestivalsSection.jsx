@@ -1,9 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { EyebrowTag, useInView } from './shared';
 
 export default function FestivalsSection({ festivals, loading }) {
+  const { t } = useTranslation();
   const [festivalRef, festivalInView] = useInView();
 
   return (
@@ -16,13 +18,13 @@ export default function FestivalsSection({ festivals, loading }) {
       <div className="container-pad relative">
         <div className="flex items-end justify-between mb-12 flex-wrap gap-4">
           <div>
-            <EyebrowTag light>Celebrate Together</EyebrowTag>
+            <EyebrowTag light>{t('home.celebrateTogether', 'Celebrate Together')}</EyebrowTag>
             <h2 className="font-display text-4xl md:text-5xl font-bold text-white" style={{ letterSpacing: '-0.03em' }}>
-              Upcoming Festivals
+              {t('home.upcomingFestivals', 'Upcoming Festivals')}
             </h2>
           </div>
           <Link to="/festivals" className="flex items-center gap-2 font-semibold text-sm hover:gap-3 transition-all font-sans" style={{ color: '#C9A84C' }}>
-            Full Calendar <ArrowRight size={14} />
+            {t('home.fullCalendar', 'Full Calendar')} <ArrowRight size={14} />
           </Link>
         </div>
 
@@ -35,7 +37,7 @@ export default function FestivalsSection({ festivals, loading }) {
         ) : festivals.length === 0 ? (
           <div className="text-center py-12">
             <div className="text-5xl mb-4">🪔</div>
-            <p className="text-gray-300 font-sans">No upcoming festivals. <Link to="/festivals" className="text-saffron-400 hover:underline">View calendar →</Link></p>
+            <p className="text-gray-300 font-sans">{t('home.noUpcomingFestivals', 'No upcoming festivals.')} <Link to="/festivals" className="text-saffron-400 hover:underline">{t('home.viewCalendar', 'View calendar →')}</Link></p>
           </div>
         ) : (
           <div className="relative">
@@ -56,9 +58,9 @@ export default function FestivalsSection({ festivals, loading }) {
                       <div className="w-3 h-3 rounded-full shrink-0 border-2"
                         style={{ background: daysLeft === 0 ? '#FF6B00' : '#C9A84C', borderColor: daysLeft === 0 ? '#FF6B00' : '#C9A84C' }} />
                       {daysLeft === 0 ? (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full font-sans" style={{ background: 'rgba(255,107,0,0.25)', color: '#ffb85a' }}>Today!</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full font-sans" style={{ background: 'rgba(255,107,0,0.25)', color: '#ffb85a' }}>{t('home.today', 'Today!')}</span>
                       ) : daysLeft > 0 ? (
-                        <span className="text-[10px] font-semibold text-gray-400 font-sans">{daysLeft}d left</span>
+                        <span className="text-[10px] font-semibold text-gray-400 font-sans">{t('home.daysLeft', '{{n}}d left', { n: daysLeft })}</span>
                       ) : null}
                     </div>
 
@@ -70,7 +72,7 @@ export default function FestivalsSection({ festivals, loading }) {
                     {f.tithiDate && <p className="text-xs text-gray-500 font-sans mt-0.5">{f.tithiDate}</p>}
                     <div className="mt-5 pt-4 border-t border-white/[0.08]">
                       <Link to="/poojas" className="text-xs font-semibold flex items-center gap-1 hover:gap-2 transition-all font-sans" style={{ color: '#FF6B00' }}>
-                        Book a Puja <ArrowRight size={11} />
+                        {t('home.ctaBookPuja', 'Book a Puja')} <ArrowRight size={11} />
                       </Link>
                     </div>
                   </div>

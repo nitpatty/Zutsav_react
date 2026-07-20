@@ -1,22 +1,24 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ShoppingBag, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getImageUrl as IMG } from '../../config';
 import { EyebrowTag, useInView } from './shared';
 
 const JOURNEY_INTENTS = [
-  { id: 'career',     label: 'Career',       emoji: '💼', desc: 'Growth & Success',    gFrom: 'from-blue-50',    gTo: 'to-indigo-50',   bdr: 'border-blue-100',   keywords: ['saraswati','lakshmi','ganesha','career','success'] },
-  { id: 'marriage',   label: 'Marriage',     emoji: '💑', desc: 'Love & Union',        gFrom: 'from-pink-50',    gTo: 'to-rose-50',     bdr: 'border-pink-100',   keywords: ['vivah','marriage','manglik','love'] },
-  { id: 'health',     label: 'Health',       emoji: '🌿', desc: 'Wellness & Healing',  gFrom: 'from-green-50',   gTo: 'to-emerald-50',  bdr: 'border-green-100',  keywords: ['mahamrityunjaya','health','dhanvantari','healing'] },
-  { id: 'business',   label: 'Business',     emoji: '📈', desc: 'Prosperity & Growth', gFrom: 'from-amber-50',   gTo: 'to-yellow-50',   bdr: 'border-amber-100',  keywords: ['lakshmi','kuber','vyapar','business','prosperity'] },
-  { id: 'new-home',   label: 'New Home',     emoji: '🏠', desc: 'Gruhapravesh',        gFrom: 'from-orange-50',  gTo: 'to-saffron-50',  bdr: 'border-orange-100', keywords: ['gruhapravesh','vastu','home','ganesha'] },
-  { id: 'child',      label: 'Child',        emoji: '👶', desc: 'Blessing & Joy',      gFrom: 'from-yellow-50',  gTo: 'to-amber-50',    bdr: 'border-yellow-100', keywords: ['santana','child','baby','gopal'] },
-  { id: 'prosperity', label: 'Prosperity',   emoji: '🪙', desc: 'Wealth & Abundance',  gFrom: 'from-temple-50',  gTo: 'to-yellow-50',   bdr: 'border-temple-100', keywords: ['lakshmi','kuber','akshaya','wealth'] },
-  { id: 'peace',      label: 'Peace',        emoji: '🕊️', desc: 'Inner Calm',          gFrom: 'from-sky-50',     gTo: 'to-blue-50',     bdr: 'border-sky-100',    keywords: ['shanti','satyanarayan','peace','rudra'] },
-  { id: 'protection', label: 'Protection',   emoji: '🛡️', desc: 'Safety & Guard',      gFrom: 'from-rose-50',    gTo: 'to-red-50',      bdr: 'border-rose-100',   keywords: ['sudarshana','hanuman','kavach','protection'] },
+  { id: 'career',     label: 'Career',       i18nLabel: 'home.intentCareer',     emoji: '💼', desc: 'Growth & Success',    i18nDesc: 'home.intentCareerDesc',    gFrom: 'from-blue-50',    gTo: 'to-indigo-50',   bdr: 'border-blue-100',   keywords: ['saraswati','lakshmi','ganesha','career','success'] },
+  { id: 'marriage',   label: 'Marriage',     i18nLabel: 'home.intentMarriage',   emoji: '💑', desc: 'Love & Union',        i18nDesc: 'home.intentMarriageDesc',   gFrom: 'from-pink-50',    gTo: 'to-rose-50',     bdr: 'border-pink-100',   keywords: ['vivah','marriage','manglik','love'] },
+  { id: 'health',     label: 'Health',       i18nLabel: 'home.intentHealth',     emoji: '🌿', desc: 'Wellness & Healing',  i18nDesc: 'home.intentHealthDesc',     gFrom: 'from-green-50',   gTo: 'to-emerald-50',  bdr: 'border-green-100',  keywords: ['mahamrityunjaya','health','dhanvantari','healing'] },
+  { id: 'business',   label: 'Business',     i18nLabel: 'home.intentBusiness',   emoji: '📈', desc: 'Prosperity & Growth', i18nDesc: 'home.intentBusinessDesc',   gFrom: 'from-amber-50',   gTo: 'to-yellow-50',   bdr: 'border-amber-100',  keywords: ['lakshmi','kuber','vyapar','business','prosperity'] },
+  { id: 'new-home',   label: 'New Home',     i18nLabel: 'home.intentNewHome',    emoji: '🏠', desc: 'Gruhapravesh',        i18nDesc: 'home.intentNewHomeDesc',    gFrom: 'from-orange-50',  gTo: 'to-saffron-50',  bdr: 'border-orange-100', keywords: ['gruhapravesh','vastu','home','ganesha'] },
+  { id: 'child',      label: 'Child',        i18nLabel: 'home.intentChild',      emoji: '👶', desc: 'Blessing & Joy',      i18nDesc: 'home.intentChildDesc',      gFrom: 'from-yellow-50',  gTo: 'to-amber-50',    bdr: 'border-yellow-100', keywords: ['santana','child','baby','gopal'] },
+  { id: 'prosperity', label: 'Prosperity',   i18nLabel: 'home.intentProsperity', emoji: '🪙', desc: 'Wealth & Abundance',  i18nDesc: 'home.intentProsperityDesc', gFrom: 'from-temple-50',  gTo: 'to-yellow-50',   bdr: 'border-temple-100', keywords: ['lakshmi','kuber','akshaya','wealth'] },
+  { id: 'peace',      label: 'Peace',        i18nLabel: 'home.intentPeace',      emoji: '🕊️', desc: 'Inner Calm',          i18nDesc: 'home.intentPeaceDesc',      gFrom: 'from-sky-50',     gTo: 'to-blue-50',     bdr: 'border-sky-100',    keywords: ['shanti','satyanarayan','peace','rudra'] },
+  { id: 'protection', label: 'Protection',   i18nLabel: 'home.intentProtection', emoji: '🛡️', desc: 'Safety & Guard',      i18nDesc: 'home.intentProtectionDesc', gFrom: 'from-rose-50',    gTo: 'to-red-50',      bdr: 'border-rose-100',   keywords: ['sudarshana','hanuman','kavach','protection'] },
 ];
 
 export default function JourneyPicker({ featuredPoojas, handleAiSubmit }) {
+  const { t } = useTranslation();
   const [journeyRef, journeyInView] = useInView();
   const [activeJourney, setActiveJourney] = useState(null);
 
@@ -40,10 +42,10 @@ export default function JourneyPicker({ featuredPoojas, handleAiSubmit }) {
     <section className="section-pad sacred-pattern" style={{ background: '#FAF6EE' }}>
       <div ref={journeyRef} className="container-pad">
         <div className="text-center mb-14">
-          <EyebrowTag>Personalized for You</EyebrowTag>
-          <h2 className="section-title">Why Are You Here Today?</h2>
+          <EyebrowTag>{t('home.journeyEyebrow', 'Personalized for You')}</EyebrowTag>
+          <h2 className="section-title">{t('home.journeyTitle', 'Why Are You Here Today?')}</h2>
           <p className="section-subtitle mx-auto text-center">
-            Select your intent and we'll guide you to the right puja, products, and wisdom.
+            {t('home.journeySubtitle', "Select your intent and we'll guide you to the right puja, products, and wisdom.")}
           </p>
         </div>
 
@@ -59,8 +61,8 @@ export default function JourneyPicker({ featuredPoojas, handleAiSubmit }) {
               style={{ transitionDelay: `${i * 50}ms` }}
             >
               <span className="text-2xl mb-2 group-hover:scale-110 transition-transform duration-200">{intent.emoji}</span>
-              <span className="text-xs font-bold text-gray-700 font-sans">{intent.label}</span>
-              <span className="text-[10px] text-gray-400 font-sans mt-0.5 hidden sm:block">{intent.desc}</span>
+              <span className="text-xs font-bold text-gray-700 font-sans">{t(intent.i18nLabel, intent.label)}</span>
+              <span className="text-[10px] text-gray-400 font-sans mt-0.5 hidden sm:block">{t(intent.i18nDesc, intent.desc)}</span>
             </button>
           ))}
         </div>
@@ -72,9 +74,9 @@ export default function JourneyPicker({ featuredPoojas, handleAiSubmit }) {
                 <span className="text-3xl">{selectedIntent.emoji}</span>
                 <div>
                   <h3 className="font-display font-bold text-xl text-gray-900" style={{ letterSpacing: '-0.01em' }}>
-                    Recommended for {selectedIntent.label}
+                    {t('home.recommendedFor', 'Recommended for {{intent}}', { intent: t(selectedIntent.i18nLabel, selectedIntent.label) })}
                   </h3>
-                  <p className="text-sm text-gray-400 font-sans">{selectedIntent.desc}</p>
+                  <p className="text-sm text-gray-400 font-sans">{t(selectedIntent.i18nDesc, selectedIntent.desc)}</p>
                 </div>
               </div>
 
@@ -100,14 +102,14 @@ export default function JourneyPicker({ featuredPoojas, handleAiSubmit }) {
 
               <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-100">
                 <Link to="/poojas" className="btn-primary text-sm px-6 py-2.5 rounded-2xl inline-flex items-center gap-2">
-                  View All Poojas <ArrowRight size={14} />
+                  {t('home.viewAllPoojas', 'View All Poojas')} <ArrowRight size={14} />
                 </Link>
                 <Link to="/marketplace" className="btn-secondary text-sm px-6 py-2.5 rounded-2xl inline-flex items-center gap-2">
-                  Shop Samagri <ShoppingBag size={14} />
+                  {t('home.shopSamagri', 'Shop Samagri')} <ShoppingBag size={14} />
                 </Link>
                 <button onClick={() => handleAiSubmit(`Best puja for ${selectedIntent.label.toLowerCase()}`)}
                   className="btn-ghost text-sm px-6 py-2.5 rounded-2xl inline-flex items-center gap-2">
-                  Ask AI Guide <Sparkles size={14} />
+                  {t('home.askAiGuide', 'Ask AI Guide')} <Sparkles size={14} />
                 </button>
               </div>
             </div>

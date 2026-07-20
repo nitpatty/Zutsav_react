@@ -88,10 +88,13 @@
       "Bash(node product-edit2.js)",
       "Bash(timeout 30 grep -rln \"admin@zutsav.com\" backend/src backend/*.js)",
       "Bash(node -e \"require\\('./src/controllers/festival.controller'\\); require\\('./src/models/Festival'\\); console.log\\('OK'\\)\")",
-      "Bash(git status *)"
+      "Bash(git status *)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\HP\\\\.claude\\\\plans\" 2>/dev/null; echo ok)",
+      "Bash(grep -n \"pooja\\\\.\\\\\\(name\\\\|description\\\\|shortDesc\\\\|longDesc\\\\|about\\\\\\)\\\\|API.get\\(\\\\`\\\\?/poojas\" frontend/src/pages/BookingFlow.jsx)"
     ],
     "additionalDirectories": [
-      "\\tmp"
+      "\\tmp",
+      "C:\\Users\\HP\\.claude\\plans"
     ]
   }
 }

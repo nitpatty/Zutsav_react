@@ -2,6 +2,7 @@ const Kit     = require('../models/Kit');
 const Product = require('../models/Product');
 const Pooja   = require('../models/Pooja');
 const { roundToPaise } = require('../utils/financeUtils');
+const translationService = require('../services/translationService');
 
 const makeSlug = (name) => name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
@@ -39,12 +40,15 @@ exports.getKits = async (req, res, next) => {
     const query = { isActive: true };
     if (featured === 'true') query.isFeatured = true;
 
-    const kits = await Kit.find(query)
+    let kits = await Kit.find(query)
       .populate({ path: 'items.productId', select: 'name price salePrice images stock isActive' })
       .populate('linkedPoojas', 'name slug')
       .sort({ isFeatured: -1, createdAt: -1 })
       .limit(+limit)
-      .skip((+page - 1) * +limit);
+      .skip((+page - 1) * +limit)
+      .lean();
+
+    kits = await withKitTranslations(kits, req.query.lang);
 
     const total = await Kit.countDocuments(query);
     res.json({ success: true, kits, total, page: +page });
@@ -56,21 +60,45 @@ exports.getKit = async (req, res, next) => {
   try {
     const kit = await Kit.findOne({ _id: req.params.id, isActive: true })
       .populate({ path: 'items.productId', select: 'name price salePrice images stock isActive' })
-      .populate('linkedPoojas', 'name slug image');
+      .populate('linkedPoojas', 'name slug image')
+      .lean();
     if (!kit) return res.status(404).json({ success: false, message: 'Kit not found' });
-    res.json({ success: true, kit });
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    let responseKit = kit;
+    if (lang !== 'en') {
+      try {
+        const { fields } = await translationService.getTranslation('kit', kit._id, lang);
+        responseKit = { ...kit, ...fields, translationLanguage: lang };
+      } catch (err) {
+        console.error(`[Kit] translation lookup failed for ${kit._id}/${lang}:`, err.message);
+      }
+    }
+
+    res.json({ success: true, kit: responseKit });
   } catch (err) { next(err); }
 };
 
 // GET /api/marketplace/kits/by-pooja/:poojaId  — public
 exports.getKitsByPooja = async (req, res, next) => {
   try {
-    const kits = await Kit.find({ isActive: true, linkedPoojas: req.params.poojaId })
+    let kits = await Kit.find({ isActive: true, linkedPoojas: req.params.poojaId })
       .populate({ path: 'items.productId', select: 'name price salePrice images stock isActive' })
-      .sort({ isFeatured: -1, discountPrice: 1 });
+      .sort({ isFeatured: -1, discountPrice: 1 })
+      .lean();
+
+    kits = await withKitTranslations(kits, req.query.lang);
+
     res.json({ success: true, kits });
   } catch (err) { next(err); }
 };
+
+async function withKitTranslations(kits, langParam) {
+  const lang = (langParam || 'en').toLowerCase();
+  if (lang === 'en' || !kits.length) return kits;
+  const map = await translationService.getTranslationsForDocs('kit', kits, lang);
+  return kits.map((k) => (map[String(k._id)] ? { ...k, ...map[String(k._id)], translationLanguage: lang } : k));
+}
 
 // POST /api/marketplace/kits  [admin]
 exports.createKit = async (req, res, next) => {
@@ -158,6 +186,16 @@ exports.updateKit = async (req, res, next) => {
 
     if (updates.discountValue !== undefined) updates.discountValue = +updates.discountValue;
     if (updates.discountPrice !== undefined) updates.discountPrice = +updates.discountPrice;
+
+    // Bump the translation version only when a translatable field actually
+    // changed (see translationService.js) — pricing/item edits must not
+    // invalidate cached translations.
+    const existingKit = await Kit.findById(req.params.id).select('name description translationVersion').lean();
+    if (existingKit) {
+      const { fields: translatableFields } = require('../config/translatable.config').kit;
+      const translatableChanged = Object.keys(translatableFields).some((key) => updates[key] !== undefined && updates[key] !== existingKit[key]);
+      if (translatableChanged) updates.translationVersion = (existingKit.translationVersion || 1) + 1;
+    }
 
     const kit = await Kit.findByIdAndUpdate(req.params.id, updates, { new: true });
     if (!kit) return res.status(404).json({ success: false, message: 'Kit not found' });

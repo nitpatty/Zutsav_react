@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getImageUrl as IMG } from '../../config';
 
 const AUTOPLAY_MS = 5000;
@@ -32,6 +33,7 @@ function DefaultVisual() {
 }
 
 export default function HeroSlider({ banners = [] }) {
+  const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const timerRef = useRef(null);
@@ -84,7 +86,7 @@ export default function HeroSlider({ banners = [] }) {
       tabIndex={hasBanners && count > 1 ? 0 : -1}
       role="region"
       aria-roledescription="carousel"
-      aria-label="Homepage hero banners"
+      aria-label={t('home.heroBannersLabel', 'Homepage hero banners')}
     >
       {!hasBanners && <DefaultVisual />}
 
@@ -130,7 +132,7 @@ export default function HeroSlider({ banners = [] }) {
           <button
             type="button"
             onClick={prev}
-            aria-label="Previous banner"
+            aria-label={t('home.previousBanner', 'Previous banner')}
             className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 backdrop-blur-sm flex items-center justify-center shadow-sm hover:bg-white transition-all z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-saffron-500"
           >
             <ChevronLeft size={16} className="text-gray-700" />
@@ -138,7 +140,7 @@ export default function HeroSlider({ banners = [] }) {
           <button
             type="button"
             onClick={next}
-            aria-label="Next banner"
+            aria-label={t('home.nextBanner', 'Next banner')}
             className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white/85 backdrop-blur-sm flex items-center justify-center shadow-sm hover:bg-white transition-all z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-saffron-500"
           >
             <ChevronRight size={16} className="text-gray-700" />
@@ -150,7 +152,7 @@ export default function HeroSlider({ banners = [] }) {
                 key={b._id}
                 type="button"
                 onClick={() => goTo(i)}
-                aria-label={`Go to banner ${i + 1}`}
+                aria-label={t('home.goToBanner', 'Go to banner {{n}}', { n: i + 1 })}
                 aria-current={i === index}
                 className={`rounded-full transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-saffron-500 ${i === index ? 'w-5 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/50 hover:bg-white/80'}`}
               />

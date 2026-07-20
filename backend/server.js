@@ -14,7 +14,8 @@ const seedAdmin = require('./src/utils/seedAdmin');
 const { setIO } = require('./src/utils/notificationService');
 const {
   startDeletionCleanupJob,
-  startBookingReminderJobs
+  startBookingReminderJobs,
+  startTranslationLockSweep
 } = require('./src/utils/cleanupJobs');
 const NotificationWorker = require('./notification-engine/queue/Worker');
 const NotificationEngineBootstrap = require('./notification-engine/bootstrap');
@@ -75,6 +76,7 @@ connectDB().then(async () => {
 
   startDeletionCleanupJob();
   startBookingReminderJobs();
+  startTranslationLockSweep();
   // Registers v2 channel plugins + the job processor. The queue itself is
   // still empty in production — NotificationEngine.emit() keeps using the
   // old synchronous Dispatcher until the controlled cutover (Phase 4 of the

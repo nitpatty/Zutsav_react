@@ -65,6 +65,10 @@ const blogSchema = new mongoose.Schema({
   publishedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   reviewedAt:   { type: Date, default: null },
   reviewerName: { type: String, default: '' },
+
+  // Bumped only when translatable fields actually change (see updateBlog) —
+  // cached translations compare against this to detect staleness.
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 // Pre-validate: slug, excerpt, readingTime, SEO defaults

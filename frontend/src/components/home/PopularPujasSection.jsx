@@ -1,11 +1,13 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getImageUrl as IMG } from '../../config';
 import { formatDuration } from '../../utils/durationFormatter';
 import { EyebrowTag, useInView } from './shared';
 
 export default function PopularPujasSection({ poojas, loading }) {
+  const { t } = useTranslation();
   const [poojaRef, poojaInView] = useInView();
 
   if (!loading && poojas.length === 0) return null;
@@ -15,11 +17,11 @@ export default function PopularPujasSection({ poojas, loading }) {
       <div ref={poojaRef} className="container-pad">
         <div className="flex items-end justify-between mb-14 flex-wrap gap-4">
           <div>
-            <EyebrowTag>Most Booked</EyebrowTag>
-            <h2 className="section-title">Popular Poojas</h2>
+            <EyebrowTag>{t('home.mostBooked', 'Most Booked')}</EyebrowTag>
+            <h2 className="section-title">{t('home.popularPoojas', 'Popular Poojas')}</h2>
           </div>
           <Link to="/poojas" className="text-saffron-600 font-semibold text-sm flex items-center gap-1 hover:gap-2 transition-all font-sans">
-            View All <ArrowRight size={14} />
+            {t('home.viewAll', 'View All')} <ArrowRight size={14} />
           </Link>
         </div>
 
@@ -40,7 +42,7 @@ export default function PopularPujasSection({ poojas, loading }) {
                       {p.isFeatured && (
                         <span className="text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide shadow-sm font-sans"
                           style={{ background: 'linear-gradient(135deg, #C9A84C, #E8C85A)' }}>
-                          ✦ Featured
+                          ✦ {t('home.featured', 'Featured')}
                         </span>
                       )}
                       {formatDuration(p) && (
@@ -61,7 +63,7 @@ export default function PopularPujasSection({ poojas, loading }) {
 
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-xs text-gray-400 font-sans mb-0.5">Starting from</p>
+                        <p className="text-xs text-gray-400 font-sans mb-0.5">{t('home.startingFrom', 'Starting from')}</p>
                         <div className="flex items-baseline gap-2">
                           <span className="font-display text-2xl font-bold text-saffron-600">
                             ₹{(p.salePrice || p.price).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
@@ -73,7 +75,7 @@ export default function PopularPujasSection({ poojas, loading }) {
                       </div>
                       <Link to={`/book/${p.slug}`} onClick={(e) => e.stopPropagation()}
                         className="btn-primary text-sm px-6 py-2.5 rounded-2xl shadow-glow-saffron">
-                        Book Now
+                        {t('home.bookNow', 'Book Now')}
                       </Link>
                     </div>
                   </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Sun, Moon, Clock, Star, Calendar, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import API from '../api/axios';
 
 const fmt = (d) => d.toISOString().split('T')[0];
@@ -7,13 +8,17 @@ const DAY_NAMES   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday'
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
+// Labels only — the values themselves (data[key]) always come straight from
+// the Panchang engine (computePanchang()) and are never translated: a Tithi/
+// Nakshatra/Yoga/Karana name or a clock time is not "content", it's a
+// calculated astronomical value.
 const PANCHANG_FIELDS = [
-  { key: 'tithi',     label: 'Tithi',     icon: Moon,     color: 'text-indigo-500', bg: 'bg-indigo-50', border: 'border-indigo-100' },
-  { key: 'nakshatra', label: 'Nakshatra', icon: Star,     color: 'text-purple-500', bg: 'bg-purple-50', border: 'border-purple-100' },
-  { key: 'yoga',      label: 'Yoga',      icon: Sparkles, color: 'text-emerald-500',bg: 'bg-emerald-50',border: 'border-emerald-100' },
-  { key: 'karana',    label: 'Karana',    icon: Calendar, color: 'text-amber-500',  bg: 'bg-amber-50',  border: 'border-amber-100'  },
-  { key: 'sunrise',   label: 'Sunrise',   icon: Sun,      color: 'text-saffron-500',bg: 'bg-saffron-50',border: 'border-saffron-100' },
-  { key: 'sunset',    label: 'Sunset',    icon: Moon,     color: 'text-blue-500',   bg: 'bg-blue-50',   border: 'border-blue-100'   },
+  { key: 'tithi',     i18nKey: 'panchang.tithi',     label: 'Tithi',     icon: Moon,     color: 'text-indigo-500', bg: 'bg-indigo-50', border: 'border-indigo-100' },
+  { key: 'nakshatra', i18nKey: 'panchang.nakshatra', label: 'Nakshatra', icon: Star,     color: 'text-purple-500', bg: 'bg-purple-50', border: 'border-purple-100' },
+  { key: 'yoga',      i18nKey: 'panchang.yoga',      label: 'Yoga',      icon: Sparkles, color: 'text-emerald-500',bg: 'bg-emerald-50',border: 'border-emerald-100' },
+  { key: 'karana',    i18nKey: 'panchang.karana',    label: 'Karana',    icon: Calendar, color: 'text-amber-500',  bg: 'bg-amber-50',  border: 'border-amber-100'  },
+  { key: 'sunrise',   i18nKey: 'panchang.sunrise',   label: 'Sunrise',   icon: Sun,      color: 'text-saffron-500',bg: 'bg-saffron-50',border: 'border-saffron-100' },
+  { key: 'sunset',    i18nKey: 'panchang.sunset',    label: 'Sunset',    icon: Moon,     color: 'text-blue-500',   bg: 'bg-blue-50',   border: 'border-blue-100'   },
 ];
 
 const DATA_STYLES = {
@@ -66,6 +71,7 @@ function FestivalEntries({ entries }) {
 }
 
 function PanchangCard({ data, isToday, festivals, dateObj }) {
+  const { t } = useTranslation();
   if (!data) return null;
   const dow       = dateObj ? DAY_NAMES[dateObj.getDay()] : '';
   const dom       = dateObj ? dateObj.getDate() : '';
@@ -106,7 +112,7 @@ function PanchangCard({ data, isToday, festivals, dateObj }) {
                 {isToday && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide"
                         style={{ background: '#D4AF37', color: '#1B1F3B' }}>
-                    Today
+                    {t('panchang.today', 'Today')}
                   </span>
                 )}
               </div>
@@ -124,12 +130,12 @@ function PanchangCard({ data, isToday, festivals, dateObj }) {
       {/* Panchang grid */}
       <div className="p-5">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-          {PANCHANG_FIELDS.map(({ key, label, icon: Icon, color, bg, border }) =>
+          {PANCHANG_FIELDS.map(({ key, i18nKey, label, icon: Icon, color, bg, border }) =>
             data[key] ? (
               <div key={key} className={`${bg} border ${border} rounded-xl p-3 flex items-start gap-2.5`}>
                 <Icon size={13} className={`${color} mt-0.5 shrink-0`} />
                 <div className="min-w-0">
-                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{label}</p>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{t(i18nKey, label)}</p>
                   <p className="text-sm font-semibold text-gray-800 leading-tight mt-0.5 truncate">{data[key]}</p>
                 </div>
               </div>
@@ -142,10 +148,10 @@ function PanchangCard({ data, isToday, festivals, dateObj }) {
           <div className="flex items-center gap-3 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4">
             <Clock size={14} className="text-red-500 shrink-0" />
             <div className="flex-1">
-              <p className="text-xs font-bold text-red-700">Rahu Kaal — Inauspicious Period</p>
+              <p className="text-xs font-bold text-red-700">{t('panchang.rahuKaal', 'Rahu Kaal — Inauspicious Period')}</p>
               <p className="text-xs text-red-500 mt-0.5">{data.rahuKaal.start} – {data.rahuKaal.end}</p>
             </div>
-            <span className="text-[10px] font-semibold text-red-500 bg-red-100 px-2 py-1 rounded-lg shrink-0">Avoid</span>
+            <span className="text-[10px] font-semibold text-red-500 bg-red-100 px-2 py-1 rounded-lg shrink-0">{t('panchang.avoid', 'Avoid')}</span>
           </div>
         )}
 
@@ -196,6 +202,7 @@ function PanchangSkeleton() {
 }
 
 export default function PanchangPage() {
+  const { t } = useTranslation();
   const today = new Date();
   const [selectedDate, setSelectedDate] = useState(fmt(today));
   const [panchangDay,  setPanchangDay]  = useState(null);
@@ -332,7 +339,7 @@ export default function PanchangPage() {
                  style={{ background: 'rgba(27,31,59,0.06)' }}>
               <Moon size={15} style={{ color: 'rgba(27,31,59,0.5)' }} />
             </div>
-            <p className="font-bold text-gray-800">About Panchang</p>
+            <p className="font-bold text-gray-800">{t('panchang.about', 'About Panchang')}</p>
           </div>
           <p className="text-sm text-gray-500 leading-relaxed">
             Panchang (पञ्चाङ्ग) is the Hindu almanac based on five limbs:{' '}

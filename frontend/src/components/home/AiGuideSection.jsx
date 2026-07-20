@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import { Send } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { EyebrowTag, useInView } from './shared';
 
 const AI_QUESTIONS = [
-  'What pooja should I do for my new home?',
-  'Best muhurat for marriage in 2025?',
-  'Importance of Satyanarayan Katha?',
-  'How to perform Diwali puja at home?',
-  'When is the next Ekadashi fast?',
+  { i18nKey: 'home.aiQ1', text: 'What pooja should I do for my new home?' },
+  { i18nKey: 'home.aiQ2', text: 'Best muhurat for marriage in 2025?' },
+  { i18nKey: 'home.aiQ3', text: 'Importance of Satyanarayan Katha?' },
+  { i18nKey: 'home.aiQ4', text: 'How to perform Diwali puja at home?' },
+  { i18nKey: 'home.aiQ5', text: 'When is the next Ekadashi fast?' },
 ];
 
 export default function AiGuideSection({ handleAiSubmit }) {
+  const { t } = useTranslation();
   const [aiRef, aiInView] = useInView();
   const [aiQuery, setAiQuery] = useState('');
 
@@ -31,22 +33,22 @@ export default function AiGuideSection({ handleAiSubmit }) {
       <div className="container-pad relative">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div className={`transition-all duration-700 ${aiInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-            <EyebrowTag light>✨ Powered by Gemini AI</EyebrowTag>
+            <EyebrowTag light>{t('home.aiPoweredBy', '✨ Powered by Gemini AI')}</EyebrowTag>
             <h2 className="font-display font-bold text-white mb-4" style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', letterSpacing: '-0.03em' }}>
-              Need Spiritual
+              {t('home.aiNeedGuidanceLine1', 'Need Spiritual')}
               <br />
-              <span style={{ color: '#C9A84C' }}>Guidance?</span>
+              <span style={{ color: '#C9A84C' }}>{t('home.aiNeedGuidanceLine2', 'Guidance?')}</span>
             </h2>
             <p className="text-gray-300 font-sans mb-8 text-base leading-relaxed max-w-md">
-              Ask Zutsav AI anything about pujas, temples, astrology, festivals, rituals, or Hindu traditions. Your personal spiritual companion.
+              {t('home.aiDescription', 'Ask Zutsav AI anything about pujas, temples, astrology, festivals, rituals, or Hindu traditions. Your personal spiritual companion.')}
             </p>
 
             <div className="flex flex-wrap gap-2 mb-8">
-              {AI_QUESTIONS.map((q) => (
-                <button key={q} onClick={() => submit(q)}
+              {AI_QUESTIONS.map(({ i18nKey, text }) => (
+                <button key={i18nKey} onClick={() => submit(t(i18nKey, text))}
                   className="text-xs font-medium px-4 py-2 rounded-full border transition-all duration-200 font-sans hover:-translate-y-0.5"
                   style={{ background: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.15)', color: '#e8d5a3' }}>
-                  {q}
+                  {t(i18nKey, text)}
                 </button>
               ))}
             </div>
@@ -56,7 +58,7 @@ export default function AiGuideSection({ handleAiSubmit }) {
                 value={aiQuery}
                 onChange={(e) => setAiQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && submit()}
-                placeholder="Ask about a puja, festival, or ritual..."
+                placeholder={t('home.aiInputPlaceholder', 'Ask about a puja, festival, or ritual...')}
                 className="flex-1 rounded-2xl px-5 py-3.5 text-sm font-sans focus:outline-none transition-all duration-200 text-white placeholder:text-white/40"
                 style={{ background: 'rgba(255,255,255,0.10)', border: '1.5px solid rgba(255,255,255,0.15)' }}
               />
@@ -76,10 +78,10 @@ export default function AiGuideSection({ handleAiSubmit }) {
                   🪔
                 </div>
                 <div>
-                  <p className="text-white font-semibold text-sm font-sans">Zutsav AI Guide</p>
+                  <p className="text-white font-semibold text-sm font-sans">{t('home.aiGuideName', 'Zutsav AI Guide')}</p>
                   <p className="text-green-400 text-xs font-sans flex items-center gap-1">
                     <span className="w-1.5 h-1.5 bg-green-400 rounded-full inline-block" />
-                    Always available
+                    {t('home.alwaysAvailable', 'Always available')}
                   </p>
                 </div>
               </div>
@@ -88,7 +90,7 @@ export default function AiGuideSection({ handleAiSubmit }) {
                 <div className="flex justify-end">
                   <div className="max-w-[80%] rounded-2xl rounded-tr-sm px-4 py-3 text-sm font-sans"
                     style={{ background: 'linear-gradient(135deg, #D4602A, #C9A84C)', color: 'white' }}>
-                    What pooja should I do for my new home?
+                    {t('home.aiDemoQ1', 'What pooja should I do for my new home?')}
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -96,14 +98,14 @@ export default function AiGuideSection({ handleAiSubmit }) {
                     style={{ background: 'linear-gradient(135deg, #D4602A, #C9A84C)' }}>🪔</div>
                   <div className="max-w-[80%] rounded-2xl rounded-tl-sm px-4 py-3 text-sm font-sans text-gray-200"
                     style={{ background: 'rgba(255,255,255,0.10)' }}>
-                    For a new home, <span style={{ color: '#C9A84C' }}>Gruhapravesh Puja</span> is most auspicious. It purifies the space, invites positive energy, and blesses all who will live there. I recommend choosing a{' '}
-                    <span style={{ color: '#C9A84C' }}>Shubh Muhurat</span> for the ceremony. Shall I help you find a verified pandit?
+                    {t('home.aiDemoA1Prefix', 'For a new home,')} <span style={{ color: '#C9A84C' }}>{t('home.aiDemoGruhapravesh', 'Gruhapravesh Puja')}</span> {t('home.aiDemoA1Middle', 'is most auspicious. It purifies the space, invites positive energy, and blesses all who will live there. I recommend choosing a')}{' '}
+                    <span style={{ color: '#C9A84C' }}>{t('home.aiDemoMuhurat', 'Shubh Muhurat')}</span> {t('home.aiDemoA1Suffix', 'for the ceremony. Shall I help you find a verified pandit?')}
                   </div>
                 </div>
                 <div className="flex justify-end">
                   <div className="max-w-[80%] rounded-2xl rounded-tr-sm px-4 py-3 text-sm font-sans"
                     style={{ background: 'linear-gradient(135deg, #D4602A, #C9A84C)', color: 'white' }}>
-                    Yes, please! What's the best day?
+                    {t('home.aiDemoQ2', "Yes, please! What's the best day?")}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 py-1">

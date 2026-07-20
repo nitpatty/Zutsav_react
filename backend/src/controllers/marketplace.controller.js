@@ -7,6 +7,7 @@ const { NotificationEngine } = require('../../notification-engine');
 const { normalizeOrderPayload } = require('../../notification-engine/variables/PayloadNormalizer');
 const { deductStock } = require('../utils/inventoryUtils');
 const { urls } = require('../config');
+const translationService = require('../services/translationService');
 
 // ── SKU helpers ──────────────────────────────────────────────
 function generateSku(name) {
@@ -68,10 +69,17 @@ exports.getProducts = async (req, res, next) => {
     };
     const sortOrder = sortMap[sort] || { isFeatured: -1, createdAt: -1 };
 
-    const products = await Product.find(query)
+    let products = await Product.find(query)
       .sort(sortOrder)
       .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .skip((page - 1) * limit)
+      .lean();
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    if (lang !== 'en' && products.length) {
+      const map = await translationService.getTranslationsForDocs('product', products, lang);
+      products = products.map((p) => (map[String(p._id)] ? { ...p, ...map[String(p._id)], translationLanguage: lang } : p));
+    }
 
     const total = await Product.countDocuments(query);
     res.json({ success: true, products, total });
@@ -88,9 +96,21 @@ exports.getProductBySlug = async (req, res, next) => {
       isActive:       true,
       isDeleted:      { $ne: true },
       visibilityType: { $ne: 'kit_only' },
-    });
+    }).lean();
     if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
-    res.json({ success: true, product });
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    let responseProduct = product;
+    if (lang !== 'en') {
+      try {
+        const { fields } = await translationService.getTranslation('product', product._id, lang);
+        responseProduct = { ...product, ...fields, translationLanguage: lang };
+      } catch (err) {
+        console.error(`[Product] translation lookup failed for ${product._id}/${lang}:`, err.message);
+      }
+    }
+
+    res.json({ success: true, product: responseProduct });
   } catch (err) {
     next(err);
   }
@@ -210,8 +230,19 @@ exports.updateProduct = async (req, res, next) => {
         });
     }
 
-    const before = await Product.findById(req.params.id).select('name price salePrice stock isActive').lean();
+    const before = await Product.findById(req.params.id).select('name price salePrice stock isActive description tags translationVersion').lean();
     if (!before) return res.status(404).json({ success: false, message: 'Product not found' });
+
+    // Bump the translation version only when a translatable field actually
+    // changed (see translationService.js) — price/stock-only edits must not
+    // invalidate cached translations.
+    const { fields: translatableFields } = require('../config/translatable.config').product;
+    const translatableChanged = Object.keys(translatableFields).some((key) => {
+      if (updates[key] === undefined) return false;
+      if (translatableFields[key].type === 'string[]') return JSON.stringify(updates[key]) !== JSON.stringify(before[key]);
+      return updates[key] !== before[key];
+    });
+    if (translatableChanged) updates.translationVersion = (before.translationVersion || 1) + 1;
 
     const product = await Product.findByIdAndUpdate(req.params.id, updates, { new: true });
     audit(req, {

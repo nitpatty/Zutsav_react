@@ -1,10 +1,12 @@
 import React, { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getImageUrl as IMG } from '../../config';
 import { EyebrowTag, useInView } from './shared';
 
 export default function MarketplacePreview({ products }) {
+  const { t } = useTranslation();
   const [mktRef, mktInView] = useInView();
   const carouselRef = useRef(null);
 
@@ -21,9 +23,9 @@ export default function MarketplacePreview({ products }) {
       <div ref={mktRef} className="container-pad">
         <div className="flex items-end justify-between mb-12 flex-wrap gap-4">
           <div>
-            <EyebrowTag>Sacred Store</EyebrowTag>
-            <h2 className="section-title">Trending Samagri</h2>
-            <p className="section-subtitle">Authentic puja essentials delivered to your doorstep</p>
+            <EyebrowTag>{t('home.sacredStore', 'Sacred Store')}</EyebrowTag>
+            <h2 className="section-title">{t('home.trendingSamagri', 'Trending Samagri')}</h2>
+            <p className="section-subtitle">{t('home.trendingSamagriSubtitle', 'Authentic puja essentials delivered to your doorstep')}</p>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => scrollCarousel(-1)}
@@ -35,7 +37,7 @@ export default function MarketplacePreview({ products }) {
               <ChevronRight size={18} className="text-gray-600" />
             </button>
             <Link to="/marketplace" className="text-saffron-600 font-semibold text-sm flex items-center gap-1 hover:gap-2 transition-all font-sans">
-              View All <ArrowRight size={14} />
+              {t('home.viewAll', 'View All')} <ArrowRight size={14} />
             </Link>
           </div>
         </div>
@@ -54,7 +56,7 @@ export default function MarketplacePreview({ products }) {
                 <h4 className="font-semibold text-gray-800 text-sm font-sans line-clamp-2 mb-2 group-hover:text-saffron-700 transition-colors">{p.name}</h4>
                 <div className="flex items-center justify-between">
                   <span className="font-display font-bold text-lg text-saffron-600">₹{(p.salePrice || p.price).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
-                  <span className="text-[10px] bg-green-50 text-green-600 font-semibold px-2 py-0.5 rounded-full font-sans">In Stock</span>
+                  <span className="text-[10px] bg-green-50 text-green-600 font-semibold px-2 py-0.5 rounded-full font-sans">{t('home.inStock', 'In Stock')}</span>
                 </div>
               </div>
             </Link>

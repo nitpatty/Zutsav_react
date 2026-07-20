@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { useTheme } from '../context/ThemeContext';
+import { useLanguage } from '../context/LanguageContext';
 import API from '../api/axios';
 
 /* ── Animation variants ─────────────────────────────── */
@@ -220,6 +221,7 @@ export default function UserDashboard() {
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
   const { currentTheme } = useTheme();
+  const { lang } = useLanguage();
 
   const [bookings,      setBookings]      = useState([]);
   const [totalBookings, setTotalBookings] = useState(0);
@@ -229,6 +231,7 @@ export default function UserDashboard() {
   const [loading,       setLoading]       = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchAll = async () => {
       try {
         const [bRes, oRes, pRes, fRes] = await Promise.allSettled([
@@ -237,6 +240,7 @@ export default function UserDashboard() {
           API.get('/panchang'),
           API.get('/festivals?limit=4&upcoming=true'),
         ]);
+        if (cancelled) return;
         if (bRes.status === 'fulfilled') {
           setBookings(bRes.value.data?.bookings || []);
           setTotalBookings(bRes.value.data?.total ?? (bRes.value.data?.bookings?.length || 0));
@@ -245,11 +249,12 @@ export default function UserDashboard() {
         if (pRes.status === 'fulfilled') setPanchang(pRes.value.data?.panchang || null);
         if (fRes.status === 'fulfilled') setFestivals(fRes.value.data?.festivals || fRes.value.data || []);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchAll();
-  }, []);
+    return () => { cancelled = true; };
+  }, [lang]);
 
   const greeting = getGreeting();
   const firstName = user?.name?.split(' ')[0] || 'Devotee';

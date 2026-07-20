@@ -2,26 +2,34 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Search, Clock, Star, CheckCircle } from 'lucide-react';
 import API from '../api/axios';
+import { useTranslation } from 'react-i18next';
 import { formatDuration } from '../utils/durationFormatter';
 import { getImageUrl } from '../config';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function PoojaList() {
+  const { t } = useTranslation();
   const { categorySlug } = useParams();
   const navigate = useNavigate();
+  const { lang } = useLanguage();
   const [poojas,   setPoojas]   = useState([]);
   const [category, setCategory] = useState(null);
   const [loading,  setLoading]  = useState(true);
   const [search,   setSearch]   = useState('');
 
   useEffect(() => {
+    let cancelled = false;
     // Get category info
     API.get('/poojas/categories').then(({ data }) => {
+      if (cancelled) return;
       const cat = data.categories.find((c) => c.slug === categorySlug);
       setCategory(cat);
     });
-  }, [categorySlug]);
+    return () => { cancelled = true; };
+  }, [categorySlug, lang]);
 
   useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams();
     if (category?._id) params.set('categoryId', category._id);
     if (search)         params.set('search', search);
@@ -29,9 +37,10 @@ export default function PoojaList() {
 
     setLoading(true);
     API.get(`/poojas?${params}`)
-      .then(({ data }) => setPoojas(data.poojas))
-      .finally(() => setLoading(false));
-  }, [category, search]);
+      .then(({ data }) => { if (!cancelled) setPoojas(data.poojas); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [category, search, lang]);
 
   return (
     <div className="min-h-screen bg-spiritual-light py-12">
@@ -40,17 +49,17 @@ export default function PoojaList() {
         {/* Header */}
         <div className="mb-8">
           <nav className="text-sm text-gray-500 mb-3">
-            <Link to="/poojas" className="hover:text-saffron-600">Poojas</Link>
+            <Link to="/poojas" className="hover:text-saffron-600">{t('nav.poojas', 'Poojas')}</Link>
             {category && <> / <span className="text-gray-800 font-medium">{category.name}</span></>}
           </nav>
-          <h1 className="text-3xl font-bold text-maroon-700">{category?.name || 'All Poojas'}</h1>
+          <h1 className="text-3xl font-bold text-maroon-700">{category?.name || t('poojas.allPoojas', 'All Poojas')}</h1>
           {category?.description && <p className="text-gray-500 mt-2">{category.description}</p>}
         </div>
 
         {/* Search */}
         <div className="relative max-w-md mb-8">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input className="input pl-9" placeholder="Search poojas..." value={search}
+          <input className="input pl-9" placeholder={t('poojas.searchPlaceholder', 'Search poojas...')} value={search}
             onChange={(e) => setSearch(e.target.value)} />
         </div>
 
@@ -62,7 +71,7 @@ export default function PoojaList() {
         ) : poojas.length === 0 ? (
           <div className="text-center py-20 text-gray-500">
             <div className="text-5xl mb-4">🙏</div>
-            <p>No poojas found.</p>
+            <p>{t('poojas.noPoojasFound', 'No poojas found.')}</p>
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -78,7 +87,7 @@ export default function PoojaList() {
                     : <div className="w-full h-full flex items-center justify-center text-5xl">🪔</div>
                   }
                   {p.isFeatured && (
-                    <span className="absolute top-3 left-3 bg-gold-500 text-white text-xs font-bold px-2 py-1 rounded-full">Featured</span>
+                    <span className="absolute top-3 left-3 bg-gold-500 text-white text-xs font-bold px-2 py-1 rounded-full">{t('home.featured', 'Featured')}</span>
                   )}
                 </div>
                 <div className="p-5">
@@ -97,7 +106,7 @@ export default function PoojaList() {
 
                   {p.requirements?.length > 0 && (
                     <div className="mb-4 p-3 bg-amber-50 rounded-xl border border-amber-100">
-                      <p className="text-xs font-bold text-amber-700 mb-1.5 uppercase tracking-wide">Requirements</p>
+                      <p className="text-xs font-bold text-amber-700 mb-1.5 uppercase tracking-wide">{t('poojas.requirements', 'Requirements')}</p>
                       <ul className="space-y-1">
                         {p.requirements.slice(0, 4).map((r, i) => (
                           <li key={i} className="flex items-center gap-1.5 text-xs text-gray-600">
@@ -105,7 +114,7 @@ export default function PoojaList() {
                           </li>
                         ))}
                         {p.requirements.length > 4 && (
-                          <li className="text-xs text-amber-600 font-medium">+{p.requirements.length - 4} more…</li>
+                          <li className="text-xs text-amber-600 font-medium">{t('poojas.moreItems', '+{{n}} more…', { n: p.requirements.length - 4 })}</li>
                         )}
                       </ul>
                     </div>
@@ -124,7 +133,7 @@ export default function PoojaList() {
                       onClick={(e) => e.stopPropagation()}
                       className="inline-block"
                     >
-                      <Link to={`/book/${p.slug}`} className="btn-primary text-sm px-4 py-2">Book Now</Link>
+                      <Link to={`/book/${p.slug}`} className="btn-primary text-sm px-4 py-2">{t('home.bookNow', 'Book Now')}</Link>
                     </span>
                   </div>
                 </div>

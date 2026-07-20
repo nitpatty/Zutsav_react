@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { Calendar, List, ChevronLeft, ChevronRight, CalendarDays, Sparkles, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import API from '../api/axios';
+import { useLanguage } from '../context/LanguageContext';
 
 const MONTHS = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December',
 ];
+const MONTH_KEYS = [
+  'festivals.monthJan','festivals.monthFeb','festivals.monthMar','festivals.monthApr',
+  'festivals.monthMay','festivals.monthJun','festivals.monthJul','festivals.monthAug',
+  'festivals.monthSep','festivals.monthOct','festivals.monthNov','festivals.monthDec',
+];
 const MONTH_SHORT = MONTHS.map((m) => m.slice(0, 3));
+const WEEKDAY_KEYS = ['festivals.mon','festivals.tue','festivals.wed','festivals.thu','festivals.fri','festivals.sat','festivals.sun'];
 
 const TYPE_STYLES = {
   festival: { bg: 'bg-saffron-50', border: 'border-saffron-200', text: 'text-saffron-700', dot: 'bg-saffron-500', badge: 'bg-saffron-100 text-saffron-700' },
@@ -29,6 +37,7 @@ function SkeletonCard() {
 }
 
 function FestivalCard({ festival, compact }) {
+  const { t } = useTranslation();
   const s   = typeStyle(festival.dataType);
   const dt  = new Date(festival.date);
   const day = dt.getUTCDate();
@@ -64,7 +73,7 @@ function FestivalCard({ festival, compact }) {
             <div className="flex items-center gap-2 shrink-0">
               {daysUntil >= 0 && daysUntil <= 14 && (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-saffron-500 text-white font-sans">
-                  {daysUntil === 0 ? 'Today!' : `${daysUntil}d`}
+                  {daysUntil === 0 ? t('home.today', 'Today!') : t('festivals.daysAbbrev', '{{n}}d', { n: daysUntil })}
                 </span>
               )}
               {festival.dataType && festival.dataType !== 'festival' && (
@@ -90,6 +99,7 @@ function FestivalCard({ festival, compact }) {
 }
 
 function CalDay({ day, festivals, today, onClick }) {
+  const { t } = useTranslation();
   const isToday   = today.getDate() === day && today.getMonth() === today.getMonth();
   const hasEvents = festivals.length > 0;
 
@@ -112,7 +122,7 @@ function CalDay({ day, festivals, today, onClick }) {
           </div>
         ))}
         {festivals.length > 2 && (
-          <div className="text-[9px] text-gray-400 pl-1 font-sans">+{festivals.length - 2} more</div>
+          <div className="text-[9px] text-gray-400 pl-1 font-sans">{t('festivals.moreCount', '+{{n}} more', { n: festivals.length - 2 })}</div>
         )}
       </div>
     </div>
@@ -120,7 +130,8 @@ function CalDay({ day, festivals, today, onClick }) {
 }
 
 function DayDetailModal({ day, month, year, festivals, onClose }) {
-  const monthName = MONTHS[month - 1];
+  const { t } = useTranslation();
+  const monthName = t(MONTH_KEYS[month - 1], MONTHS[month - 1]);
   const today     = new Date();
   const isToday   = today.getDate() === day && today.getMonth() + 1 === month && today.getFullYear() === year;
 
@@ -142,10 +153,10 @@ function DayDetailModal({ day, month, year, festivals, onClose }) {
               {monthName} {year}
             </p>
             <h2 className="font-display font-bold text-2xl leading-none" style={{ color: 'var(--t-text)', letterSpacing: '-0.02em' }}>
-              {day}{isToday && <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full bg-saffron-500 text-white font-sans align-middle">Today</span>}
+              {day}{isToday && <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full bg-saffron-500 text-white font-sans align-middle">{t('festivals.today', 'Today')}</span>}
             </h2>
             <p className="text-xs mt-1 font-sans" style={{ color: 'var(--t-muted)' }}>
-              {festivals.length} event{festivals.length !== 1 ? 's' : ''} on this day
+              {t('festivals.eventsOnDay', '{{count}} event(s) on this day', { count: festivals.length })}
             </p>
           </div>
           <button
@@ -169,7 +180,9 @@ function DayDetailModal({ day, month, year, festivals, onClose }) {
 }
 
 export default function Festivals() {
+  const { t } = useTranslation();
   const today  = new Date();
+  const { lang } = useLanguage();
   const [festivals,    setFestivals]    = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [month,        setMonth]        = useState(today.getMonth() + 1);
@@ -178,12 +191,14 @@ export default function Festivals() {
   const [selectedDay,  setSelectedDay]  = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     API.get(`/festivals?month=${month}&year=${year}`)
-      .then(({ data }) => setFestivals(data.festivals || []))
-      .catch(() => setFestivals([]))
-      .finally(() => setLoading(false));
-  }, [month, year]);
+      .then(({ data }) => { if (!cancelled) setFestivals(data.festivals || []); })
+      .catch(() => { if (!cancelled) setFestivals([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [month, year, lang]);
 
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear((y) => y - 1); } else setMonth((m) => m - 1); };
   const nextMonth = () => { if (month === 12) { setMonth(1); setYear((y) => y + 1); } else setMonth((m) => m + 1); };
@@ -210,11 +225,11 @@ export default function Festivals() {
 
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 relative">
           <div className="text-center mb-7">
-            <p className="section-eyebrow justify-center mb-3">Spiritual Calendar</p>
+            <p className="section-eyebrow justify-center mb-3">{t('festivals.eyebrow', 'Spiritual Calendar')}</p>
             <h1 style={{ fontSize: 'clamp(2rem, 5vw, 3rem)', letterSpacing: '-0.03em', color: 'var(--t-text)', fontFamily: "'Cormorant Garamond', serif", fontWeight: 700 }}>
-              Festival Calendar
+              {t('festivals.title', 'Festival Calendar')}
             </h1>
-            <p className="text-sm mt-2" style={{ color: 'var(--t-muted)' }}>Auspicious dates, tithis, and festivals for every month</p>
+            <p className="text-sm mt-2" style={{ color: 'var(--t-muted)' }}>{t('festivals.subtitle', 'Auspicious dates, tithis, and festivals for every month')}</p>
           </div>
 
           {/* Month / year navigation + view toggle */}
@@ -229,7 +244,7 @@ export default function Festivals() {
               </button>
               <div className="flex items-center gap-2">
                 <select value={month} onChange={(e) => setMonth(+e.target.value)} className="input w-auto py-2 pr-8 text-sm font-semibold">
-                  {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                  {MONTHS.map((m, i) => <option key={i} value={i + 1}>{t(MONTH_KEYS[i], m)}</option>)}
                 </select>
                 <select value={year} onChange={(e) => setYear(+e.target.value)} className="input w-auto py-2 pr-8 text-sm font-semibold">
                   {years.map((y) => <option key={y}>{y}</option>)}
@@ -247,9 +262,9 @@ export default function Festivals() {
             {/* View toggle */}
             <div className="flex gap-1 rounded-xl p-1" style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
               {[
-                { id: 'timeline', label: 'Timeline', icon: List },
-                { id: 'calendar', label: 'Calendar', icon: CalendarDays },
-              ].map(({ id, label, icon: Icon }) => (
+                { id: 'timeline', i18nKey: 'festivals.viewTimeline', label: 'Timeline', icon: List },
+                { id: 'calendar', i18nKey: 'festivals.viewCalendar', label: 'Calendar', icon: CalendarDays },
+              ].map(({ id, label, icon: Icon, i18nKey }) => (
                 <button
                   key={id}
                   onClick={() => setView(id)}
@@ -259,7 +274,7 @@ export default function Festivals() {
                     color:      view === id ? 'var(--t-text-inv)' : 'var(--t-muted)',
                   }}
                 >
-                  <Icon size={14} /> {label}
+                  <Icon size={14} /> {t(i18nKey, label)}
                 </button>
               ))}
             </div>
@@ -274,11 +289,11 @@ export default function Festivals() {
         <div className="flex items-center gap-3 mb-6">
           <Sparkles size={15} style={{ color: 'var(--t-primary)' }} />
           <span className="font-bold text-lg" style={{ color: 'var(--t-text)', fontFamily: "'Cormorant Garamond', serif", letterSpacing: '-0.01em' }}>
-            {MONTHS[month - 1]} {year}
+            {t(MONTH_KEYS[month - 1], MONTHS[month - 1])} {year}
           </span>
           {!loading && (
             <span className="text-xs font-bold px-3 py-0.5 rounded-full" style={{ background: 'var(--t-nav-active-bg)', color: 'var(--t-primary)' }}>
-              {festivals.length} event{festivals.length !== 1 ? 's' : ''}
+              {t('festivals.eventCount', '{{count}} event(s)', { count: festivals.length })}
             </span>
           )}
         </div>
@@ -295,9 +310,9 @@ export default function Festivals() {
                 <div className="w-20 h-20 bg-gray-100 rounded-3xl flex items-center justify-center mx-auto mb-5">
                   <Calendar size={32} className="text-gray-300" />
                 </div>
-                <p className="font-display font-bold text-gray-700 text-xl mb-2" style={{ letterSpacing: '-0.01em' }}>No Festivals Found</p>
+                <p className="font-display font-bold text-gray-700 text-xl mb-2" style={{ letterSpacing: '-0.01em' }}>{t('festivals.noFestivalsFound', 'No Festivals Found')}</p>
                 <p className="text-sm text-gray-400 max-w-xs mx-auto font-sans">
-                  No events for {MONTHS[month - 1]} {year}. Try another month or ask admin to sync data.
+                  {t('festivals.noEventsForMonth', 'No events for {{month}} {{year}}. Try another month or ask admin to sync data.', { month: t(MONTH_KEYS[month - 1], MONTHS[month - 1]), year })}
                 </p>
               </div>
             ) : (
@@ -322,8 +337,8 @@ export default function Festivals() {
         {view === 'calendar' && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-card overflow-hidden">
             <div className="grid grid-cols-7 border-b border-gray-100">
-              {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => (
-                <div key={d} className="text-center text-xs font-bold text-gray-400 py-3 border-r border-gray-100 last:border-r-0 font-sans">{d}</div>
+              {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d, i) => (
+                <div key={d} className="text-center text-xs font-bold text-gray-400 py-3 border-r border-gray-100 last:border-r-0 font-sans">{t(WEEKDAY_KEYS[i], d)}</div>
               ))}
             </div>
 
@@ -368,12 +383,12 @@ export default function Festivals() {
           <div className="mt-10 bg-white rounded-2xl border border-gray-100 p-5 shadow-card">
             <h3 className="font-display font-bold text-gray-800 text-lg mb-4 flex items-center gap-2" style={{ letterSpacing: '-0.01em' }}>
               <CalendarDays size={16} className="text-saffron-500" />
-              This Month at a Glance
+              {t('festivals.monthGlance', 'This Month at a Glance')}
             </h3>
             <div className="space-y-2">
               {festivals.slice(0, 8).map((f) => <FestivalCard key={f._id} festival={f} compact />)}
               {festivals.length > 8 && (
-                <p className="text-xs text-gray-400 text-center pt-2 font-sans">+{festivals.length - 8} more events this month</p>
+                <p className="text-xs text-gray-400 text-center pt-2 font-sans">{t('festivals.moreEventsThisMonth', '+{{n}} more events this month', { n: festivals.length - 8 })}</p>
               )}
             </div>
           </div>

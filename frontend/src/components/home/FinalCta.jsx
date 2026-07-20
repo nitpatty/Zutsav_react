@@ -1,8 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function FinalCta() {
+  const { t } = useTranslation();
   return (
     <section
       className="section-pad-sm text-white relative overflow-hidden"
@@ -14,21 +16,21 @@ export default function FinalCta() {
       <div className="container-pad relative text-center">
         <div className="text-5xl mb-5">🙏</div>
         <h2 className="font-display font-bold mb-4 leading-tight" style={{ fontSize: 'clamp(2rem, 5vw, 3.5rem)', letterSpacing: '-0.03em' }}>
-          Connect with
+          {t('home.finalCtaTitleLine1', 'Connect with')}
           <br />
-          the Divine Today
+          {t('home.finalCtaTitleLine2', 'the Divine Today')}
         </h2>
         <p className="text-saffron-100 mb-10 text-lg max-w-xl mx-auto font-sans leading-relaxed">
-          Book your first puja and experience authentic spiritual service delivered to your door.
+          {t('home.finalCtaDesc', 'Book your first puja and experience authentic spiritual service delivered to your door.')}
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link to="/poojas"
             className="inline-flex items-center justify-center gap-2 bg-white text-saffron-700 font-bold px-9 py-4 rounded-2xl hover:bg-saffron-50 transition-all duration-200 shadow-luxury hover:-translate-y-0.5 font-sans">
-            Book a Puja <ArrowRight size={18} />
+            {t('home.ctaBookPuja', 'Book a Puja')} <ArrowRight size={18} />
           </Link>
           <Link to="/register"
             className="inline-flex items-center justify-center gap-2 border-2 border-white/40 text-white font-semibold px-9 py-4 rounded-2xl hover:bg-white/10 hover:border-white/60 transition-all duration-200 font-sans">
-            Create Free Account
+            {t('home.createFreeAccount', 'Create Free Account')}
           </Link>
         </div>
       </div>

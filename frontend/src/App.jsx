@@ -1,7 +1,9 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LanguageProvider } from './context/LanguageContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { SettingsProvider } from './context/SettingsContext';
@@ -47,6 +49,7 @@ import BlogDetailPage   from './pages/BlogDetailPage';
 import BlogEditor       from './pages/BlogEditor';
 import MyBlogsPage      from './pages/MyBlogsPage';
 import ReferralLanding  from './pages/ReferralLanding';
+import Settings         from './pages/Settings';
 
 /* ── Auth guard ─────────────────────────────────────── */
 const ProtectedRoute = ({ children, roles }) => {
@@ -185,7 +188,7 @@ const AppRoutes = () => {
           } />
           <Route path="/settings" element={
             <ProtectedRoute>
-              <DashboardLayout><ComingSoon title="Settings" /></DashboardLayout>
+              <DashboardLayout><Settings /></DashboardLayout>
             </ProtectedRoute>
           } />
 
@@ -249,10 +252,21 @@ const AppRoutes = () => {
   );
 };
 
+// Session-level cache for translated content (see hooks/useTranslatedBlog.js).
+// staleTime keeps a (slug, lang) pair served from memory on repeated language
+// switches within the session, without a network round-trip.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 5 * 60 * 1000, retry: 1, refetchOnWindowFocus: false },
+  },
+});
+
 export default function App() {
   return (
+    <QueryClientProvider client={queryClient}>
     <BrowserRouter>
       <AuthProvider>
+        <LanguageProvider>
         <CartProvider>
         <SettingsProvider>
         <Toaster
@@ -272,7 +286,9 @@ export default function App() {
         <AppRoutes />
         </SettingsProvider>
         </CartProvider>
+        </LanguageProvider>
       </AuthProvider>
     </BrowserRouter>
+    </QueryClientProvider>
   );
 }

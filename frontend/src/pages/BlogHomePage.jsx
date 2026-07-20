@@ -8,23 +8,28 @@ import {
 import API from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
 import { getImageUrl as imgUrl } from '../config';
+import { useLanguage } from '../context/LanguageContext';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Not a component — uses the shared i18n instance directly (t() outside React).
 function relativeTime(dateStr) {
   if (!dateStr) return '';
+  const t = i18n.t.bind(i18n);
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t('blog.justNow', 'just now');
+  if (mins < 60) return t('blog.minsAgo', '{{n}}m ago', { n: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t('blog.hoursAgo', '{{n}}h ago', { n: hrs });
   const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return t('blog.daysAgo', '{{n}}d ago', { n: days });
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  return `${Math.floor(months / 12)}y ago`;
+  if (months < 12) return t('blog.monthsAgo', '{{n}}mo ago', { n: months });
+  return t('blog.yearsAgo', '{{n}}y ago', { n: Math.floor(months / 12) });
 }
 
 function formatNumber(n) {
@@ -74,6 +79,7 @@ function SkeletonCard() {
 // ─── Blog card ─────────────────────────────────────────────────────────────────
 
 function BlogCard({ blog, index, onLike }) {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const gradient = CARD_GRADIENTS[index % CARD_GRADIENTS.length];
@@ -86,7 +92,7 @@ function BlogCard({ blog, index, onLike }) {
     e.preventDefault();
     e.stopPropagation();
     if (!isAuthenticated) {
-      toast.error('Sign in to like posts');
+      toast.error(t('blog.signInToLike', 'Sign in to like posts'));
       return;
     }
     onLike(blog._id);
@@ -147,7 +153,7 @@ function BlogCard({ blog, index, onLike }) {
           </div>
           <div className="min-w-0 flex-1">
             <span className="text-xs font-semibold text-gray-700 font-sans truncate block">
-              {blog.authorName || blog.author?.name || 'Anonymous'}
+              {blog.authorName || blog.author?.name || t('blog.anonymous', 'Anonymous')}
             </span>
             {blog.authorRole && (
               <span className="text-[10px] text-indigo-500 font-sans truncate block">{blog.authorRole}</span>
@@ -211,6 +217,7 @@ function TrendingItem({ blog, rank }) {
 // ─── Featured hero blog ────────────────────────────────────────────────────────
 
 function FeaturedHeroBlog({ blog }) {
+  const { t } = useTranslation();
   const coverUrl = imgUrl(blog.featuredImage);
   const authorInitial = (blog.authorName || blog.author?.name || 'A').charAt(0).toUpperCase();
   const authorAvatar = imgUrl(blog.authorAvatar || blog.author?.avatar);
@@ -241,7 +248,7 @@ function FeaturedHeroBlog({ blog }) {
           className="text-white text-xs font-bold px-3 py-1.5 rounded-full font-sans tracking-wider uppercase"
           style={{ background: 'linear-gradient(135deg, #D4AF37, #FF6B00)' }}
         >
-          ✦ Featured
+          ✦ {t('home.featured', 'Featured')}
         </span>
       </div>
 
@@ -270,11 +277,11 @@ function FeaturedHeroBlog({ blog }) {
             )}
           </div>
           <span className="text-sm font-semibold text-white font-sans">
-            {blog.authorName || blog.author?.name || 'Anonymous'}
+            {blog.authorName || blog.author?.name || t('blog.anonymous', 'Anonymous')}
           </span>
           {blog.readingTime && (
             <span className="text-xs text-gray-400 font-sans flex items-center gap-1">
-              <Clock size={11} />{blog.readingTime} min read
+              <Clock size={11} />{t('blog.minRead', '{{n}} min read', { n: blog.readingTime })}
             </span>
           )}
         </div>
@@ -286,7 +293,9 @@ function FeaturedHeroBlog({ blog }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function BlogHomePage() {
+  const { t } = useTranslation();
   const { isAuthenticated, user } = useAuth();
+  const { lang } = useLanguage();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -334,7 +343,14 @@ export default function BlogHomePage() {
   }, [debouncedSearch, category, tag, page, setSearchParams]);
 
   // ── Fetch blogs ──────────────────────────────────────────────────────────────
+  // fetchBlogsRequestId guards against out-of-order responses: if `lang` (or
+  // any other dep) changes again before an in-flight request resolves, its
+  // result is discarded instead of overwriting the newer request's data —
+  // otherwise a slow request for a language the user has since switched away
+  // from could land last and leave the list showing the wrong language.
+  const fetchBlogsRequestId = useRef(0);
   const fetchBlogs = useCallback(async () => {
+    const requestId = ++fetchBlogsRequestId.current;
     setLoadingBlogs(true);
     try {
       const params = new URLSearchParams({
@@ -345,18 +361,20 @@ export default function BlogHomePage() {
         ...(debouncedSearch && { search: debouncedSearch }),
       });
       const { data } = await API.get(`/blogs?${params}`);
+      if (fetchBlogsRequestId.current !== requestId) return;
       setBlogs(data.blogs || []);
       setTotal(data.total || 0);
       setPages(data.pages || 1);
     } catch (err) {
+      if (fetchBlogsRequestId.current !== requestId) return;
       if (err.response?.status !== 401) {
-        toast.error('Could not load blogs');
+        toast.error(t('blog.couldNotLoadBlogs', 'Could not load blogs'));
       }
       setBlogs([]);
     } finally {
-      setLoadingBlogs(false);
+      if (fetchBlogsRequestId.current === requestId) setLoadingBlogs(false);
     }
-  }, [page, category, tag, debouncedSearch]);
+  }, [page, category, tag, debouncedSearch, lang, t]);
 
   useEffect(() => {
     fetchBlogs();
@@ -364,22 +382,27 @@ export default function BlogHomePage() {
 
   // ── Fetch categories ─────────────────────────────────────────────────────────
   useEffect(() => {
+    let cancelled = false;
     setLoadingCategories(true);
     API.get('/blogs/categories')
-      .then(({ data }) => setCategories(data.categories || []))
+      .then(({ data }) => { if (!cancelled) setCategories(data.categories || []); })
       .catch(() => {})
-      .finally(() => setLoadingCategories(false));
-  }, []);
+      .finally(() => { if (!cancelled) setLoadingCategories(false); });
+    return () => { cancelled = true; };
+  }, [lang]);
 
   // ── Fetch popular tags ───────────────────────────────────────────────────────
   useEffect(() => {
+    let cancelled = false;
     API.get('/blogs/tags/popular')
-      .then(({ data }) => setPopularTags(data.tags || []))
+      .then(({ data }) => { if (!cancelled) setPopularTags(data.tags || []); })
       .catch(() => {});
-  }, []);
+    return () => { cancelled = true; };
+  }, [lang]);
 
   // ── Fetch trending + editor's pick + featured ────────────────────────────────
   useEffect(() => {
+    let cancelled = false;
     setLoadingTrending(true);
     Promise.all([
       API.get('/blogs?trending=true&limit=5').catch(() => ({ data: { blogs: [] } })),
@@ -387,12 +410,14 @@ export default function BlogHomePage() {
       API.get('/blogs?featured=true&limit=3').catch(() => ({ data: { blogs: [] } })),
     ])
       .then(([trendRes, featRes, editorRes]) => {
+        if (cancelled) return;
         setTrendingBlogs(trendRes.data.blogs || []);
         setFeaturedBlog((featRes.data.blogs || [])[0] || null);
         setEditorBlogs(editorRes.data.blogs || []);
       })
-      .finally(() => setLoadingTrending(false));
-  }, []);
+      .finally(() => { if (!cancelled) setLoadingTrending(false); });
+    return () => { cancelled = true; };
+  }, [lang]);
 
   // ── Like a blog ───────────────────────────────────────────────────────────────
   const handleLike = useCallback(async (blogId) => {
@@ -441,7 +466,7 @@ export default function BlogHomePage() {
           <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase"
             style={{ background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.3)', color: '#D4AF37' }}>
             <Sparkles size={12} />
-            The Zutsav Blog
+            {t('blog.eyebrow', 'The Zutsav Blog')}
           </div>
 
           <h1
@@ -452,13 +477,12 @@ export default function BlogHomePage() {
               letterSpacing: '-0.03em',
             }}
           >
-            Stories from the{' '}
-            <span style={{ color: '#D4AF37' }}>Sacred Journey</span>
+            {t('blog.heroTitlePrefix', 'Stories from the')}{' '}
+            <span style={{ color: '#D4AF37' }}>{t('blog.heroTitleHighlight', 'Sacred Journey')}</span>
           </h1>
 
           <p className="text-gray-300 text-base md:text-lg max-w-xl mx-auto mb-10 leading-relaxed">
-            Wisdom, rituals, and spiritual insights from pandits, devotees,
-            and the Zutsav community
+            {t('blog.heroDescription', 'Wisdom, rituals, and spiritual insights from pandits, devotees, and the Zutsav community')}
           </p>
 
           {/* Search bar */}
@@ -468,7 +492,7 @@ export default function BlogHomePage() {
               type="text"
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
-              placeholder="Search stories, rituals, festivals…"
+              placeholder={t('blog.searchPlaceholder', 'Search stories, rituals, festivals…')}
               className="w-full pl-11 pr-12 py-3.5 rounded-2xl bg-white/10 border border-white/15 text-white placeholder-gray-400 focus:outline-none focus:border-amber-400/50 focus:bg-white/15 transition-all text-sm"
             />
             {searchInput && (
@@ -488,7 +512,7 @@ export default function BlogHomePage() {
                 to="/my-blogs"
                 className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl font-semibold text-sm transition-all hover:bg-white/15 border border-white/15 text-white"
               >
-                My Blogs
+                {t('blog.myBlogs', 'My Blogs')}
               </Link>
               <Link
                 to="/blog/write"
@@ -496,7 +520,7 @@ export default function BlogHomePage() {
                 style={{ background: 'linear-gradient(135deg, #D4AF37, #FF6B00)', color: '#fff' }}
               >
                 <PenSquare size={15} />
-                Write a Blog
+                {t('blog.writeABlog', 'Write a Blog')}
               </Link>
             </div>
           )}
@@ -519,7 +543,7 @@ export default function BlogHomePage() {
               }`}
               style={!category && !tag ? { background: '#1B1F3B' } : {}}
             >
-              All
+              {t('marketplace.all', 'All')}
             </button>
 
             {loadingCategories
@@ -559,15 +583,15 @@ export default function BlogHomePage() {
           <div className="flex items-center gap-3 mb-6 p-3 bg-indigo-50 border border-indigo-100 rounded-2xl text-sm font-sans">
             <Search size={14} className="text-indigo-400 shrink-0" />
             <span className="text-indigo-700 flex-1">
-              {debouncedSearch && <span>Search: <strong>"{debouncedSearch}"</strong> </span>}
-              {category && <span>Category filter active </span>}
-              {tag && <span>Tag: <strong>#{tag}</strong></span>}
+              {debouncedSearch && <span>{t('blog.searchLabel', 'Search:')} <strong>"{debouncedSearch}"</strong> </span>}
+              {category && <span>{t('blog.categoryFilterActive', 'Category filter active')} </span>}
+              {tag && <span>{t('blog.tagLabel', 'Tag:')} <strong>#{tag}</strong></span>}
             </span>
             <button
               onClick={() => { setSearchInput(''); setDebouncedSearch(''); setCategory(''); setTag(''); setPage(1); }}
               className="flex items-center gap-1 text-indigo-500 hover:text-indigo-700 font-semibold"
             >
-              <X size={13} /> Clear
+              <X size={13} /> {t('blog.clear', 'Clear')}
             </button>
           </div>
         )}
@@ -599,12 +623,12 @@ export default function BlogHomePage() {
                   className="text-2xl font-bold text-gray-800 mb-2"
                   style={{ fontFamily: '"Cormorant Garamond"' }}
                 >
-                  No stories found
+                  {t('blog.noStoriesFound', 'No stories found')}
                 </h3>
                 <p className="text-gray-500 text-sm max-w-xs mb-6">
                   {debouncedSearch
-                    ? `No blogs match "${debouncedSearch}". Try a different keyword.`
-                    : 'There are no blogs in this category yet. Check back soon.'}
+                    ? t('blog.noBlogsMatch', 'No blogs match "{{search}}". Try a different keyword.', { search: debouncedSearch })
+                    : t('blog.noBlogsInCategory', 'There are no blogs in this category yet. Check back soon.')}
                 </p>
                 <button
                   onClick={() => { setSearchInput(''); setDebouncedSearch(''); setCategory(''); setTag(''); setPage(1); }}
@@ -612,7 +636,7 @@ export default function BlogHomePage() {
                   style={{ background: '#1B1F3B' }}
                 >
                   <RefreshCw size={14} />
-                  Browse All Stories
+                  {t('blog.browseAllStories', 'Browse All Stories')}
                 </button>
               </div>
             ) : (
@@ -677,7 +701,7 @@ export default function BlogHomePage() {
 
                 {/* Results count */}
                 <p className="text-center text-xs text-gray-400 font-sans mt-3">
-                  Showing {Math.min((page - 1) * LIMIT + 1, total)}–{Math.min(page * LIMIT, total)} of {total} stories
+                  {t('blog.showingRange', 'Showing {{from}}–{{to}} of {{total}} stories', { from: Math.min((page - 1) * LIMIT + 1, total), to: Math.min(page * LIMIT, total), total })}
                 </p>
               </>
             )}
@@ -694,7 +718,7 @@ export default function BlogHomePage() {
                   className="font-bold text-gray-800 text-base"
                   style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1.15rem' }}
                 >
-                  Trending Now
+                  {t('blog.trendingNow', 'Trending Now')}
                 </h3>
               </div>
 
@@ -711,7 +735,7 @@ export default function BlogHomePage() {
                   ))}
                 </div>
               ) : trendingBlogs.length === 0 ? (
-                <p className="text-sm text-gray-400 font-sans">No trending posts yet.</p>
+                <p className="text-sm text-gray-400 font-sans">{t('blog.noTrendingPosts', 'No trending posts yet.')}</p>
               ) : (
                 <div className="divide-y divide-gray-50">
                   {trendingBlogs.map((blog, i) => (
@@ -730,7 +754,7 @@ export default function BlogHomePage() {
                     className="font-bold text-gray-800"
                     style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1.15rem' }}
                   >
-                    Popular Tags
+                    {t('blog.popularTags', 'Popular Tags')}
                   </h3>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -762,7 +786,7 @@ export default function BlogHomePage() {
                     className="font-bold text-gray-800"
                     style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1.15rem' }}
                   >
-                    Editor's Pick
+                    {t('blog.editorsPick', "Editor's Pick")}
                   </h3>
                 </div>
                 <div className="space-y-4">
@@ -818,17 +842,17 @@ export default function BlogHomePage() {
                   className="font-bold text-lg mb-1.5"
                   style={{ fontFamily: '"Cormorant Garamond"' }}
                 >
-                  Share Your Story
+                  {t('blog.shareYourStory', 'Share Your Story')}
                 </h4>
                 <p className="text-gray-300 text-xs mb-4 font-sans">
-                  Inspire the Zutsav community with your spiritual insights.
+                  {t('blog.inspireDesc', 'Inspire the Zutsav community with your spiritual insights.')}
                 </p>
                 <Link
                   to="/blog/write"
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90"
                   style={{ background: '#D4AF37', color: '#1B1F3B' }}
                 >
-                  Write a Blog <ArrowRight size={13} />
+                  {t('blog.writeABlog', 'Write a Blog')} <ArrowRight size={13} />
                 </Link>
               </div>
             )}
@@ -844,17 +868,17 @@ export default function BlogHomePage() {
                   className="font-bold text-lg mb-1.5"
                   style={{ fontFamily: '"Cormorant Garamond"' }}
                 >
-                  Join the Community
+                  {t('blog.joinCommunity', 'Join the Community')}
                 </h4>
                 <p className="text-gray-300 text-xs mb-4 font-sans">
-                  Sign in to like posts, save stories, and write your own.
+                  {t('blog.joinCommunityDesc', 'Sign in to like posts, save stories, and write your own.')}
                 </p>
                 <Link
                   to="/register"
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90"
                   style={{ background: '#D4AF37', color: '#1B1F3B' }}
                 >
-                  Get Started <ArrowRight size={13} />
+                  {t('auth.getStarted', 'Get Started')} <ArrowRight size={13} />
                 </Link>
               </div>
             )}

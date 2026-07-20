@@ -41,6 +41,11 @@ const userSchema = new mongoose.Schema({
   referredBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   referralCount: { type: Number, default: 0 },
 
+  // Global app language preference — applies across every page/module/role
+  // (see frontend/src/context/LanguageContext.js). Not role-specific; every
+  // user regardless of role shares this same field and Settings UI.
+  preferredLanguage: { type: String, default: 'en' },
+
   savedAddresses: [{
     label:    { type: String, default: 'Home' },
     address:  { type: String, required: true },

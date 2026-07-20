@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import API from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { useLanguage } from '../context/LanguageContext';
 import LoginModal from '../components/shared/LoginModal';
 import ZutsavLoader from '../components/shared/ZutsavLoader';
 import { getImageUrl } from '../config';
@@ -14,6 +15,7 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const { addProduct, productItems } = useCart();
+  const { lang } = useLanguage();
 
   const [product,    setProduct]    = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -33,7 +35,7 @@ export default function ProductDetail() {
       })
       .catch(() => { toast.error('Product not found'); navigate('/marketplace'); })
       .finally(() => setLoading(false));
-  }, [slug, navigate]);
+  }, [slug, navigate, lang]);
 
   if (loading) return <ZutsavLoader fullscreen size={60} />;
   if (!product) return null;

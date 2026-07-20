@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import PincodeInput from '../components/shared/PincodeInput';
 import API from '../api/axios';
+import { getStoredLanguage } from '../utils/languageStorage';
 
 // ─── Step 1: Role selection ────────────────────────────────────
 function RoleStep({ onSelect }) {
@@ -535,6 +536,10 @@ export default function Register() {
         password,
         channel,
         referralCode: referralCode || undefined,
+        // Migrate the guest's locally-stored language preference into the new
+        // account (only applied server-side if the account has no DB value
+        // yet — see auth.controller.js's completeRegistration).
+        preferredLanguage: getStoredLanguage(),
       });
       // Auto-login
       localStorage.setItem('zutsav_token', data.token);
@@ -558,6 +563,7 @@ export default function Register() {
         password,
         channel,
         role: 'pandit',
+        preferredLanguage: getStoredLanguage(),
       });
       localStorage.setItem('zutsav_token', data.token);
       localStorage.setItem('zutsav_user',  JSON.stringify(data.user));

@@ -63,6 +63,11 @@ const notificationMappingSchema = new mongoose.Schema(
 
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
+    // Bumped only when inAppTitle/inAppMessage actually change — the in-app
+    // template is translated once per language and reused across every
+    // notification sent for this event (see translationService.js).
+    translationVersion: { type: Number, default: 1 },
   },
   { timestamps: true }
 );

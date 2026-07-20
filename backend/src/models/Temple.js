@@ -21,6 +21,10 @@ const templeSchema = new mongoose.Schema({
   status:      { type: String, enum: ['draft', 'published', 'hidden', 'archived'], default: 'published' },
   isDeleted:   { type: Boolean, default: false },
   deletedAt:   { type: Date, default: null },
+
+  // Bumped only when a translatable field actually changes (see updateTemple) —
+  // cached translations compare against this to detect staleness.
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Temple', templeSchema);

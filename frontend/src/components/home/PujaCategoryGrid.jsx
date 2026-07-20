@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { getImageUrl as IMG } from '../../config';
 import { EyebrowTag, useInView } from './shared';
 
@@ -22,16 +23,17 @@ const CAT_ICON_BG = [
 ];
 
 export default function PujaCategoryGrid({ categories, loading }) {
+  const { t } = useTranslation();
   const [catRef, catInView] = useInView();
 
   return (
     <section className="section-pad bg-white">
       <div ref={catRef} className="container-pad">
         <div className="text-center mb-14">
-          <EyebrowTag>Our Services</EyebrowTag>
-          <h2 className="section-title">Browse by Category</h2>
+          <EyebrowTag>{t('home.categoriesEyebrow', 'Our Services')}</EyebrowTag>
+          <h2 className="section-title">{t('home.categoriesTitle', 'Browse by Category')}</h2>
           <p className="section-subtitle mx-auto text-center">
-            From Gruhapravesh to Satyanarayan — find the perfect puja for every occasion
+            {t('home.categoriesSubtitle', 'From Gruhapravesh to Satyanarayan — find the perfect puja for every occasion')}
           </p>
         </div>
 
@@ -54,7 +56,7 @@ export default function PujaCategoryGrid({ categories, loading }) {
 
         <div className="text-center mt-12">
           <Link to="/poojas" className="btn-outline inline-flex items-center gap-2">
-            View All Categories <ArrowRight size={16} />
+            {t('home.viewAllCategories', 'View All Categories')} <ArrowRight size={16} />
           </Link>
         </div>
       </div>

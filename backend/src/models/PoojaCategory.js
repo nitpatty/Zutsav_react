@@ -18,6 +18,8 @@ const poojaCategorySchema = new mongoose.Schema({
 
   createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   updatedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('PoojaCategory', poojaCategorySchema);

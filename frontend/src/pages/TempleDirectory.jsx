@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { MapPin, Search, Tv, X, ChevronRight, Play } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import API from '../api/axios';
 import toast from 'react-hot-toast';
 import { getImageUrl } from '../config';
+import { useLanguage } from '../context/LanguageContext';
 
 function TempleCard({ temple, onWatch }) {
+  const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -47,7 +50,7 @@ function TempleCard({ temple, onWatch }) {
             onClick={() => onWatch(temple)}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-transform duration-200 hover:scale-105"
             style={{ background: 'var(--t-secondary)', color: 'var(--t-text-inv, #1B1F3B)' }}>
-            <Play size={14} /> Watch Livestream
+            <Play size={14} /> {t('temples.watchLivestream', 'Watch Livestream')}
           </button>
         </div>
 
@@ -77,7 +80,7 @@ function TempleCard({ temple, onWatch }) {
           style={{ color: 'var(--t-primary)' }}
           onMouseOver={(e) => e.currentTarget.style.color = 'var(--t-secondary)'}
           onMouseOut={(e) => e.currentTarget.style.color = 'var(--t-primary)'}>
-          <Tv size={13} /> Live Darshan <ChevronRight size={13} />
+          <Tv size={13} /> {t('temples.liveDarshan', 'Live Darshan')} <ChevronRight size={13} />
         </button>
       </div>
     </div>
@@ -85,6 +88,7 @@ function TempleCard({ temple, onWatch }) {
 }
 
 function LivestreamModal({ temple, onClose }) {
+  const { t } = useTranslation();
   const [streams, setStreams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [active,  setActive]  = useState(null);
@@ -95,9 +99,9 @@ function LivestreamModal({ temple, onClose }) {
         setStreams(data.livestreams);
         if (data.livestreams.length) setActive(data.livestreams[0]);
       })
-      .catch(() => toast.error('Could not load streams'))
+      .catch(() => toast.error(t('temples.couldNotLoadStreams', 'Could not load streams')))
       .finally(() => setLoading(false));
-  }, [temple._id]);
+  }, [temple._id, t]);
 
   const getEmbedUrl = (url) => {
     try {
@@ -141,8 +145,8 @@ function LivestreamModal({ temple, onClose }) {
                    style={{ background: 'var(--t-surface)' }}>
                 <Tv size={28} style={{ color: 'var(--t-muted)' }} />
               </div>
-              <p className="font-semibold mb-1" style={{ color: 'var(--t-text)' }}>No Livestreams Available</p>
-              <p className="text-sm" style={{ color: 'var(--t-muted)' }}>Check back during aarti timings</p>
+              <p className="font-semibold mb-1" style={{ color: 'var(--t-text)' }}>{t('temples.noLivestreams', 'No Livestreams Available')}</p>
+              <p className="text-sm" style={{ color: 'var(--t-muted)' }}>{t('temples.checkBackAarti', 'Check back during aarti timings')}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -186,21 +190,31 @@ function LivestreamModal({ temple, onClose }) {
 }
 
 export default function TempleDirectory() {
+  const { t } = useTranslation();
+  const { lang } = useLanguage();
   const [temples,     setTemples]     = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [search,      setSearch]      = useState('');
   const [stateFilter, setStateFilter] = useState('');
   const [selected,    setSelected]    = useState(null);
 
+  // `load` is called both reactively (language switch) and imperatively
+  // (search button, Enter key) — a per-effect cleanup flag can't cover both
+  // call sites, so a shared "latest request wins" token does: any response
+  // whose token no longer matches the most recent call is a stale request
+  // (e.g. a slow fetch for a language the user has since switched away
+  // from) and is discarded instead of overwriting fresher state.
+  const requestIdRef = useRef(0);
   const load = (s = '', st = '') => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     API.get(`/temples?search=${s}&state=${st}&limit=50`)
-      .then(({ data }) => setTemples(data.temples))
-      .catch(() => toast.error('Could not load temples'))
-      .finally(() => setLoading(false));
+      .then(({ data }) => { if (requestIdRef.current === requestId) setTemples(data.temples); })
+      .catch(() => { if (requestIdRef.current === requestId) toast.error(t('temples.couldNotLoadTemples', 'Could not load temples')); })
+      .finally(() => { if (requestIdRef.current === requestId) setLoading(false); });
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [lang]);
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--t-bg)' }}>
@@ -210,14 +224,14 @@ export default function TempleDirectory() {
         <div className="relative max-w-7xl mx-auto px-4 py-12 md:py-16">
           <div className="inline-flex items-center gap-2 mb-3">
             <span className="w-5 h-px" style={{ background: 'rgba(212,175,55,0.5)' }} />
-            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#D4AF37' }}>Sacred Places</span>
+            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#D4AF37' }}>{t('home.sacredPlaces', 'Sacred Places')}</span>
             <span className="w-5 h-px" style={{ background: 'rgba(212,175,55,0.5)' }} />
           </div>
           <h1 className="text-4xl md:text-5xl font-bold text-white mb-2"
               style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', letterSpacing: '-0.02em' }}>
-            Temple Directory
+            {t('temples.directoryTitle', 'Temple Directory')}
           </h1>
-          <p className="text-white/40 text-sm font-sans">Discover sacred temples and watch live aartis &amp; darshan</p>
+          <p className="text-white/40 text-sm font-sans">{t('temples.directorySubtitle', 'Discover sacred temples and watch live aartis & darshan')}</p>
         </div>
       </div>
 
@@ -230,7 +244,7 @@ export default function TempleDirectory() {
             <input
               className="flex-1 outline-none text-sm placeholder-gray-400 bg-transparent"
             style={{ color: 'var(--t-text)' }}
-              placeholder="Search temple by name..."
+              placeholder={t('temples.searchPlaceholder', 'Search temple by name...')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && load(search, stateFilter)}
@@ -238,7 +252,7 @@ export default function TempleDirectory() {
           </div>
           <input
             className="input w-44 text-sm"
-            placeholder="Filter by state..."
+            placeholder={t('temples.filterByState', 'Filter by state...')}
             value={stateFilter}
             onChange={(e) => setStateFilter(e.target.value)}
           />
@@ -246,7 +260,7 @@ export default function TempleDirectory() {
             onClick={() => load(search, stateFilter)}
             className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all shadow-sm hover:shadow-md active:scale-[0.98]"
             style={{ background: 'var(--t-primary)' }}>
-            Search
+            {t('temples.search', 'Search')}
           </button>
         </div>
 
@@ -273,9 +287,9 @@ export default function TempleDirectory() {
             </div>
             <h3 className="text-2xl font-bold mb-2"
                 style={{ fontFamily: '"Cormorant Garamond"', color: 'var(--t-text)' }}>
-              No Temples Found
+              {t('temples.noTemplesFound', 'No Temples Found')}
             </h3>
-            <p className="text-sm" style={{ color: 'var(--t-muted)' }}>Try a different search term or state</p>
+            <p className="text-sm" style={{ color: 'var(--t-muted)' }}>{t('temples.tryDifferentSearch', 'Try a different search term or state')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">

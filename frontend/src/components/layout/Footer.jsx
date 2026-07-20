@@ -1,26 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Phone, Mail, MapPin, Instagram, Facebook, Youtube, ArrowUpRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../context/SettingsContext';
 import API from '../../api/axios';
 import { resolveViewUrl } from '../../utils/legalDocs';
 
 const SERVICES = [
-  { label: 'Book a Pooja',          to: '/poojas'      },
-  { label: 'Festival Calendar',     to: '/festivals'   },
-  { label: 'Spiritual Marketplace', to: '/marketplace' },
-  { label: 'Temple Directory',      to: '/temples'     },
-  { label: 'Daily Panchang',        to: '/panchang'    },
-  { label: 'AI Spiritual Guide',    to: '/ai-assistant'},
+  { i18nKey: 'footer.bookPooja',    label: 'Book a Pooja',          to: '/poojas'      },
+  { i18nKey: 'footer.festivalCal',  label: 'Festival Calendar',     to: '/festivals'   },
+  { i18nKey: 'footer.marketplace',  label: 'Spiritual Marketplace', to: '/marketplace' },
+  { i18nKey: 'footer.templeDir',    label: 'Temple Directory',      to: '/temples'     },
+  { i18nKey: 'footer.dailyPanchang',label: 'Daily Panchang',        to: '/panchang'    },
+  { i18nKey: 'footer.aiGuide',      label: 'AI Spiritual Guide',    to: '/ai-assistant'},
 ];
 
 const COMPANY = [
-  { label: 'Home',             to: '/'                },
-  { label: 'Browse Poojas',    to: '/poojas'          },
-  { label: 'Register as Pandit', to: '/register'      },
+  { i18nKey: 'footer.home',        label: 'Home',             to: '/'          },
+  { i18nKey: 'footer.browsePoojas',label: 'Browse Poojas',    to: '/poojas'    },
+  { i18nKey: 'footer.registerPandit', label: 'Register as Pandit', to: '/register' },
 ];
 
 export default function Footer() {
+  const { t } = useTranslation();
   const {
     platformName, logoUrl, contactEmail, supportPhone, supportAddress,
   } = useSettings();
@@ -48,8 +50,7 @@ export default function Footer() {
               <span className="font-serif text-2xl font-bold text-gold-400"></span>
             </div>
             <p className="text-gray-400 text-sm leading-relaxed mb-6">
-              India's most trusted spiritual platform — connecting devotees with verified pandits,
-              authentic samagri, and sacred wisdom.
+              {t('footer.tagline', "India's most trusted spiritual platform — connecting devotees with verified pandits, authentic samagri, and sacred wisdom.")}
             </p>
             <div className="flex gap-3">
               {[
@@ -67,13 +68,13 @@ export default function Footer() {
 
           {/* Services */}
           <div>
-            <h4 className="font-semibold text-white text-sm mb-5 tracking-wide">Services</h4>
+            <h4 className="font-semibold text-white text-sm mb-5 tracking-wide">{t('footer.services', 'Services')}</h4>
             <ul className="space-y-3">
-              {SERVICES.map(({ label, to }) => (
+              {SERVICES.map(({ label, to, i18nKey }) => (
                 <li key={label}>
                   <Link to={to}
                     className="text-gray-400 text-sm hover:text-saffron-400 transition-colors flex items-center gap-1.5 group">
-                    {label}
+                    {t(i18nKey, label)}
                     <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                   </Link>
                 </li>
@@ -83,13 +84,13 @@ export default function Footer() {
 
           {/* Company */}
           <div>
-            <h4 className="font-semibold text-white text-sm mb-5 tracking-wide">Company</h4>
+            <h4 className="font-semibold text-white text-sm mb-5 tracking-wide">{t('footer.company', 'Company')}</h4>
             <ul className="space-y-3">
-              {COMPANY.map(({ label, to }) => (
+              {COMPANY.map(({ label, to, i18nKey }) => (
                 <li key={label}>
                   <Link to={to}
                     className="text-gray-400 text-sm hover:text-saffron-400 transition-colors">
-                    {label}
+                    {t(i18nKey, label)}
                   </Link>
                 </li>
               ))}
@@ -110,7 +111,7 @@ export default function Footer() {
 
           {/* Contact */}
           <div>
-            <h4 className="font-semibold text-white text-sm mb-5 tracking-wide">Contact</h4>
+            <h4 className="font-semibold text-white text-sm mb-5 tracking-wide">{t('footer.contact', 'Contact')}</h4>
             <ul className="space-y-4">
               {supportPhone && (
                 <li className="flex items-center gap-3">
@@ -137,7 +138,7 @@ export default function Footer() {
                 </li>
               )}
               {!supportPhone && !contactEmail && !supportAddress && (
-                <li className="text-gray-500 text-sm italic">Contact info not configured</li>
+                <li className="text-gray-500 text-sm italic">{t('footer.contactNotConfigured', 'Contact info not configured')}</li>
               )}
             </ul>
 
@@ -146,7 +147,7 @@ export default function Footer() {
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-gold-400 text-sm">★★★★★</span>
               </div>
-              <p className="text-xs text-gray-400">Trusted by 10,000+ devotees across India</p>
+              <p className="text-xs text-gray-400">{t('footer.trustBadge', 'Trusted by 10,000+ devotees across India')}</p>
             </div>
           </div>
         </div>
@@ -156,10 +157,10 @@ export default function Footer() {
       <div className="border-t border-white/8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-gray-500">
-            © {new Date().getFullYear()} {platformName}. Made with 🙏 in India.
+            © {new Date().getFullYear()} {platformName}. {t('footer.madeWith', 'Made with 🙏 in India.')}
           </p>
           <p className="text-xs text-gray-600">
-            Proudly serving devotees since 2024
+            {t('footer.servingSince', 'Proudly serving devotees since 2024')}
           </p>
         </div>
       </div>

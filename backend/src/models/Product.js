@@ -28,6 +28,10 @@ const productSchema = new mongoose.Schema({
   visibilityType: { type: String, enum: ['marketplace', 'kit_only', 'both'], default: 'marketplace' },
   isDeleted:      { type: Boolean, default: false },
   deletedAt:      { type: Date, default: null },
+
+  // Bumped only when a translatable field actually changes (see updateProduct) —
+  // cached translations compare against this to detect staleness.
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Product', productSchema);

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Menu, X, User, LogOut, LayoutDashboard, BookOpen, ShoppingBag,
@@ -24,23 +25,23 @@ import { isAdminRole } from '../../utils/roleUtils';
 // /api/ai/chat and /api/ai/guided-recommend; frontend: /ai-assistant route
 // has no auth guard) — it belongs in this shared list, not a logged-in-only one.
 const NAV_LINKS_MAIN = [
-  { to: '/',             label: 'Home',        icon: Home         },
-  { to: '/poojas',       label: 'Poojas',      icon: Flame        },
-  { to: '/festivals',    label: 'Festivals',   icon: CalendarDays },
-  { to: '/marketplace',  label: 'Marketplace', icon: ShoppingBag  },
+  { to: '/',             label: 'Home',        icon: Home,         i18nKey: 'nav.home' },
+  { to: '/poojas',       label: 'Poojas',      icon: Flame,        i18nKey: 'nav.poojas' },
+  { to: '/festivals',    label: 'Festivals',   icon: CalendarDays, i18nKey: 'nav.festivals' },
+  { to: '/marketplace',  label: 'Marketplace', icon: ShoppingBag,  i18nKey: 'nav.marketplace' },
 ];
 const NAV_LINKS_TAIL = [
-  { to: '/panchang',     label: 'Panchang',    icon: Moon         },
-  { to: '/blog',         label: 'Blog',        icon: FileText     },
-  { to: '/ai-assistant', label: 'AI Guide',    icon: Sparkles     },
+  { to: '/panchang',     label: 'Panchang',    icon: Moon,         i18nKey: 'nav.panchang' },
+  { to: '/blog',         label: 'Blog',        icon: FileText,     i18nKey: 'nav.blog' },
+  { to: '/ai-assistant', label: 'AI Guide',    icon: Sparkles,     i18nKey: 'nav.aiGuide' },
 ];
 
 const TEMPLE_SUBMENU = [
-  { to: '/temples',             label: 'Temple Directory'   },
-  { to: '/temples/livestreams', label: 'Temple Livestreams' },
-  { to: '/temples/details',     label: 'Temple Details'     },
-  { to: '/temples/location',    label: 'Temple Location'    },
-  { to: '/temples/info',        label: 'Temple Information' },
+  { to: '/temples',             label: 'Temple Directory',   i18nKey: 'nav.templeDirectory' },
+  { to: '/temples/livestreams', label: 'Temple Livestreams', i18nKey: 'nav.templeLivestreams' },
+  { to: '/temples/details',     label: 'Temple Details',     i18nKey: 'nav.templeDetails' },
+  { to: '/temples/location',    label: 'Temple Location',    i18nKey: 'nav.templeLocation' },
+  { to: '/temples/info',        label: 'Temple Information', i18nKey: 'nav.templeInfo' },
 ];
 
 function getProfilePath(role) {
@@ -50,17 +51,17 @@ function getProfilePath(role) {
 }
 
 const PROFILE_MENU_BASE = [
-  { to: '/my-bookings',   label: 'My Bookings',    icon: BookOpen  },
-  { to: '/my-orders',     label: 'My Orders',      icon: Package   },
-  { to: '/family',        label: 'Family Members', icon: Users     },
-  { to: '/kundli',        label: 'Kundli',         icon: Star      },
-  { to: '/notifications', label: 'Notifications',  icon: Bell      },
-  { to: '/settings',      label: 'Settings',       icon: Settings  },
+  { to: '/my-bookings',   label: 'My Bookings',    icon: BookOpen,  i18nKey: 'nav.myBookings' },
+  { to: '/my-orders',     label: 'My Orders',      icon: Package,   i18nKey: 'nav.myOrders' },
+  { to: '/family',        label: 'Family Members', icon: Users,     i18nKey: 'nav.familyMembers' },
+  { to: '/kundli',        label: 'Kundli',         icon: Star,      i18nKey: 'nav.kundli' },
+  { to: '/notifications', label: 'Notifications',  icon: Bell,      i18nKey: 'nav.notifications' },
+  { to: '/settings',      label: 'Settings',       icon: Settings,  i18nKey: 'nav.settings' },
 ];
 
 function getProfileMenu(role) {
   return [
-    { to: getProfilePath(role), label: 'My Profile', icon: User },
+    { to: getProfilePath(role), label: 'My Profile', icon: User, i18nKey: 'nav.myProfile' },
     ...PROFILE_MENU_BASE,
   ];
 }
@@ -74,6 +75,7 @@ function useClickOutside(ref, handler) {
 }
 
 export default function Navbar() {
+  const { t } = useTranslation();
   const { user, isAuthenticated, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const { cartCount } = useCart();
@@ -153,7 +155,7 @@ export default function Navbar() {
                     background: isActive(l.to) ? 'var(--t-nav-active-bg)' : 'transparent',
                   }}
                 >
-                  {l.label}
+                  {l.i18nKey ? t(l.i18nKey, l.label) : l.label}
                 </Link>
               ))}
 
@@ -167,7 +169,7 @@ export default function Navbar() {
                     background: location.pathname.startsWith('/temples') ? 'var(--t-nav-active-bg)' : 'transparent',
                   }}
                 >
-                  Temples
+                  {t('nav.temples', 'Temples')}
                   <motion.div animate={{ rotate: templeOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
                     <ChevronDown size={13} />
                   </motion.div>
@@ -194,7 +196,7 @@ export default function Navbar() {
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
                           <MapPin size={12} style={{ color: 'var(--t-primary)' }} className="shrink-0" />
-                          {item.label}
+                          {t(item.i18nKey, item.label)}
                         </Link>
                       ))}
                     </motion.div>
@@ -212,7 +214,7 @@ export default function Navbar() {
                     background: isActive(l.to) ? 'var(--t-nav-active-bg)' : 'transparent',
                   }}
                 >
-                  {l.label}
+                  {l.i18nKey ? t(l.i18nKey, l.label) : l.label}
                 </Link>
               ))}
             </div>
@@ -350,7 +352,7 @@ export default function Navbar() {
                               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                             >
                               <LayoutDashboard size={14} style={{ color: 'var(--t-primary)' }} />
-                              Pandit Dashboard
+                              {t('nav.panditDashboard', 'Pandit Dashboard')}
                             </Link>
                           )}
                           {isAdminRole(user?.role) && (
@@ -363,11 +365,11 @@ export default function Navbar() {
                               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                             >
                               <LayoutDashboard size={14} style={{ color: 'var(--t-primary)' }} />
-                              Admin Panel
+                              {t('nav.adminPanel', 'Admin Panel')}
                             </Link>
                           )}
 
-                          {getProfileMenu(user?.role).map(({ to, label, icon: Icon }) => (
+                          {getProfileMenu(user?.role).map(({ to, label, icon: Icon, i18nKey }) => (
                             <Link
                               key={to}
                               to={to}
@@ -378,7 +380,7 @@ export default function Navbar() {
                               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                             >
                               <Icon size={14} style={{ color: 'var(--t-muted)', opacity: 0.7 }} className="shrink-0" />
-                              <span className="flex-1" style={{ color: 'var(--t-text)' }}>{label}</span>
+                              <span className="flex-1" style={{ color: 'var(--t-text)' }}>{t(i18nKey, label)}</span>
                               {to === '/notifications' && unreadCount > 0 && (
                                 <span
                                   className="text-white text-[9px] font-bold min-w-[16px] h-4 rounded-full flex items-center justify-center px-1"
@@ -395,7 +397,7 @@ export default function Navbar() {
                               onClick={handleLogout}
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors duration-150"
                             >
-                              <LogOut size={14} /> Sign Out
+                              <LogOut size={14} /> {t('nav.signOut', 'Sign Out')}
                             </button>
                           </div>
                         </motion.div>
@@ -405,8 +407,8 @@ export default function Navbar() {
                 </>
               ) : (
                 <>
-                  <Link to="/login" className="btn-ghost text-sm">Login</Link>
-                  <Link to="/register" className="btn-primary text-sm">Get Started</Link>
+                  <Link to="/login" className="btn-ghost text-sm">{t('auth.login', 'Login')}</Link>
+                  <Link to="/register" className="btn-primary text-sm">{t('auth.getStarted', 'Get Started')}</Link>
                 </>
               )}
             </div>
@@ -491,9 +493,9 @@ export default function Navbar() {
                   </div>
                 )}
 
-                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--t-muted)', opacity: 0.6 }}>Navigation</p>
+                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--t-muted)', opacity: 0.6 }}>{t('nav.sectionNavigation', 'Navigation')}</p>
 
-                {[...NAV_LINKS_MAIN, { to: '/temples', label: 'Temples', icon: MapPin }, ...NAV_LINKS_TAIL].map(({ to, label, icon: Icon }) => (
+                {[...NAV_LINKS_MAIN, { to: '/temples', label: 'Temples', icon: MapPin, i18nKey: 'nav.temples' }, ...NAV_LINKS_TAIL].map(({ to, label, icon: Icon, i18nKey }) => (
                   <Link
                     key={to}
                     to={to}
@@ -504,7 +506,7 @@ export default function Navbar() {
                     }}
                   >
                     <Icon size={16} style={{ color: isActive(to) ? 'var(--t-primary)' : 'var(--t-muted)' }} />
-                    {label}
+                    {t(i18nKey, label)}
                   </Link>
                 ))}
 
@@ -516,7 +518,7 @@ export default function Navbar() {
                         className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors"
                         style={{ color: 'var(--t-muted)' }}
                       >
-                        <LayoutDashboard size={16} /> Pandit Dashboard
+                        <LayoutDashboard size={16} /> {t('nav.panditDashboard', 'Pandit Dashboard')}
                       </Link>
                     )}
                     {isAdminRole(user?.role) && (
@@ -525,7 +527,7 @@ export default function Navbar() {
                         className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors"
                         style={{ color: 'var(--t-muted)' }}
                       >
-                        <LayoutDashboard size={16} /> Admin Panel
+                        <LayoutDashboard size={16} /> {t('nav.adminPanel', 'Admin Panel')}
                       </Link>
                     )}
 
@@ -539,7 +541,7 @@ export default function Navbar() {
                       }}
                     >
                       <ShoppingCart size={16} style={{ color: isActive('/cart') ? 'var(--t-primary)' : 'var(--t-muted)' }} />
-                      <span className="flex-1" style={{ color: 'var(--t-text)' }}>My Cart</span>
+                      <span className="flex-1" style={{ color: 'var(--t-text)' }}>{t('nav.myCart', 'My Cart')}</span>
                       {cartCount > 0 && (
                         <span
                           className="text-white text-[9px] font-bold min-w-[16px] h-4 rounded-full flex items-center justify-center px-1"
@@ -550,9 +552,9 @@ export default function Navbar() {
                       )}
                     </Link>
 
-                    <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest mt-2" style={{ color: 'var(--t-muted)', opacity: 0.6 }}>Account</p>
+                    <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest mt-2" style={{ color: 'var(--t-muted)', opacity: 0.6 }}>{t('nav.sectionAccount', 'Account')}</p>
 
-                    {getProfileMenu(user?.role).map(({ to, label, icon: Icon }) => (
+                    {getProfileMenu(user?.role).map(({ to, label, icon: Icon, i18nKey }) => (
                       <Link
                         key={to}
                         to={to}
@@ -560,7 +562,7 @@ export default function Navbar() {
                         style={{ color: 'var(--t-muted)' }}
                       >
                         <Icon size={16} style={{ color: 'var(--t-muted)', opacity: 0.7 }} />
-                        <span className="flex-1" style={{ color: 'var(--t-text)' }}>{label}</span>
+                        <span className="flex-1" style={{ color: 'var(--t-text)' }}>{t(i18nKey, label)}</span>
                         {to === '/notifications' && unreadCount > 0 && (
                           <span
                             className="text-white text-[9px] font-bold min-w-[16px] h-4 rounded-full flex items-center justify-center px-1"
@@ -585,12 +587,12 @@ export default function Navbar() {
                     onClick={handleLogout}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm text-red-500 hover:bg-red-50 transition-colors font-medium"
                   >
-                    <LogOut size={16} /> Sign Out
+                    <LogOut size={16} /> {t('nav.signOut', 'Sign Out')}
                   </button>
                 ) : (
                   <div className="flex gap-2.5">
-                    <Link to="/login"    className="flex-1 btn-secondary text-center text-sm py-2.5">Login</Link>
-                    <Link to="/register" className="flex-1 btn-primary text-center text-sm py-2.5">Get Started</Link>
+                    <Link to="/login"    className="flex-1 btn-secondary text-center text-sm py-2.5">{t('auth.login', 'Login')}</Link>
+                    <Link to="/register" className="flex-1 btn-primary text-center text-sm py-2.5">{t('auth.getStarted', 'Get Started')}</Link>
                   </div>
                 )}
               </div>

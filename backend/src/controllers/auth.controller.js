@@ -10,6 +10,7 @@ const AdminAuditLog = require('../models/AdminAuditLog');
 const AdminSession  = require('../models/AdminSession');
 const LoginHistory  = require('../models/LoginHistory');
 const { isAdminRole } = require('../utils/roleUtils');
+const { isSupportedLanguage } = require('../config/languages.config');
 const { audit, extractRequestMeta } = require('../services/auditService');
 const { NotificationEngine }         = require('../../notification-engine');
 const OtpService                     = require('../../notification-engine/otp/OtpService');
@@ -122,7 +123,7 @@ exports.verifyOTP = async (req, res, next) => {
 // OTP-verified registration: name, email, phone, password, channel, referralCode, role
 exports.completeRegistration = async (req, res, next) => {
   try {
-    const { name, email, phone, password, channel, referralCode, role } = req.body;
+    const { name, email, phone, password, channel, referralCode, role, preferredLanguage } = req.body;
 
     if (!name || !email || !phone || !password) {
       return res.status(400).json({ success: false, message: 'All fields are required' });
@@ -155,6 +156,12 @@ exports.completeRegistration = async (req, res, next) => {
       name, email: email.toLowerCase(), phone, password,
       role: isPandit ? 'pandit' : 'user',
       referredBy,
+      // Migrate the guest's locally-stored language preference (if any) into
+      // the new account — a brand-new user has no DB value yet, so this is
+      // the one place we adopt the guest's choice instead of the schema
+      // default. Existing users on login always keep their DB value (see
+      // login handler — never overwritten from a device-local preference).
+      ...(isSupportedLanguage(preferredLanguage) ? { preferredLanguage: preferredLanguage.toLowerCase() } : {}),
     });
 
     if (referredBy) {
@@ -200,7 +207,7 @@ exports.completeRegistration = async (req, res, next) => {
 // ── POST /api/auth/register (legacy — kept for backward compat / seeding) ────
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, phone, password, role, referralCode } = req.body;
+    const { name, email, phone, password, role, referralCode, preferredLanguage } = req.body;
 
     if (email) {
       const emailExists = await User.findOne({ email });
@@ -220,6 +227,7 @@ exports.register = async (req, res, next) => {
       name, email, phone, password,
       role:      isAdminRole(role) ? 'user' : (role || 'user'),
       referredBy,
+      ...(isSupportedLanguage(preferredLanguage) ? { preferredLanguage: preferredLanguage.toLowerCase() } : {}),
     });
 
     if (referredBy) {
@@ -354,6 +362,26 @@ function parseExpiryMs(expiry) {
 // ── GET /api/auth/me ──────────────────────────────────────────────────────────
 exports.getMe = async (req, res) => {
   res.json({ success: true, user: req.user });
+};
+
+// ── PATCH /api/auth/preferred-language ────────────────────────────────────────
+// Settings → Preferences → App Language. Role-independent — every
+// authenticated user, regardless of role, updates the same field the same way.
+exports.updatePreferredLanguage = async (req, res, next) => {
+  try {
+    const { preferredLanguage } = req.body;
+    if (!isSupportedLanguage(preferredLanguage)) {
+      return res.status(400).json({ success: false, message: 'Unsupported language' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { preferredLanguage: preferredLanguage.toLowerCase() },
+      { new: true }
+    );
+
+    res.json({ success: true, preferredLanguage: user.preferredLanguage });
+  } catch (err) { next(err); }
 };
 
 // ── POST /api/auth/delete-account/check-password ─────────────────────────────

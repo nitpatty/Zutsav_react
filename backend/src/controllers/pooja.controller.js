@@ -3,6 +3,7 @@ const Pooja         = require('../models/Pooja');
 const Booking       = require('../models/Booking');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { sanitizeHtml } = require('../utils/sanitizeHtml');
+const translationService = require('../services/translationService');
 
 const RICH_TEXT_FIELDS = ['description', 'vidhi', 'samagriNotes', 'benefitsContent', 'preparationNotes', 'dosAndDonts', 'additionalInfo'];
 
@@ -71,7 +72,14 @@ async function uniqueCategorySlug(baseName, excludeId = null) {
 // GET /api/poojas/categories — public, active-only (unchanged shape/behavior)
 exports.getCategories = async (req, res, next) => {
   try {
-    const categories = await PoojaCategory.find({ isActive: true, isDeleted: { $ne: true } }).sort({ sortOrder: 1 });
+    let categories = await PoojaCategory.find({ isActive: true, isDeleted: { $ne: true } }).sort({ sortOrder: 1 }).lean();
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    if (lang !== 'en' && categories.length) {
+      const map = await translationService.getTranslationsForDocs('poojaCategory', categories, lang);
+      categories = categories.map((c) => (map[String(c._id)] ? { ...c, ...map[String(c._id)], translationLanguage: lang } : c));
+    }
+
     res.json({ success: true, categories });
   } catch (err) { next(err); }
 };
@@ -357,24 +365,31 @@ exports.getPoojas = async (req, res, next) => {
     if (featured === 'true') query.isFeatured = true;
     if (search) query.name = new RegExp(search, 'i');
 
+    const lang = (req.query.lang || 'en').toLowerCase();
+
     if (homepagePopular === 'true') {
-      const curated = await Pooja.find({ ...query, homepageRank: { $ne: null } })
+      let curated = await Pooja.find({ ...query, homepageRank: { $ne: null } })
         .populate('categoryIds', 'name slug')
         .populate('categoryId', 'name slug')
         .sort({ homepageRank: 1 })
-        .limit(+limit);
+        .limit(+limit)
+        .lean();
       if (curated.length > 0) {
+        curated = await withTranslations(curated, lang);
         return res.json({ success: true, poojas: curated, total: curated.length, page: 1, pages: 1 });
       }
       // No curated set — fall through to the standard featured/most-booked query below
     }
 
-    const poojas = await Pooja.find(query)
+    let poojas = await Pooja.find(query)
       .populate('categoryIds', 'name slug')
       .populate('categoryId', 'name slug')
       .sort({ isFeatured: -1, totalBookings: -1 })
       .limit(+limit)
-      .skip((+page - 1) * +limit);
+      .skip((+page - 1) * +limit)
+      .lean();
+
+    poojas = await withTranslations(poojas, lang);
 
     const total = await Pooja.countDocuments(query);
     res.json({ success: true, poojas, total, page: +page, pages: Math.ceil(total / limit) });
@@ -390,11 +405,32 @@ exports.getPoojaBySlug = async (req, res, next) => {
       isDeleted:      { $ne: true },
     })
       .populate('categoryIds', 'name slug')
-      .populate('categoryId',  'name slug');
+      .populate('categoryId',  'name slug')
+      .lean();
     if (!pooja) return res.status(404).json({ success: false, message: 'Pooja not found' });
-    res.json({ success: true, pooja });
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    let responsePooja = pooja;
+    if (lang !== 'en') {
+      try {
+        const { fields } = await translationService.getTranslation('pooja', pooja._id, lang);
+        responsePooja = { ...pooja, ...fields, translationLanguage: lang };
+      } catch (err) {
+        console.error(`[Pooja] translation lookup failed for ${pooja._id}/${lang}:`, err.message);
+      }
+    }
+
+    res.json({ success: true, pooja: responsePooja });
   } catch (err) { next(err); }
 };
+
+// Batched list-translation helper — translates a page of poojas in one shot
+// (see translationService.getTranslationsForDocs), never one Groq call per card.
+async function withTranslations(poojas, lang) {
+  if (lang === 'en' || !poojas.length) return poojas;
+  const map = await translationService.getTranslationsForDocs('pooja', poojas, lang);
+  return poojas.map((p) => (map[String(p._id)] ? { ...p, ...map[String(p._id)], translationLanguage: lang } : p));
+}
 
 // GET /api/poojas/:slug/reviews?page=&limit= — public. Aggregates existing
 // Booking.rating/review/ratingDate for this pooja; does not touch rateBooking
@@ -605,6 +641,20 @@ exports.updatePooja = async (req, res, next) => {
         delete updates.categoryId;
       }
     }
+
+    // Bump the translation version only when a translatable field actually
+    // changed, so cached translations (see translationService.js) know to
+    // regenerate — price/status/category-only edits must not invalidate them.
+    const { fields: translatableFields } = require('../config/translatable.config').pooja;
+    const translatableChanged = Object.keys(translatableFields).some((key) => {
+      if (updates[key] === undefined) return false;
+      const type = translatableFields[key].type;
+      if (type === 'string[]' || type === 'object[]') {
+        return JSON.stringify(updates[key]) !== JSON.stringify(existing[key]);
+      }
+      return updates[key] !== existing[key];
+    });
+    if (translatableChanged) updates.translationVersion = (existing.translationVersion || 1) + 1;
 
     const pooja = await Pooja.findByIdAndUpdate(req.params.id, updates, { new: true });
     await auditLog(req, 'edit_pooja', pooja);

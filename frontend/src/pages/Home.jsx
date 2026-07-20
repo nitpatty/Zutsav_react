@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowRight, Shield, Star, CheckCircle, ChevronDown, Calendar } from 'lucide-react';
 import API from '../api/axios';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { useLenis } from '../hooks/useLenis';
 
 import HeroSlider from '../components/home/HeroSlider';
@@ -49,7 +51,9 @@ const SPIRITUAL_QUOTES = [
 ];
 
 export default function Home() {
+  const { t } = useTranslation();
   const { user, isAuthenticated } = useAuth();
+  const { lang } = useLanguage();
   const navigate = useNavigate();
   useLenis();
 
@@ -79,43 +83,52 @@ export default function Home() {
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const dateStr    = `${dayNames[dayOfWeek]}, ${today.getDate()} ${monthNames[today.getMonth()]} ${today.getFullYear()}`;
 
-  // Data fetching
+  // Data fetching — every language switch must behave like a fresh mount.
+  // `cancelled` is flipped by the cleanup function the instant `lang`
+  // changes again (or the component unmounts), so a slow in-flight request
+  // for a language the user has since switched away from can never land its
+  // setState after a newer, faster request already resolved — the exact
+  // "some cards stay in the previous language" race this guards against.
   useEffect(() => {
+    let cancelled = false;
+
     API.get('/hero-banners')
-      .then(({ data }) => setBanners(data.banners || []))
-      .catch(() => setBanners([]));
+      .then(({ data }) => { if (!cancelled) setBanners(data.banners || []); })
+      .catch(() => { if (!cancelled) setBanners([]); });
 
     API.get('/poojas/categories')
-      .then(({ data }) => setCategories(data.categories || []))
+      .then(({ data }) => { if (!cancelled) setCategories(data.categories || []); })
       .catch(() => {})
-      .finally(() => setCatLoading(false));
+      .finally(() => { if (!cancelled) setCatLoading(false); });
 
     API.get('/poojas?homepagePopular=true&limit=8')
-      .then(({ data }) => setFeaturedPoojas(data.poojas || []))
+      .then(({ data }) => { if (!cancelled) setFeaturedPoojas(data.poojas || []); })
       .catch(() => {})
-      .finally(() => setPoojaLoading(false));
+      .finally(() => { if (!cancelled) setPoojaLoading(false); });
 
     API.get('/festivals?upcoming=true&limit=6')
-      .then(({ data }) => setFestivals((data.festivals || []).filter((f) => f.name?.trim())))
-      .catch(() => setFestivals([]))
-      .finally(() => setFestivalLoading(false));
+      .then(({ data }) => { if (!cancelled) setFestivals((data.festivals || []).filter((f) => f.name?.trim())); })
+      .catch(() => { if (!cancelled) setFestivals([]); })
+      .finally(() => { if (!cancelled) setFestivalLoading(false); });
 
     API.get('/temples?homepageFeatured=true&limit=6')
-      .then(({ data }) => setTemples(data.temples || []))
-      .catch(() => setTemples([]))
-      .finally(() => setTempleLoading(false));
+      .then(({ data }) => { if (!cancelled) setTemples(data.temples || []); })
+      .catch(() => { if (!cancelled) setTemples([]); })
+      .finally(() => { if (!cancelled) setTempleLoading(false); });
 
     API.get('/marketplace/products?featured=true&limit=8')
-      .then(({ data }) => setProducts(data.products || []))
-      .catch(() => setProducts([]));
+      .then(({ data }) => { if (!cancelled) setProducts(data.products || []); })
+      .catch(() => { if (!cancelled) setProducts([]); });
 
     // Single Panchang fetch for today — computePanchang() is the only source
     // of Sunrise/Sunset/Rahu Kaal/Muhurat; reused as-is, never recomputed here.
     API.get('/panchang')
-      .then(({ data }) => setPanchang(data.panchang || null))
-      .catch(() => setPanchang(null))
-      .finally(() => setPanchangLoading(false));
-  }, []);
+      .then(({ data }) => { if (!cancelled) setPanchang(data.panchang || null); })
+      .catch(() => { if (!cancelled) setPanchang(null); })
+      .finally(() => { if (!cancelled) setPanchangLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [lang]);
 
   const handleAiSubmit = (q) => {
     const query = (q || '').trim();
@@ -166,7 +179,7 @@ export default function Home() {
                   </div>
                   <div className="flex items-center gap-2 bg-white/80 border border-saffron-200/60 rounded-full px-4 py-2 shadow-sacred">
                     <span className="text-saffron-700 text-sm font-semibold font-sans">
-                      Welcome back, {user.name?.split(' ')[0] || 'Devotee'}! 🙏
+                      {t('home.welcomeBack', 'Welcome back, {{name}}! 🙏', { name: user.name?.split(' ')[0] || t('home.devotee', 'Devotee') })}
                     </span>
                   </div>
                 </div>
@@ -174,7 +187,7 @@ export default function Home() {
                 <div className={`flex mb-8 transition-all duration-700 ${heroInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'}`}>
                   <div className="inline-flex items-center gap-2.5 bg-white/80 border border-saffron-200/70 rounded-full px-5 py-2 shadow-sacred">
                     <span className="w-1.5 h-1.5 bg-saffron-500 rounded-full animate-pulse-soft" />
-                    <span className="text-saffron-700 text-xs font-bold tracking-widest uppercase font-sans">India's Most Trusted Spiritual Platform</span>
+                    <span className="text-saffron-700 text-xs font-bold tracking-widest uppercase font-sans">{t('home.trustedPlatform', "India's Most Trusted Spiritual Platform")}</span>
                   </div>
                 </div>
               )}
@@ -183,56 +196,56 @@ export default function Home() {
                 className={`font-display font-bold text-gray-900 leading-[0.92] mb-6 transition-all duration-700 delay-100 ${heroInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
                 style={{ fontSize: 'clamp(3rem, 7vw, 5.5rem)', letterSpacing: '-0.03em' }}
               >
-                Book Authentic
+                {t('home.heroTitlePrefix', 'Book Authentic')}
                 <br />
                 <span className="text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(135deg, #D4602A 0%, #C9A84C 100%)' }}>
-                  Pujas
+                  {t('home.heroTitlePujas', 'Pujas')}
                 </span>{' '}
-                Performed
+                {t('home.heroTitlePerformed', 'Performed')}
                 <br />
-                by{' '}
+                {t('home.heroTitleBy', 'by')}{' '}
                 <span className="relative inline-block">
-                  Verified
+                  {t('home.heroTitleVerified', 'Verified')}
                   <span className="absolute -bottom-1 left-0 right-0 h-0.5 rounded-full" style={{ background: 'linear-gradient(90deg, #D4602A, #C9A84C)' }} />
                 </span>{' '}
-                Pandits
+                {t('home.heroTitlePandits', 'Pandits')}
               </h1>
 
               <p className={`font-sans text-lg text-gray-500 max-w-xl mb-9 leading-relaxed transition-all duration-700 delay-150 ${heroInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}>
-                Connect with KYC-verified pandits, celebrate every festival, and discover authentic puja samagri — all in one sacred space.
+                {t('home.heroDescription', 'Connect with KYC-verified pandits, celebrate every festival, and discover authentic puja samagri — all in one sacred space.')}
               </p>
 
               <div className={`flex flex-wrap gap-4 mb-8 transition-all duration-700 delay-200 ${heroInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'}`}>
                 <Link to="/poojas" className="btn-primary px-8 py-4 rounded-2xl text-base shadow-glow-saffron inline-flex items-center gap-2">
-                  Book a Puja <ArrowRight size={17} />
+                  {t('home.ctaBookPuja', 'Book a Puja')} <ArrowRight size={17} />
                 </Link>
                 <Link to="/festivals" className="btn-secondary px-8 py-4 rounded-2xl text-base inline-flex items-center gap-2">
-                  Explore Festivals <Calendar size={16} />
+                  {t('home.ctaExploreFestivals', 'Explore Festivals')} <Calendar size={16} />
                 </Link>
               </div>
 
               <div className={`flex flex-wrap gap-2 mb-8 transition-all duration-700 delay-300 ${heroInView ? 'opacity-100' : 'opacity-0'}`}>
                 {[
-                  { label: 'Find a Temple',  to: '/temples',     icon: '🛕' },
-                  { label: 'Shop Samagri',   to: '/marketplace', icon: '🪔' },
-                  { label: 'Daily Panchang', to: '/panchang',    icon: '📅' },
-                  { label: 'AI Guide',       to: '/ai-assistant',icon: '✨' },
-                ].map(({ label, to, icon }) => (
+                  { i18nKey: 'home.quickFindTemple',  label: 'Find a Temple',  to: '/temples',     icon: '🛕' },
+                  { i18nKey: 'home.quickShopSamagri', label: 'Shop Samagri',   to: '/marketplace', icon: '🪔' },
+                  { i18nKey: 'home.quickPanchang',    label: 'Daily Panchang', to: '/panchang',    icon: '📅' },
+                  { i18nKey: 'home.quickAiGuide',     label: 'AI Guide',       to: '/ai-assistant',icon: '✨' },
+                ].map(({ label, to, icon, i18nKey }) => (
                   <Link key={label} to={to}
                     className="flex items-center gap-1.5 bg-white/80 border border-gray-200/80 hover:border-saffron-300 hover:bg-saffron-50 text-gray-600 hover:text-saffron-700 text-sm font-medium px-4 py-2 rounded-full transition-all duration-200 shadow-sm font-sans">
-                    <span>{icon}</span>{label}
+                    <span>{icon}</span>{t(i18nKey, label)}
                   </Link>
                 ))}
               </div>
 
               <div className={`flex flex-wrap gap-3 transition-all duration-700 delay-500 ${heroInView ? 'opacity-100' : 'opacity-0'}`}>
                 {[
-                  { icon: CheckCircle, text: 'KYC Verified' },
-                  { icon: Shield,      text: 'Secure Payments' },
-                  { icon: Star,        text: '4.9★ Rated' },
-                ].map(({ icon: Icon, text }) => (
+                  { icon: CheckCircle, i18nKey: 'home.badgeKycVerified', text: 'KYC Verified' },
+                  { icon: Shield,      i18nKey: 'home.badgeSecurePayments', text: 'Secure Payments' },
+                  { icon: Star,        i18nKey: 'home.badgeRated', text: '4.9★ Rated' },
+                ].map(({ icon: Icon, text, i18nKey }) => (
                   <span key={text} className="flex items-center gap-1.5 bg-white/80 border border-white/90 px-3.5 py-1.5 rounded-full shadow-sm text-gray-500 font-sans text-xs">
-                    <Icon size={12} className="text-saffron-500" />{text}
+                    <Icon size={12} className="text-saffron-500" />{t(i18nKey, text)}
                   </span>
                 ))}
               </div>
@@ -247,7 +260,7 @@ export default function Home() {
         </div>
 
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 opacity-25">
-          <span className="text-[10px] font-medium tracking-widest uppercase text-gray-500 font-sans">Scroll</span>
+          <span className="text-[10px] font-medium tracking-widest uppercase text-gray-500 font-sans">{t('home.scroll', 'Scroll')}</span>
           <ChevronDown size={14} className="text-gray-400 animate-bounce" />
         </div>
       </section>

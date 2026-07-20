@@ -9,10 +9,14 @@ import {
 } from 'lucide-react';
 import API from '../api/axios';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
 import ZutsavLoader from '../components/shared/ZutsavLoader';
 import { getImageUrl as imgUrl } from '../config';
 import { isAdminRole } from '../utils/roleUtils';
+import { useTranslatedBlog } from '../hooks/useTranslatedBlog';
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -27,19 +31,22 @@ function formatNumber(n) {
   return String(n);
 }
 
+// Uses the shared i18n instance directly (t() outside React) — same
+// convention as BlogHomePage.jsx's relativeTime().
 function relativeTime(dateStr) {
   if (!dateStr) return '';
+  const t = i18n.t.bind(i18n);
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t('blog.justNow', 'just now');
+  if (mins < 60) return t('blog.minsAgo', '{{n}}m ago', { n: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return t('blog.hoursAgo', '{{n}}h ago', { n: hrs });
   const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return t('blog.daysAgo', '{{n}}d ago', { n: days });
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-  return `${Math.floor(months / 12)}y ago`;
+  if (months < 12) return t('blog.monthsAgo', '{{n}}mo ago', { n: months });
+  return t('blog.yearsAgo', '{{n}}y ago', { n: Math.floor(months / 12) });
 }
 
 // ─── Reading progress hook ─────────────────────────────────────────────────────
@@ -68,11 +75,12 @@ function useReadingProgress(articleRef) {
 // ─── Share sheet ───────────────────────────────────────────────────────────────
 
 function ShareSheet({ title, onClose }) {
+  const { t } = useTranslation();
   const url = window.location.href;
 
   function copy() {
     navigator.clipboard.writeText(url).then(() => {
-      toast.success('Link copied!');
+      toast.success(t('blogDetail.linkCopied', 'Link copied!'));
       onClose();
     });
   }
@@ -95,25 +103,25 @@ function ShareSheet({ title, onClose }) {
 
   return (
     <div className="absolute right-0 top-12 z-50 bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 w-64 font-sans">
-      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Share this article</p>
+      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">{t('blogDetail.shareThisArticle', 'Share this article')}</p>
       <div className="space-y-1">
         <button
           onClick={copy}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 text-sm text-gray-700 transition-colors"
         >
-          <Link2 size={15} className="text-gray-400" /> Copy link
+          <Link2 size={15} className="text-gray-400" /> {t('blogDetail.copyLink', 'Copy link')}
         </button>
         <button
           onClick={shareTwitter}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-sky-50 text-sm text-gray-700 transition-colors"
         >
-          <Twitter size={15} className="text-sky-500" /> Share on Twitter
+          <Twitter size={15} className="text-sky-500" /> {t('blogDetail.shareOnTwitter', 'Share on Twitter')}
         </button>
         <button
           onClick={shareFacebook}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-blue-50 text-sm text-gray-700 transition-colors"
         >
-          <Facebook size={15} className="text-blue-600" /> Share on Facebook
+          <Facebook size={15} className="text-blue-600" /> {t('blogDetail.shareOnFacebook', 'Share on Facebook')}
         </button>
       </div>
     </div>
@@ -125,6 +133,7 @@ function ShareSheet({ title, onClose }) {
 function Comment({
   comment, blogId, currentUser, onDelete, onReply,
 }) {
+  const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const authorInitial = (comment.authorName || 'A').charAt(0).toUpperCase();
@@ -153,7 +162,7 @@ function Comment({
         <div className="bg-gray-50 rounded-2xl rounded-tl-sm px-4 py-3">
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <div>
-              <span className="text-sm font-bold text-gray-800 font-sans">{comment.authorName || 'Anonymous'}</span>
+              <span className="text-sm font-bold text-gray-800 font-sans">{comment.authorName || t('blog.anonymous', 'Anonymous')}</span>
               {comment.authorRole && (
                 <span className="ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-600 font-sans">
                   {comment.authorRole}
@@ -177,7 +186,7 @@ function Comment({
                           onClick={() => { onDelete(comment._id); setMenuOpen(false); }}
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                         >
-                          <Trash2 size={13} /> Delete
+                          <Trash2 size={13} /> {t('blogDetail.delete', 'Delete')}
                         </button>
                       )}
                       {!isOwn && (
@@ -185,7 +194,7 @@ function Comment({
                           onClick={() => setMenuOpen(false)}
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
                         >
-                          <Flag size={13} /> Report
+                          <Flag size={13} /> {t('blogDetail.report', 'Report')}
                         </button>
                       )}
                     </div>
@@ -201,7 +210,7 @@ function Comment({
           onClick={() => onReply(comment)}
           className="mt-1.5 ml-2 text-xs font-semibold text-indigo-500 hover:text-indigo-700 font-sans transition-colors"
         >
-          Reply
+          {t('blogDetail.reply', 'Reply')}
         </button>
 
         {/* Nested replies */}
@@ -218,7 +227,7 @@ function Comment({
                 <div className="flex-1 min-w-0">
                   <div className="bg-amber-50/60 rounded-2xl rounded-tl-sm px-3 py-2.5">
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-xs font-bold text-gray-800 font-sans">{reply.authorName || 'Anonymous'}</span>
+                      <span className="text-xs font-bold text-gray-800 font-sans">{reply.authorName || t('blog.anonymous', 'Anonymous')}</span>
                       <span className="text-[10px] text-gray-400 font-sans">{relativeTime(reply.createdAt)}</span>
                     </div>
                     <p className="text-xs text-gray-700 leading-relaxed font-sans">{reply.content}</p>
@@ -281,9 +290,13 @@ function RelatedCard({ blog, index }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function BlogDetailPage() {
+  const { t } = useTranslation();
   const { slug } = useParams();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
+  // Global app-language preference (Settings → Preferences → App Language) —
+  // no per-page language state/switcher here; see LanguageContext.jsx.
+  const { lang } = useLanguage();
 
   // Article state
   const [blog, setBlog] = useState(null);
@@ -323,27 +336,36 @@ export default function BlogDetailPage() {
   }, [shareOpen]);
 
   // ── Fetch blog ─────────────────────────────────────────────────────────────
+  // Backend caches/generates the translation for non-English `lang` values
+  // (see translationService.js); react-query gives us the session-level
+  // cache so re-selecting a previously-viewed language is instant. Thanks to
+  // `placeholderData: keepPreviousData` in the hook, `isLoading` is only true
+  // on the very first load — a language switch that needs a fresh Groq
+  // translation keeps the current article on screen and only flips
+  // `isFetching`, so the page never blanks out while translating.
+  const { data: blogData, isLoading: blogLoading, isFetching: blogFetching, error: blogQueryError } = useTranslatedBlog(slug, lang);
+
   useEffect(() => {
-    if (!slug) return;
-    setLoading(true);
+    setLoading(blogLoading);
+  }, [blogLoading]);
+
+  useEffect(() => {
+    if (!blogQueryError) return;
+    setError(blogQueryError.response?.status === 404 ? 'not_found' : 'server_error');
+  }, [blogQueryError]);
+
+  useEffect(() => {
+    if (!blogData) return;
     setError(null);
-    API.get(`/blogs/${slug}`)
-      .then(({ data }) => {
-        setBlog(data.blog);
-        setRelated(data.related || []);
-        setLiked(data.blog.isLiked || false);
-        setLikesCount(data.blog.likesCount || 0);
-        setBookmarked(data.blog.isBookmarked || false);
-        // Update document meta
-        if (data.blog.seoTitle) document.title = data.blog.seoTitle;
-        else if (data.blog.title) document.title = `${data.blog.title} | Zutsav Blog`;
-      })
-      .catch(err => {
-        if (err.response?.status === 404) setError('not_found');
-        else setError('server_error');
-      })
-      .finally(() => setLoading(false));
-  }, [slug]);
+    setBlog(blogData.blog);
+    setRelated(blogData.related || []);
+    setLiked(blogData.blog.isLiked || false);
+    setLikesCount(blogData.blog.likesCount || 0);
+    setBookmarked(blogData.blog.isBookmarked || false);
+    // Update document meta
+    if (blogData.blog.seoTitle) document.title = blogData.blog.seoTitle;
+    else if (blogData.blog.title) document.title = `${blogData.blog.title} | Zutsav Blog`;
+  }, [blogData]);
 
   // ── Fetch comments ─────────────────────────────────────────────────────────
   const fetchComments = useCallback(async (blogId) => {
@@ -365,7 +387,7 @@ export default function BlogDetailPage() {
 
   // ── Like ──────────────────────────────────────────────────────────────────
   const handleLike = useCallback(async () => {
-    if (!isAuthenticated) { toast.error('Sign in to like posts'); return; }
+    if (!isAuthenticated) { toast.error(t('blog.signInToLike', 'Sign in to like posts')); return; }
     if (likeLoading) return;
     setLikeLoading(true);
     // Optimistic
@@ -380,15 +402,15 @@ export default function BlogDetailPage() {
     } catch {
       setLiked(prevLiked);
       setLikesCount(prevCount);
-      toast.error('Could not update like');
+      toast.error(t('blogDetail.couldNotUpdateLike', 'Could not update like'));
     } finally {
       setLikeLoading(false);
     }
-  }, [isAuthenticated, likeLoading, liked, likesCount, blog?._id]);
+  }, [isAuthenticated, likeLoading, liked, likesCount, blog?._id, t]);
 
   // ── Bookmark ──────────────────────────────────────────────────────────────
   const handleBookmark = useCallback(async () => {
-    if (!isAuthenticated) { toast.error('Sign in to bookmark posts'); return; }
+    if (!isAuthenticated) { toast.error(t('blogDetail.signInToBookmark', 'Sign in to bookmark posts')); return; }
     if (bookmarkLoading) return;
     setBookmarkLoading(true);
     const prev = bookmarked;
@@ -396,20 +418,20 @@ export default function BlogDetailPage() {
     try {
       const { data } = await API.post(`/blogs/${blog._id}/bookmark`);
       setBookmarked(data.bookmarked);
-      toast.success(data.bookmarked ? 'Saved to bookmarks' : 'Removed from bookmarks', { icon: data.bookmarked ? '🔖' : '✓' });
+      toast.success(data.bookmarked ? t('blogDetail.savedToBookmarks', 'Saved to bookmarks') : t('blogDetail.removedFromBookmarks', 'Removed from bookmarks'), { icon: data.bookmarked ? '🔖' : '✓' });
     } catch {
       setBookmarked(prev);
-      toast.error('Could not update bookmark');
+      toast.error(t('blogDetail.couldNotUpdateBookmark', 'Could not update bookmark'));
     } finally {
       setBookmarkLoading(false);
     }
-  }, [isAuthenticated, bookmarkLoading, bookmarked, blog?._id]);
+  }, [isAuthenticated, bookmarkLoading, bookmarked, blog?._id, t]);
 
   // ── Submit comment ────────────────────────────────────────────────────────
   const handleSubmitComment = useCallback(async (e) => {
     e.preventDefault();
     if (!commentText.trim()) return;
-    if (!isAuthenticated) { toast.error('Sign in to comment'); return; }
+    if (!isAuthenticated) { toast.error(t('blogDetail.signInToComment', 'Sign in to comment')); return; }
     setSubmittingComment(true);
     try {
       const payload = { content: commentText.trim() };
@@ -429,42 +451,42 @@ export default function BlogDetailPage() {
       }
       setCommentText('');
       setReplyingTo(null);
-      toast.success('Comment posted');
+      toast.success(t('blogDetail.commentPosted', 'Comment posted'));
     } catch {
-      toast.error('Could not post comment');
+      toast.error(t('blogDetail.couldNotPostComment', 'Could not post comment'));
     } finally {
       setSubmittingComment(false);
     }
-  }, [commentText, isAuthenticated, replyingTo, blog?._id]);
+  }, [commentText, isAuthenticated, replyingTo, blog?._id, t]);
 
   // ── Withdraw a pending submission back to draft (author only) ─────────────
   const [withdrawing, setWithdrawing] = useState(false);
   const handleWithdraw = useCallback(async () => {
     if (withdrawing || !blog) return;
-    if (!window.confirm('Withdraw this submission? It will return to draft so you can keep editing.')) return;
+    if (!window.confirm(t('blogDetail.withdrawConfirm', 'Withdraw this submission? It will return to draft so you can keep editing.'))) return;
     setWithdrawing(true);
     try {
       await API.put(`/blogs/${blog._id}`, { action: 'withdraw' });
-      toast.success('Submission withdrawn — you can edit it again.');
+      toast.success(t('blogDetail.withdrawSuccess', 'Submission withdrawn — you can edit it again.'));
       navigate(`/blog/edit/${blog._id}`);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not withdraw submission');
+      toast.error(err.response?.data?.message || t('blogDetail.couldNotWithdraw', 'Could not withdraw submission'));
     } finally {
       setWithdrawing(false);
     }
-  }, [blog, withdrawing, navigate]);
+  }, [blog, withdrawing, navigate, t]);
 
   // ── Delete comment ────────────────────────────────────────────────────────
   const handleDeleteComment = useCallback(async (commentId) => {
-    if (!window.confirm('Delete this comment?')) return;
+    if (!window.confirm(t('blogDetail.deleteCommentConfirm', 'Delete this comment?'))) return;
     try {
       await API.delete(`/blogs/${blog._id}/comments/${commentId}`);
       setComments(prev => prev.filter(c => c._id !== commentId));
-      toast.success('Comment deleted');
+      toast.success(t('blogDetail.commentDeleted', 'Comment deleted'));
     } catch {
-      toast.error('Could not delete comment');
+      toast.error(t('blogDetail.couldNotDeleteComment', 'Could not delete comment'));
     }
-  }, [blog?._id]);
+  }, [blog?._id, t]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const authorInitial = useMemo(() =>
@@ -478,7 +500,7 @@ export default function BlogDetailPage() {
   // LOADING
   // ─────────────────────────────────────────────────────────────────────────
   if (loading) {
-    return <ZutsavLoader fullscreen message="Loading article..." />;
+    return <ZutsavLoader fullscreen message={t('blogDetail.loadingArticle', 'Loading article...')} />;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -494,19 +516,19 @@ export default function BlogDetailPage() {
           <span className="text-4xl">{error === 'not_found' ? '🕯️' : '⚠️'}</span>
         </div>
         <h2 className="text-2xl font-bold text-gray-800 mb-2" style={{ fontFamily: '"Cormorant Garamond"' }}>
-          {error === 'not_found' ? 'Story not found' : 'Something went wrong'}
+          {error === 'not_found' ? t('blogDetail.storyNotFound', 'Story not found') : t('blogDetail.somethingWentWrong', 'Something went wrong')}
         </h2>
         <p className="text-gray-500 text-sm mb-6 max-w-xs">
           {error === 'not_found'
-            ? 'This article may have been moved or removed.'
-            : 'We could not load this article. Please try again.'}
+            ? t('blogDetail.articleMoved', 'This article may have been moved or removed.')
+            : t('blogDetail.couldNotLoadArticle', 'We could not load this article. Please try again.')}
         </p>
         <button
           onClick={() => navigate('/blog')}
           className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold text-white transition-opacity hover:opacity-90"
           style={{ background: '#1B1F3B' }}
         >
-          <ChevronLeft size={15} /> Back to Blog
+          <ChevronLeft size={15} /> {t('blogDetail.backToBlog', 'Back to Blog')}
         </button>
       </div>
     );
@@ -538,7 +560,7 @@ export default function BlogDetailPage() {
 
           {/* Breadcrumb */}
           <nav className="flex items-center gap-1.5 text-xs text-gray-400 font-sans overflow-hidden">
-            <Link to="/blog" className="hover:text-indigo-600 transition-colors shrink-0">Blog</Link>
+            <Link to="/blog" className="hover:text-indigo-600 transition-colors shrink-0">{t('nav.blog', 'Blog')}</Link>
             {blog.category && (
               <>
                 <span>/</span>
@@ -659,6 +681,14 @@ export default function BlogDetailPage() {
                 {blog.category.icon && <span>{blog.category.icon}</span>}
                 {blog.category.name}
               </Link>
+            )}
+
+            {/* Language is a global preference (Settings → Preferences → App
+                Language) — no per-page switcher here. A subtle inline hint
+                while a not-yet-cached translation generates in the background
+                (the article itself stays visible throughout, never blanks). */}
+            {blogFetching && !loading && (
+              <div className="mb-4 text-[11px] text-gray-400 italic">Translating…</div>
             )}
 
             {/* Title */}
@@ -806,7 +836,7 @@ export default function BlogDetailPage() {
                     className={`transition-colors ${bookmarked ? 'text-amber-500' : 'text-gray-400'}`}
                     style={bookmarked ? { fill: '#F59E0B' } : {}}
                   />
-                  <span className="text-[10px] font-semibold text-gray-500 font-sans">Save</span>
+                  <span className="text-[10px] font-semibold text-gray-500 font-sans">{t('blogDetail.save', 'Save')}</span>
                 </button>
                 <div className="relative" ref={shareRef}>
                   <button
@@ -814,7 +844,7 @@ export default function BlogDetailPage() {
                     className="flex flex-col items-center gap-0.5 min-w-[44px]"
                   >
                     <Share2 size={20} className="text-gray-400" />
-                    <span className="text-[10px] font-semibold text-gray-500 font-sans">Share</span>
+                    <span className="text-[10px] font-semibold text-gray-500 font-sans">{t('blogDetail.share', 'Share')}</span>
                   </button>
                   {shareOpen && (
                     <div className="bottom-14">
@@ -838,7 +868,7 @@ export default function BlogDetailPage() {
                 className="font-bold text-gray-900 mb-6"
                 style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1.6rem' }}
               >
-                {comments.length > 0 ? `${comments.length} Comment${comments.length === 1 ? '' : 's'}` : 'Comments'}
+                {comments.length > 0 ? t('blogDetail.commentCount', '{{count}} Comment(s)', { count: comments.length }) : t('blogDetail.comments', 'Comments')}
               </h2>
 
               {/* Comment input */}
@@ -846,13 +876,13 @@ export default function BlogDetailPage() {
                 <form onSubmit={handleSubmitComment} className="mb-8">
                   {replyingTo && (
                     <div className="flex items-center gap-2 mb-2 text-xs font-sans text-indigo-600">
-                      <span>Replying to <strong>{replyingTo.authorName}</strong></span>
+                      <span>{t('blogDetail.replyingTo', 'Replying to')} <strong>{replyingTo.authorName}</strong></span>
                       <button
                         type="button"
                         onClick={() => setReplyingTo(null)}
                         className="text-gray-400 hover:text-gray-600 transition-colors underline"
                       >
-                        Cancel
+                        {t('blogDetail.cancel', 'Cancel')}
                       </button>
                     </div>
                   )}
@@ -867,7 +897,7 @@ export default function BlogDetailPage() {
                       <textarea
                         value={commentText}
                         onChange={e => setCommentText(e.target.value)}
-                        placeholder={replyingTo ? `Reply to ${replyingTo.authorName}...` : 'Share your thoughts...'}
+                        placeholder={replyingTo ? t('blogDetail.replyToPlaceholder', 'Reply to {{name}}...', { name: replyingTo.authorName }) : t('blogDetail.shareThoughts', 'Share your thoughts...')}
                         rows={3}
                         className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 resize-none text-sm text-gray-700 bg-white transition-all font-sans"
                       />
@@ -888,8 +918,8 @@ export default function BlogDetailPage() {
                   style={{ background: 'linear-gradient(135deg, #F8F7FF, #F0EDFF)' }}
                 >
                   <p className="text-sm text-gray-700 font-sans mb-3">
-                    <Link to="/login" className="font-bold text-indigo-700 hover:text-indigo-900 transition-colors">Sign in</Link>
-                    {' '}to join the conversation
+                    <Link to="/login" className="font-bold text-indigo-700 hover:text-indigo-900 transition-colors">{t('home.signIn', 'Sign in')}</Link>
+                    {' '}{t('blogDetail.toJoinConversation', 'to join the conversation')}
                   </p>
                 </div>
               )}
@@ -909,7 +939,7 @@ export default function BlogDetailPage() {
                 </div>
               ) : comments.length === 0 ? (
                 <div className="text-center py-10">
-                  <p className="text-gray-400 text-sm font-sans">No comments yet. Be the first to share your thoughts!</p>
+                  <p className="text-gray-400 text-sm font-sans">{t('blogDetail.noCommentsYet', 'No comments yet. Be the first to share your thoughts!')}</p>
                 </div>
               ) : (
                 <div className="space-y-5">

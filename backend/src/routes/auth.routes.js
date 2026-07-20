@@ -2,6 +2,7 @@ const router = require('express').Router();
 const {
   register, login, logout, getMe, registerPandit, sendOTP, verifyOTP, completeRegistration,
   checkDeletionPassword, sendDeletionOTP, confirmAccountDeletion, cancelAccountDeletion,
+  updatePreferredLanguage,
 } = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth');
 const { uploadGovtId } = require('../middleware/upload');
@@ -14,6 +15,7 @@ router.post('/register-pandit',       uploadGovtId.single('govtIdImage'), regist
 router.post('/login',                 login);
 router.post('/logout',                protect, logout);
 router.get('/me',                     protect, getMe);
+router.patch('/preferred-language',   protect, updatePreferredLanguage);
 
 // Account deletion flow (all require authentication)
 router.post('/delete-account/check-password', protect, checkDeletionPassword);

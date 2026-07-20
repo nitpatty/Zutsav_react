@@ -55,6 +55,10 @@ const poojaSchema = new mongoose.Schema({
   adminNote:  { type: String },
   isDeleted:  { type: Boolean, default: false },
   deletedAt:  { type: Date, default: null },
+
+  // Bumped only when a translatable field actually changes (see updatePooja) —
+  // cached translations compare against this to detect staleness.
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 // Keep categoryId in sync with first element of categoryIds for legacy callers
