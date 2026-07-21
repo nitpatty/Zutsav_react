@@ -1,42 +1,53 @@
-const { computePanchang } = require('../utils/panchang');
+const panchangService = require('../services/panchangService');
 
-// GET /api/panchang?date=YYYY-MM-DD&lat=28.6&lon=77.2
+const UNAVAILABLE = { success: false, message: 'Panchang temporarily unavailable' };
+
+// GET /api/panchang?date=YYYY-MM-DD&lat=28.6&lon=77.2&tz=Asia/Kolkata
 exports.getPanchang = async (req, res, next) => {
   try {
-    const { date, lat, lon } = req.query;
-    const targetDate = date ? new Date(date) : new Date();
-    if (isNaN(targetDate.getTime())) {
+    const { date, lat, lon, tz } = req.query;
+    if (date && Number.isNaN(new Date(date).getTime())) {
       return res.status(400).json({ success: false, message: 'Invalid date format. Use YYYY-MM-DD.' });
     }
-    targetDate.setHours(6, 0, 0, 0); // mid-morning for calculations
 
-    const latDeg = lat ? parseFloat(lat) : 28.6139;
-    const lonDeg = lon ? parseFloat(lon) : 77.2090;
-
-    const panchang = computePanchang(targetDate, latDeg, lonDeg);
+    const panchang = await panchangService.getPanchang({
+      date,
+      lat: lat ? parseFloat(lat) : undefined,
+      lon: lon ? parseFloat(lon) : undefined,
+      timezone: tz || undefined,
+    });
     res.json({ success: true, panchang });
   } catch (err) {
+    if (err instanceof panchangService.PanchangUnavailableError) {
+      return res.status(503).json(UNAVAILABLE);
+    }
     next(err);
   }
 };
 
-// GET /api/panchang/week?date=YYYY-MM-DD
+// GET /api/panchang/week?date=YYYY-MM-DD&lat=28.6&lon=77.2&tz=Asia/Kolkata
 exports.getWeekPanchang = async (req, res, next) => {
   try {
-    const { date, lat, lon } = req.query;
-    const start = date ? new Date(date) : new Date();
-    const latDeg = lat ? parseFloat(lat) : 28.6139;
-    const lonDeg = lon ? parseFloat(lon) : 77.2090;
-
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start);
-      d.setDate(d.getDate() + i);
-      d.setHours(6, 0, 0, 0);
-      days.push(computePanchang(d, latDeg, lonDeg));
+    const { date, lat, lon, tz } = req.query;
+    if (date && Number.isNaN(new Date(date).getTime())) {
+      return res.status(400).json({ success: false, message: 'Invalid date format. Use YYYY-MM-DD.' });
     }
-    res.json({ success: true, panchang: days });
+
+    const panchang = await panchangService.getWeekPanchang({
+      date,
+      lat: lat ? parseFloat(lat) : undefined,
+      lon: lon ? parseFloat(lon) : undefined,
+      timezone: tz || undefined,
+    });
+
+    if (panchang.every((d) => d === null)) {
+      return res.status(503).json(UNAVAILABLE);
+    }
+    res.json({ success: true, panchang });
   } catch (err) {
+    if (err instanceof panchangService.PanchangUnavailableError) {
+      return res.status(503).json(UNAVAILABLE);
+    }
     next(err);
   }
 };

@@ -15,6 +15,9 @@ const vendors = {
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
     defaultModel: 'llama-3.3-70b-versatile',
   },
+  freeastroapi: {
+    panchangUrl: 'https://api.freeastroapi.com/api/v2/vedic/panchang',
+  },
   whatsapp: {
     graphApiBase: 'https://graph.facebook.com',
   },

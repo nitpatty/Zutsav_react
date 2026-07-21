@@ -52,6 +52,9 @@ const systemSettingsSchema = new mongoose.Schema({
   groqApiKey: { type: String, default: '' },
   groqModel:  { type: String, default: 'llama-3.3-70b-versatile' },
 
+  // Panchang - FreeAstroAPI
+  freeAstroApiKey: { type: String, default: '' },
+
   // Media - Cloudinary
   cloudinaryCloudName: { type: String, default: '' },
   cloudinaryApiKey:    { type: String, default: '' },

@@ -203,6 +203,7 @@
     "aiDemoQ2": "Yes, please! What's the best day?",
     "loading": "Loading…",
     "dataNotAvailable": "Data Not Available",
+    "panchangUnavailable": "Panchang temporarily unavailable",
     "pdSunrise": "Sunrise", "pdDayBegins": "Day begins",
     "pdSunset": "Sunset", "pdDayEnds": "Day ends",
     "pdRahuKaal": "Rahu Kaal", "pdAvoidPeriod": "Avoid this period",
@@ -404,9 +405,13 @@
     "karana": "Karana",
     "sunrise": "Sunrise",
     "sunset": "Sunset",
-    "rahuKaal": "Rahu Kaal — Inauspicious Period",
+    "rahuKaal": "Rahu Kaal",
+    "abhijitMuhurat": "Abhijit Muhurat",
+    "auspiciousTimings": "Auspicious Timings",
+    "inauspiciousTimings": "Inauspicious Timings",
     "avoid": "Avoid",
     "today": "Today",
-    "about": "About Panchang"
+    "about": "About Panchang",
+    "unavailable": "Panchang temporarily unavailable"
   }
 }

@@ -8,7 +8,7 @@ export default function PanchangDashboard({ mantra, quote, dateStr, panchang, lo
   const { t } = useTranslation();
   const [panchangRef, panchangInView] = useInView();
 
-  const val = (v) => (loading ? t('home.loading', 'Loading…') : (v || t('home.dataNotAvailable', 'Data Not Available')));
+  const val = (v) => (loading ? t('home.loading', 'Loading…') : (v || t('home.panchangUnavailable', 'Panchang temporarily unavailable')));
   const rahuKaalStr = panchang?.rahuKaal ? `${panchang.rahuKaal.start} – ${panchang.rahuKaal.end}` : null;
 
   const cards = [

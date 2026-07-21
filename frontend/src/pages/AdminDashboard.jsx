@@ -7872,6 +7872,7 @@ const SETTING_SECTIONS = [
   { key: 'whatsapp',      label: 'WhatsApp',      icon: MessageSquare },
   { key: 'email',         label: 'Email',         icon: Mail },
   { key: 'ai',            label: 'AI',            icon: Cpu },
+  { key: 'panchang',      label: 'Panchang',      icon: Sparkles },
   { key: 'media',         label: 'Media',         icon: Image },
   { key: 'security',      label: 'Security',      icon: Shield },
 ];
@@ -8297,6 +8298,12 @@ function SystemSettingsTab() {
           </select>
         </div>
         <InfoBox>Get your API key from console.groq.com. The llama-3.3-70b model gives the best quality for spiritual queries.</InfoBox>
+      </SectionForm>
+    ),
+    panchang: (
+      <SectionForm title="Panchang — FreeAstroAPI" onSave={() => save(['freeAstroApiKey'])} saving={saving}>
+        <SecretInput label="FreeAstroAPI Key" name="freeAstroApiKey" value={form.freeAstroApiKey || ''} onChange={set} />
+        <InfoBox>Get your API key from freeastroapi.com/docs. Powers Tithi/Nakshatra/Yoga/Karana/Sunrise/Sunset/Rahu Kaal across the site — results are cached 24h per location to stay within the free-tier daily quota. Festival data is unaffected; it's still sourced from Google Sheets via IMPORTXML.</InfoBox>
       </SectionForm>
     ),
     media: (

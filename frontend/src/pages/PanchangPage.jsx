@@ -12,13 +12,24 @@ const MONTH_FULL  = ['January','February','March','April','May','June','July','A
 // the Panchang engine (computePanchang()) and are never translated: a Tithi/
 // Nakshatra/Yoga/Karana name or a clock time is not "content", it's a
 // calculated astronomical value.
+//
+// Tithi/Yoga/Karana are rendered as their own grouped entry lists below
+// (each date can carry more than one — see TimedEntryList) rather than as a
+// single-value tile here; this grid stays for the fields that are always
+// exactly one value.
 const PANCHANG_FIELDS = [
-  { key: 'tithi',     i18nKey: 'panchang.tithi',     label: 'Tithi',     icon: Moon,     color: 'text-indigo-500', bg: 'bg-indigo-50', border: 'border-indigo-100' },
-  { key: 'nakshatra', i18nKey: 'panchang.nakshatra', label: 'Nakshatra', icon: Star,     color: 'text-purple-500', bg: 'bg-purple-50', border: 'border-purple-100' },
-  { key: 'yoga',      i18nKey: 'panchang.yoga',      label: 'Yoga',      icon: Sparkles, color: 'text-emerald-500',bg: 'bg-emerald-50',border: 'border-emerald-100' },
-  { key: 'karana',    i18nKey: 'panchang.karana',    label: 'Karana',    icon: Calendar, color: 'text-amber-500',  bg: 'bg-amber-50',  border: 'border-amber-100'  },
-  { key: 'sunrise',   i18nKey: 'panchang.sunrise',   label: 'Sunrise',   icon: Sun,      color: 'text-saffron-500',bg: 'bg-saffron-50',border: 'border-saffron-100' },
-  { key: 'sunset',    i18nKey: 'panchang.sunset',    label: 'Sunset',    icon: Moon,     color: 'text-blue-500',   bg: 'bg-blue-50',   border: 'border-blue-100'   },
+  { key: 'nakshatra', i18nKey: 'panchang.nakshatra', label: 'Nakshatra', icon: Star, color: 'text-purple-500', bg: 'bg-purple-50', border: 'border-purple-100' },
+  { key: 'sunrise',   i18nKey: 'panchang.sunrise',   label: 'Sunrise',   icon: Sun,  color: 'text-saffron-500',bg: 'bg-saffron-50',border: 'border-saffron-100' },
+  { key: 'sunset',    i18nKey: 'panchang.sunset',    label: 'Sunset',    icon: Moon, color: 'text-blue-500',   bg: 'bg-blue-50',   border: 'border-blue-100'   },
+];
+
+// Tithi/Yoga/Karana groups — same color language PANCHANG_FIELDS used for
+// these fields before, just applied to a list of entries instead of a
+// single tile, since the API can return more than one per day.
+const ENTRY_GROUPS = [
+  { key: 'tithiEntries',  i18nKey: 'panchang.tithi',  label: 'Tithi',  icon: Moon,     color: 'text-indigo-500',  bg: 'bg-indigo-50',  border: 'border-indigo-100' },
+  { key: 'yogaEntries',   i18nKey: 'panchang.yoga',   label: 'Yoga',   icon: Sparkles, color: 'text-emerald-500', bg: 'bg-emerald-50', border: 'border-emerald-100' },
+  { key: 'karanaEntries', i18nKey: 'panchang.karana', label: 'Karana', icon: Calendar, color: 'text-amber-500',   bg: 'bg-amber-50',   border: 'border-amber-100' },
 ];
 
 const DATA_STYLES = {
@@ -70,14 +81,93 @@ function FestivalEntries({ entries }) {
   );
 }
 
+// Renders every entry for one Panchang element (Tithi/Yoga/Karana) — one on
+// a normal day, several on a day where that element changes mid-day. Same
+// tile styling PANCHANG_FIELDS already used for these fields, just repeated
+// per entry instead of assuming there's only one.
+function TimedEntryList({ title, icon: Icon, color, bg, border, entries }) {
+  if (!entries?.length) return null;
+  return (
+    <div className="mb-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Icon size={13} className={color} />
+        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{title}</p>
+      </div>
+      <div className="space-y-2">
+        {entries.map((entry, i) => (
+          <div key={i} className={`${bg} border ${border} rounded-xl p-3`}>
+            <p className="text-sm font-semibold text-gray-800 leading-tight">{entry.name}</p>
+            {entry.start && entry.end && (
+              <p className="text-xs text-gray-500 mt-0.5">{entry.start} – {entry.end}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Auspicious/inauspicious timing periods (Abhijit Muhurat, Rahu Kaal, ...) —
+// same red "avoid" box PanchangCard already used for Rahu Kaal alone,
+// generalized to a list and given a green "auspicious" variant, so any
+// number of periods in either group render without new styling per name.
+function TimingPeriodList({ title, icon: Icon, entries, tone, avoidLabel }) {
+  if (!entries?.length) return null;
+  const c = tone === 'auspicious'
+    ? { bg: 'bg-emerald-50', border: 'border-emerald-100', icon: 'text-emerald-500', name: 'text-emerald-700', time: 'text-emerald-500' }
+    : { bg: 'bg-red-50',     border: 'border-red-100',     icon: 'text-red-500',     name: 'text-red-700',     time: 'text-red-500' };
+  return (
+    <div className="mb-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Icon size={13} className={c.icon} />
+        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{title}</p>
+      </div>
+      <div className="space-y-2">
+        {entries.map((entry, i) => (
+          <div key={i} className={`flex items-center gap-3 ${c.bg} border ${c.border} rounded-xl px-4 py-3`}>
+            <Clock size={14} className={`${c.icon} shrink-0`} />
+            <div className="flex-1 min-w-0">
+              <p className={`text-xs font-bold ${c.name}`}>{entry.name}</p>
+              <p className={`text-xs ${c.time} mt-0.5`}>{entry.start} – {entry.end}</p>
+            </div>
+            {tone === 'inauspicious' && (
+              <span className="text-[10px] font-semibold text-red-500 bg-red-100 px-2 py-1 rounded-lg shrink-0">{avoidLabel}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PanchangCard({ data, isToday, festivals, dateObj }) {
   const { t } = useTranslation();
-  if (!data) return null;
+  if (!data) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center"
+           style={{ boxShadow: '0 2px 20px rgba(0,0,0,0.06)' }}>
+        <p className="text-sm text-gray-400 font-medium">{t('panchang.unavailable', 'Panchang temporarily unavailable')}</p>
+      </div>
+    );
+  }
   const dow       = dateObj ? DAY_NAMES[dateObj.getDay()] : '';
   const dom       = dateObj ? dateObj.getDate() : '';
   const monthIdx  = dateObj ? dateObj.getMonth() : 0;
   const yr        = dateObj ? dateObj.getFullYear() : '';
   const moonPhase = getMoonPhase(data.tithi);
+
+  // Falls back to the old single-value fields when a cached response was
+  // fetched before this multi-entry shape existed (cache TTL is 24h) — a
+  // name-only entry with no time range rather than fabricating one.
+  const tithiEntries  = data.tithiEntries?.length  ? data.tithiEntries  : (data.tithi  ? [{ name: data.tithi }]  : []);
+  const yogaEntries   = data.yogaEntries?.length   ? data.yogaEntries   : (data.yoga   ? [{ name: data.yoga }]   : []);
+  const karanaEntries = data.karanaEntries?.length ? data.karanaEntries : (data.karana ? [{ name: data.karana }] : []);
+  const auspiciousTimings = data.auspiciousTimings?.length
+    ? data.auspiciousTimings
+    : (data.abhijitMuhurat ? [{ name: t('panchang.abhijitMuhurat', 'Abhijit Muhurat'), ...data.abhijitMuhurat }] : []);
+  const inauspiciousTimings = data.inauspiciousTimings?.length
+    ? data.inauspiciousTimings
+    : (data.rahuKaal ? [{ name: t('panchang.rahuKaal', 'Rahu Kaal'), ...data.rahuKaal }] : []);
 
   return (
     <div className={`bg-white rounded-2xl overflow-hidden transition-all duration-300 ${
@@ -143,17 +233,35 @@ function PanchangCard({ data, isToday, festivals, dateObj }) {
           )}
         </div>
 
-        {/* Rahu Kaal */}
-        {data.rahuKaal && (
-          <div className="flex items-center gap-3 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mb-4">
-            <Clock size={14} className="text-red-500 shrink-0" />
-            <div className="flex-1">
-              <p className="text-xs font-bold text-red-700">{t('panchang.rahuKaal', 'Rahu Kaal — Inauspicious Period')}</p>
-              <p className="text-xs text-red-500 mt-0.5">{data.rahuKaal.start} – {data.rahuKaal.end}</p>
-            </div>
-            <span className="text-[10px] font-semibold text-red-500 bg-red-100 px-2 py-1 rounded-lg shrink-0">{t('panchang.avoid', 'Avoid')}</span>
-          </div>
-        )}
+        {/* Tithi / Yoga / Karana — one or more entries each, per FreeAstroAPI */}
+        {ENTRY_GROUPS.map(({ key, i18nKey, label, icon, color, bg, border }) => (
+          <TimedEntryList
+            key={key}
+            title={t(i18nKey, label)}
+            icon={icon}
+            color={color}
+            bg={bg}
+            border={border}
+            entries={key === 'tithiEntries' ? tithiEntries : key === 'yogaEntries' ? yogaEntries : karanaEntries}
+          />
+        ))}
+
+        {/* Auspicious Timings */}
+        <TimingPeriodList
+          title={t('panchang.auspiciousTimings', 'Auspicious Timings')}
+          icon={Sparkles}
+          entries={auspiciousTimings}
+          tone="auspicious"
+        />
+
+        {/* Inauspicious Timings */}
+        <TimingPeriodList
+          title={t('panchang.inauspiciousTimings', 'Inauspicious Timings')}
+          icon={Clock}
+          entries={inauspiciousTimings}
+          tone="inauspicious"
+          avoidLabel={t('panchang.avoid', 'Avoid')}
+        />
 
         {/* Festivals / Tithi */}
         {festivals !== undefined && (
@@ -320,6 +428,8 @@ export default function PanchangPage() {
         {view === 'week' && (
           weekLoading
             ? <div className="space-y-4">{Array.from({ length: 7 }).map((_, i) => <PanchangSkeleton key={i} />)}</div>
+            : weekData.length === 0
+            ? <PanchangCard data={null} />
             : <div className="space-y-4">
                 {weekData.map((d, i) => {
                   const dt = new Date(selectedDate + 'T00:00:00');

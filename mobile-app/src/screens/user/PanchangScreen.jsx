@@ -98,7 +98,8 @@ export default function PanchangScreen() {
       const { data } = await api.get(`/panchang?date=${toDateStr(d)}`);
       setPanchang(data.panchang || data.data || null);
     } catch {
-      if (!silent) Toast.show({ type: 'error', text1: 'Could not load Panchang' });
+      setPanchang(null);
+      if (!silent) Toast.show({ type: 'error', text1: 'Panchang temporarily unavailable' });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -111,7 +112,8 @@ export default function PanchangScreen() {
       const { data } = await api.get(`/panchang/week?date=${toDateStr(d)}`);
       setWeekPanchang(data.panchang || data.data || []);
     } catch {
-      if (!silent) Toast.show({ type: 'error', text1: 'Could not load weekly Panchang' });
+      setWeekPanchang([]);
+      if (!silent) Toast.show({ type: 'error', text1: 'Panchang temporarily unavailable' });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -198,7 +200,7 @@ export default function PanchangScreen() {
               )}
             </>
           ) : (
-            <Text style={[styles.noData, { color: C.textSecondary }]}>Panchang data not available for this date</Text>
+            <Text style={[styles.noData, { color: C.textSecondary }]}>Panchang temporarily unavailable</Text>
           )}
         </ScrollView>
       ) : (
@@ -207,21 +209,27 @@ export default function PanchangScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
         >
           {weekPanchang.map((p, i) => (
-            <TouchableOpacity
-              key={i}
-              style={[styles.weekCard, { backgroundColor: C.surface, borderColor: C.border }]}
-              onPress={() => { const d = new Date(date); d.setDate(d.getDate() + i); handleSelectWeekDay(d); }}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.weekDate, { color: C.text }]}>{p.date}</Text>
-              <View style={styles.weekRow}>
-                {p.tithi && <Text style={[styles.weekMeta, { color: C.textSecondary }]}>Tithi: {p.tithi}</Text>}
-                {p.nakshatra && <Text style={[styles.weekMeta, { color: C.textSecondary }]}>Nakshatra: {p.nakshatra}</Text>}
+            p ? (
+              <TouchableOpacity
+                key={i}
+                style={[styles.weekCard, { backgroundColor: C.surface, borderColor: C.border }]}
+                onPress={() => { const d = new Date(date); d.setDate(d.getDate() + i); handleSelectWeekDay(d); }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.weekDate, { color: C.text }]}>{p.date}</Text>
+                <View style={styles.weekRow}>
+                  {p.tithi && <Text style={[styles.weekMeta, { color: C.textSecondary }]}>Tithi: {p.tithi}</Text>}
+                  {p.nakshatra && <Text style={[styles.weekMeta, { color: C.textSecondary }]}>Nakshatra: {p.nakshatra}</Text>}
+                </View>
+                {p.rahuKaal && (
+                  <Text style={styles.weekRahu}>Rahu Kaal: {p.rahuKaal.start} – {p.rahuKaal.end}</Text>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View key={i} style={[styles.weekCard, { backgroundColor: C.surface, borderColor: C.border }]}>
+                <Text style={[styles.noData, { color: C.textSecondary }]}>Panchang temporarily unavailable</Text>
               </View>
-              {p.rahuKaal && (
-                <Text style={styles.weekRahu}>Rahu Kaal: {p.rahuKaal.start} – {p.rahuKaal.end}</Text>
-              )}
-            </TouchableOpacity>
+            )
           ))}
         </ScrollView>
       )}

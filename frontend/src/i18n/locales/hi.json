@@ -203,6 +203,7 @@
     "aiDemoQ2": "हां, कृपया! सबसे अच्छा दिन कौन सा है?",
     "loading": "लोड हो रहा है…",
     "dataNotAvailable": "डेटा उपलब्ध नहीं है",
+    "panchangUnavailable": "पंचांग अस्थायी रूप से अनुपलब्ध है",
     "pdSunrise": "सूर्योदय", "pdDayBegins": "दिन शुरू होता है",
     "pdSunset": "सूर्यास्त", "pdDayEnds": "दिन समाप्त होता है",
     "pdRahuKaal": "राहु काल", "pdAvoidPeriod": "इस अवधि से बचें",
@@ -404,9 +405,13 @@
     "karana": "करण",
     "sunrise": "सूर्योदय",
     "sunset": "सूर्यास्त",
-    "rahuKaal": "राहु काल — अशुभ समय",
+    "rahuKaal": "राहु काल",
+    "abhijitMuhurat": "अभिजीत मुहूर्त",
+    "auspiciousTimings": "शुभ मुहूर्त",
+    "inauspiciousTimings": "अशुभ समय",
     "avoid": "टालें",
     "today": "आज",
-    "about": "पंचांग के बारे में"
+    "about": "पंचांग के बारे में",
+    "unavailable": "पंचांग अस्थायी रूप से अनुपलब्ध है"
   }
 }
