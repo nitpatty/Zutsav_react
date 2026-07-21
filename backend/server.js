@@ -77,11 +77,18 @@ connectDB().then(async () => {
   startDeletionCleanupJob();
   startBookingReminderJobs();
   startTranslationLockSweep();
-  // Registers v2 channel plugins + the job processor. The queue itself is
-  // still empty in production — NotificationEngine.emit() keeps using the
-  // old synchronous Dispatcher until the controlled cutover (Phase 4 of the
-  // notification-engine rebuild), so this is purely additive infrastructure.
-  NotificationEngineBootstrap.init();
+  // Registers v2 channel plugins, gives the Worker its job processor, and
+  // runs a startup audit of every enabled WhatsApp mapping against its
+  // synced Meta template (see bootstrap.js's validateWhatsAppMappings) so a
+  // misconfigured/unsynced template shows up in boot logs immediately,
+  // identically in every environment, instead of only being discoverable
+  // later via the Admin > Notifications dry-run screen.
+  //
+  // NOTE: this note previously said NotificationEngine.emit() still used an
+  // old synchronous Dispatcher pending a "Phase 4 cutover" — that cutover is
+  // already done. NotificationEngine.js's emit() calls core/EventDispatcher
+  // directly today; there is no separate legacy Dispatcher module anymore.
+  await NotificationEngineBootstrap.init();
   NotificationWorker.start();
 
   server.listen(config.server.port, async () => {
