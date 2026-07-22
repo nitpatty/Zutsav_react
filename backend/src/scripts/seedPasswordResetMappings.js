@@ -1,4 +1,17 @@
 /**
+ * ⚠️ PARTIALLY DEPRECATED — WhatsApp portion superseded by bootstrapNotificationMappings.js
+ *
+ * PASSWORD_RESET_WHATSAPP_OTP (both `user` and a `pandit` variant verified
+ * during the 2026-07-22 duplicate-mapping incident investigation) is now
+ * part of bootstrapNotificationMappings.js's VERIFIED_MAPPINGS — the
+ * official initialization path going forward. This script's
+ * PASSWORD_RESET_EMAIL_OTP creation (email channel) is NOT covered by the
+ * WhatsApp-only bootstrap and remains this script's job for now. Kept here
+ * for historical reference and for the email-side seed; the WhatsApp seed
+ * below is redundant but still safe to run (idempotent).
+ */
+
+/**
  * One-off setup (idempotent, safe to re-run): creates the NotificationMapping
  * rows for the two new password-reset OTP events, and disables the old
  * generic PASSWORD_RESET mapping/event it replaces (see EventRegistry.js —

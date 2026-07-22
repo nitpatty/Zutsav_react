@@ -1,4 +1,14 @@
 /**
+ * ⚠️ DEPRECATED — superseded by bootstrapNotificationMappings.js
+ *
+ * OTP_VERIFICATION's verified variables (otp.code) are now part of
+ * src/scripts/bootstrapNotificationMappings.js's VERIFIED_MAPPINGS, the
+ * official initialization path for Notification Mapping configuration
+ * going forward. Kept here only for historical reference — do not use for
+ * new deployments. Still safe to run (idempotent), just redundant.
+ */
+
+/**
  * ONE-OFF DATA FIX (idempotent): repairs NotificationMapping.whatsappVariables
  * for OTP_VERIFICATION's WhatsApp mapping(s) on whichever database this
  * script is pointed at (via MONGO_URI).

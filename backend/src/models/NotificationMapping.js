@@ -68,6 +68,15 @@ const notificationMappingSchema = new mongoose.Schema(
     // template is translated once per language and reused across every
     // notification sent for this event (see translationService.js).
     translationVersion: { type: Number, default: 1 },
+
+    // ── Bootstrap provenance (optional) ─────────────────────────────────
+    // Set only when this mapping's WhatsApp config (template/variables/
+    // button) was created or filled in by scripts/bootstrapNotificationMappings.js
+    // from its verified reference data, rather than hand-configured through
+    // the Admin UI. Never set retroactively on documents bootstrap didn't
+    // touch — absence means "admin-configured" or "predates bootstrap."
+    bootstrapVersion: { type: String, default: '' },
+    bootstrappedAt:   { type: Date,   default: null },
   },
   { timestamps: true }
 );

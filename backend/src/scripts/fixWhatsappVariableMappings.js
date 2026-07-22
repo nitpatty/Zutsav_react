@@ -1,4 +1,17 @@
 /**
+ * ⚠️ DEPRECATED — superseded by bootstrapNotificationMappings.js
+ *
+ * Every event/variable pairing in this file's FIXES map (and the
+ * SERVICE_COMPLETION_OTP wrong-template correction below) has been carried
+ * over into src/scripts/bootstrapNotificationMappings.js's VERIFIED_MAPPINGS
+ * — re-verified directly against the real database on 2026-07-22 — which is
+ * now the official initialization path for Notification Mapping
+ * configuration. Kept here only for historical reference (including the
+ * original incident writeup below) — do not use for new deployments. Still
+ * safe to run (idempotent), just redundant.
+ */
+
+/**
  * CRITICAL BUG FIX (one-off, idempotent): repairs NotificationMapping.whatsappVariables
  * for every WhatsApp mapping that was left with an empty array after being created
  * through the admin UI.

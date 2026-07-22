@@ -1,4 +1,16 @@
 /**
+ * ⚠️ DEPRECATED — superseded by bootstrapNotificationMappings.js
+ *
+ * This script's functionality (OTP_VERIFICATION/SERVICE_COMPLETION_OTP/
+ * DELIVERY_OTP_SENT/PASSWORD_RESET_WHATSAPP_OTP all sharing the
+ * "whatsapp_verification" template) is fully consolidated into
+ * src/scripts/bootstrapNotificationMappings.js, the official initialization
+ * path for Notification Mapping configuration going forward. Kept here only
+ * for historical reference — do not use for new deployments. Still safe to
+ * run (idempotent), just redundant.
+ */
+
+/**
  * One-off setup: points every OTP-delivery business event's WhatsApp mapping
  * at the single already-approved Authentication template ("whatsapp_verification"),
  * instead of requiring a separate Meta template per event.
