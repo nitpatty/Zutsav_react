@@ -490,6 +490,7 @@ export default function ZutsavAIWidget() {
       {/* ── Chat Panel ──────────────────────────────────────────────────── */}
       {isOpen && (
         <div
+          data-lenis-prevent
           className={`fixed right-4 md:right-6 z-[9998] w-[92vw] flex flex-col ${guidedMode ? 'md:w-[520px]' : 'md:w-[380px]'}`}
           style={{
             bottom: 'calc(3.5rem + 1.5rem + 0.5rem)',
