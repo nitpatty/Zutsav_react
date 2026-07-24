@@ -4,11 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 
 export default function PanditBankUPIScreen() {
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [loading,  setLoading]  = useState(true);
@@ -86,9 +89,9 @@ export default function PanditBankUPIScreen() {
   if (loading) return <LoadingSpinner fullScreen />;
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Bank & UPI" />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: tabBarClearance + 24 }}>
         <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
           <Text style={[styles.cardTitle, { color: C.text }]}>Bank Details</Text>
           <TextInput style={[styles.input, { borderColor: C.border, color: C.text, backgroundColor: C.background }]} value={accountHolderName} onChangeText={setAccountHolderName} placeholder="Account Holder Name" placeholderTextColor={C.textSecondary} />

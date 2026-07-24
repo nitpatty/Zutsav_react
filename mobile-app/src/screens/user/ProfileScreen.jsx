@@ -6,12 +6,14 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import api, { imageUrl } from '../../api/axios';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import ScreenHeader from '../../components/ScreenHeader';
 import NotificationBell from '../../components/NotificationBell';
+import { OutlineButton } from '../../components/shared/AppButton';
 
 export default function ProfileScreen() {
   const navigation = useNavigation();
@@ -85,61 +87,69 @@ export default function ProfileScreen() {
 
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
         {/* Avatar + info */}
-        <View style={[styles.heroSection, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
+        <LinearGradient colors={[C.primary, C.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroSection}>
           <TouchableOpacity onPress={handlePickAvatar} style={styles.avatarWrap} activeOpacity={0.85}>
             {user?.profilePhoto ? (
               <Image source={{ uri: imageUrl(user.profilePhoto) }} style={styles.avatar} />
             ) : (
-              <View style={[styles.avatarPlaceholder, { backgroundColor: C.primary + '20' }]}>
-                <Text style={[styles.avatarInitial, { color: C.primary }]}>
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitial}>
                   {user?.name?.charAt(0)?.toUpperCase() || 'U'}
                 </Text>
               </View>
             )}
-            <View style={[styles.cameraIcon, { backgroundColor: C.primary }]}>
-              <Ionicons name={uploading ? 'hourglass' : 'camera'} size={14} color="#fff" />
+            <View style={[styles.cameraIcon, { backgroundColor: '#fff' }]}>
+              <Ionicons name={uploading ? 'hourglass' : 'camera'} size={13} color={C.primaryDark} />
             </View>
           </TouchableOpacity>
 
           <View style={styles.userInfo}>
-            <Text style={[styles.userName, { color: C.text }]}>{user?.name}</Text>
-            <Text style={[styles.userPhone, { color: C.textSecondary }]}>{user?.phone}</Text>
-            {user?.email && <Text style={[styles.userEmail, { color: C.textSecondary }]}>{user.email}</Text>}
-            <View style={[styles.roleBadge, { backgroundColor: C.primary + '20' }]}>
-              <Text style={[styles.roleText, { color: C.primary }]}>{user?.role === 'pandit' ? 'Pandit' : 'Devotee'}</Text>
+            <Text style={styles.userName}>{user?.name}</Text>
+            <Text style={styles.userPhone}>{user?.phone}</Text>
+            {user?.email && <Text style={styles.userEmail}>{user.email}</Text>}
+            <View style={styles.roleBadge}>
+              <Text style={styles.roleText}>{user?.role === 'pandit' ? 'Pandit' : 'Devotee'}</Text>
             </View>
-            <TouchableOpacity style={[styles.editBtn, { borderColor: C.border }]} onPress={() => navigation.navigate('PersonalInfo')}>
-              <Ionicons name="pencil" size={14} color={C.text} />
-              <Text style={[styles.editBtnText, { color: C.text }]}>Edit Profile</Text>
+            <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate('PersonalInfo')} activeOpacity={0.85}>
+              <Ionicons name="pencil" size={13} color="#fff" />
+              <Text style={styles.editBtnText}>Edit Profile</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </LinearGradient>
 
         {/* Menu sections */}
         {sections.map((section) => (
-          <View key={section.title} style={{ marginTop: 16 }}>
+          <View key={section.title} style={{ marginTop: 20 }}>
             <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>{section.title}</Text>
-            <View style={[styles.menuSection, { backgroundColor: C.surface, borderColor: C.border }]}>
+            <View style={[styles.menuSection, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
               {section.items.map((item, idx) => (
                 <TouchableOpacity
                   key={item.label}
-                  style={[styles.menuItem, idx < section.items.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border }]}
+                  style={[styles.menuItem, idx < section.items.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.borderLight }]}
                   onPress={item.onPress}
-                  activeOpacity={0.7}
+                  activeOpacity={0.75}
                 >
-                  <Ionicons name={item.icon} size={20} color={item.danger ? '#DC2626' : C.text} />
-                  <Text style={[styles.menuLabel, { color: item.danger ? '#DC2626' : C.text }]}>{item.label}</Text>
-                  <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
+                  <View style={[styles.menuIconWrap, { backgroundColor: (item.danger ? (C.error || '#DC2626') : C.primary) + '15' }]}>
+                    <Ionicons name={item.icon} size={18} color={item.danger ? (C.error || '#DC2626') : C.primary} />
+                  </View>
+                  <Text style={[styles.menuLabel, { color: item.danger ? (C.error || '#DC2626') : C.text }]}>{item.label}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={C.textLight} />
                 </TouchableOpacity>
               ))}
             </View>
           </View>
         ))}
 
-        <TouchableOpacity style={[styles.logoutBtn, { borderColor: '#DC262640' }]} onPress={handleLogout} activeOpacity={0.8}>
-          <Ionicons name="log-out-outline" size={20} color="#DC2626" />
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
+        <View style={{ marginHorizontal: 16, marginTop: 24 }}>
+          <OutlineButton
+            title="Logout"
+            icon={<Ionicons name="log-out-outline" size={18} color={C.error || '#DC2626'} />}
+            onPress={handleLogout}
+            tone={C.error || '#DC2626'}
+            C={C}
+            fullWidth
+          />
+        </View>
       </ScrollView>
     </View>
   );
@@ -148,39 +158,41 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   root:              { flex: 1 },
   heroSection: {
-    padding: 24, alignItems: 'center', gap: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    padding: 28, paddingTop: 32, alignItems: 'center', gap: 14,
+    borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
   },
   avatarWrap:        { position: 'relative' },
-  avatar:            { width: 88, height: 88, borderRadius: 44 },
-  avatarPlaceholder: { width: 88, height: 88, borderRadius: 44, justifyContent: 'center', alignItems: 'center' },
-  avatarInitial:     { fontSize: 34, fontWeight: '800' },
+  avatar:            { width: 92, height: 92, borderRadius: 46, borderWidth: 3, borderColor: 'rgba(255,255,255,0.4)' },
+  avatarPlaceholder: {
+    width: 92, height: 92, borderRadius: 46, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.22)', borderWidth: 3, borderColor: 'rgba(255,255,255,0.4)',
+  },
+  avatarInitial:     { fontSize: 34, fontWeight: '800', color: '#fff' },
   cameraIcon: {
     position: 'absolute', bottom: 0, right: 0,
-    width: 26, height: 26, borderRadius: 13, justifyContent: 'center', alignItems: 'center',
+    width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
     borderWidth: 2, borderColor: '#fff',
   },
-  userInfo:          { alignItems: 'center', gap: 4 },
-  userName:          { fontSize: 20, fontWeight: '800' },
-  userPhone:         { fontSize: 14 },
-  userEmail:         { fontSize: 13 },
-  roleBadge:         { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, marginTop: 4 },
-  roleText:          { fontSize: 12, fontWeight: '700' },
+  userInfo:          { alignItems: 'center', gap: 3 },
+  userName:          { fontSize: 20, fontWeight: '800', color: '#fff' },
+  userPhone:         { fontSize: 13.5, color: 'rgba(255,255,255,0.85)' },
+  userEmail:         { fontSize: 12.5, color: 'rgba(255,255,255,0.7)' },
+  roleBadge:         { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, marginTop: 6, backgroundColor: 'rgba(255,255,255,0.22)' },
+  roleText:          { fontSize: 11.5, fontWeight: '700', color: '#fff' },
   editBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, marginTop: 8,
+    backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, marginTop: 10,
   },
-  editBtnText:       { fontSize: 13, fontWeight: '600' },
-  sectionTitle:      { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginHorizontal: 20, marginBottom: 6 },
-  menuSection:       { marginHorizontal: 16, borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
+  editBtnText:       { fontSize: 12.5, fontWeight: '700', color: '#fff' },
+  sectionTitle:      { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginHorizontal: 20, marginBottom: 8 },
+  menuSection: {
+    marginHorizontal: 16, borderRadius: 18, overflow: 'hidden',
+    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 2,
+  },
   menuItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    padding: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 14, paddingVertical: 13,
   },
-  menuLabel:         { flex: 1, fontSize: 15, fontWeight: '500' },
-  logoutBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, margin: 16, marginTop: 24, borderWidth: 1.5, borderRadius: 14, paddingVertical: 14,
-  },
-  logoutText:        { color: '#DC2626', fontSize: 15, fontWeight: '700' },
+  menuIconWrap:      { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  menuLabel:         { flex: 1, fontSize: 14.5, fontWeight: '600' },
 });

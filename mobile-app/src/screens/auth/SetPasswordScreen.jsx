@@ -13,7 +13,7 @@ export default function SetPasswordScreen({ navigation, route }) {
   // Params passed from OTPScreen after successful verification
   const { phone, email, name, role, channel = 'whatsapp' } = route.params || {};
   const insets = useSafeAreaInsets();
-  const { login } = useAuthStore();
+  const { setSession } = useAuthStore();
 
   const [password, setPassword] = useState('');
   const [confirm,  setConfirm]  = useState('');
@@ -41,8 +41,12 @@ export default function SetPasswordScreen({ navigation, route }) {
         role: role || 'user',
         channel,
       });
-      await login(data.token, data.user);
+      // Session already exists on the server response — persist it directly
+      // instead of calling login() (which expects credentials, not a token).
+      await setSession(data.token, data.user);
       Toast.show({ type: 'success', text1: 'Account created successfully!' });
+      // RootNavigator swaps to the authenticated stack automatically once
+      // authStore.user is set (same mechanism LoginScreen relies on).
     } catch (err) {
       Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not create account' });
     } finally {

@@ -129,6 +129,11 @@ export const SIZES = {
   buttonHeightSm:   40,
   inputHeight:      52,
   tabBarHeight:     64,
+  // Floating tab bar's fixed gap from the screen edge (see PanditNavigator's
+  // tabBarStyle) — a named constant so every consumer (the navigator itself,
+  // and any screen with a sticky bottom action bar) derives the tab bar's
+  // footprint from one place instead of re-guessing a magic number.
+  tabBarBottomMargin: 16,
   fabSize:          58,
   avatarSm:         32,
   avatarMd:         44,

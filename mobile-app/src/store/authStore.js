@@ -47,6 +47,12 @@ export const useAuthStore = create((set, get) => ({
   },
 
   logout: async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // Server-side logout is best-effort — proceed with local cleanup
+      // even if the API is unreachable (network error, server down).
+    }
     await SecureStore.deleteItemAsync('zutsav_token');
     await SecureStore.deleteItemAsync('zutsav_user');
     set({ user: null, token: null });

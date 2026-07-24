@@ -3,8 +3,9 @@ import { View, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotificationStore } from '../store/notificationStore';
-import { COLORS, RADIUS, SHADOW, FONT } from '../theme/tokens';
+import { COLORS, RADIUS, SHADOW, FONT, SIZES } from '../theme/tokens';
 
 import PanditDashboardScreen  from '../screens/pandit/PanditDashboardScreen';
 import PanditBookingsScreen   from '../screens/pandit/PanditBookingsScreen';
@@ -22,7 +23,9 @@ import PanditAvailabilityScreen from '../screens/pandit/PanditAvailabilityScreen
 import PanditEarningsScreen   from '../screens/pandit/PanditEarningsScreen';
 import PanditRatingsScreen    from '../screens/pandit/PanditRatingsScreen';
 import PanditNotificationsScreen from '../screens/pandit/PanditNotificationsScreen';
-import PanditSettingsScreen   from '../screens/pandit/PanditSettingsScreen';
+import ChangePasswordScreen      from '../screens/user/ChangePasswordScreen';
+import DeleteAccountScreen       from '../screens/user/DeleteAccountScreen';
+import PanditSettingsScreen      from '../screens/pandit/PanditSettingsScreen';
 import PanditReferralScreen  from '../screens/pandit/PanditReferralScreen';
 import PanditReferralDetailScreen from '../screens/pandit/PanditReferralDetailScreen';
 import PanditMyBlogsScreen    from '../screens/pandit/PanditMyBlogsScreen';
@@ -80,6 +83,13 @@ function ProfileStack() {
       <Stack.Screen name="PanditKYC"          component={PanditKYCScreen} />
       <Stack.Screen name="PanditSettings"     component={PanditSettingsScreen} />
       <Stack.Screen name="PanditNotifications" component={PanditNotificationsScreen} />
+      {/* Settings screen is shared with the User role and navigates to these
+          role-agnostic route names — register them here too so they resolve
+          inside the Pandit stack. Notifications reuses the same dedicated
+          Pandit notification center as the "PanditNotifications" tab route. */}
+      <Stack.Screen name="Notifications"       component={PanditNotificationsScreen} />
+      <Stack.Screen name="ChangePassword"      component={ChangePasswordScreen} />
+      <Stack.Screen name="DeleteAccount"       component={DeleteAccountScreen} />
     </Stack.Navigator>
   );
 }
@@ -114,6 +124,13 @@ function BadgeIcon({ name, color, size, count }) {
 
 export default function PanditNavigator() {
   const { unreadCount } = useNotificationStore();
+  const insets = useSafeAreaInsets();
+  // Floating pill must clear the OS gesture/home-indicator area on top of its
+  // own fixed margin — a flat `bottom: 16` would sit under a device's gesture
+  // bar. Same reasoning applies to every sticky bottom bar in the app (see
+  // components/pandit/StickyActionBar.jsx), which derives from the same
+  // SIZES.tabBarBottomMargin/tabBarHeight tokens so there's one source of truth.
+  const tabBarBottom = SIZES.tabBarBottomMargin + insets.bottom;
 
   return (
     <Tab.Navigator
@@ -121,12 +138,13 @@ export default function PanditNavigator() {
         headerShown: false,
         tabBarStyle: {
           position: 'absolute',
-          left: 16, right: 16, bottom: 16,
-          height: 64,
+          left: 16, right: 16, bottom: tabBarBottom,
+          height: SIZES.tabBarHeight,
           paddingBottom: 8, paddingTop: 8,
           backgroundColor: COLORS.surface,
           borderTopWidth: 0,
           borderRadius: RADIUS.xxl,
+          overflow: 'hidden',
           ...SHADOW.floating,
         },
         tabBarActiveTintColor:   COLORS.primary,

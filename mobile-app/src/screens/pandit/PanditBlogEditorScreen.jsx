@@ -6,6 +6,8 @@ import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api, { imageUrl } from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import Field from '../../components/shared/FormField';
@@ -15,6 +17,7 @@ export default function PanditBlogEditorScreen({ route }) {
   const isEditing = Boolean(blog?._id);
   const navigation = useNavigation();
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [loadingCats, setLoadingCats] = useState(true);
@@ -96,9 +99,9 @@ export default function PanditBlogEditorScreen({ route }) {
   if (loadingCats) return <LoadingSpinner fullScreen />;
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title={isEditing ? 'Edit Blog' : 'Write Blog'} />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: tabBarClearance + 24 }}>
         <TouchableOpacity style={styles.imagePicker} onPress={pickImage} disabled={uploadingImage} activeOpacity={0.85}>
           {featuredImage ? (
             <Image source={{ uri: imageUrl(featuredImage) }} style={styles.imagePreview} />

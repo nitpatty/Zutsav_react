@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { formatDate } from '../../utils/helpers';
 import { saveCache, loadCache } from '../../utils/offlineCache';
 import useOnReconnect from '../../hooks/useOnReconnect';
@@ -23,6 +25,7 @@ const timeToDate = (t) => {
 
 export default function PanditAvailabilityScreen() {
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [loading,   setLoading]   = useState(true);
@@ -184,9 +187,9 @@ export default function PanditAvailabilityScreen() {
   if (loading) return <LoadingSpinner fullScreen />;
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Availability" />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: tabBarClearance + 24 }}>
 
         <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
           <View style={styles.row}>

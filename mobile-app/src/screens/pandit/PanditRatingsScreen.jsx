@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { timeAgo } from '../../utils/helpers';
 import EmptyState from '../../components/EmptyState';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -11,6 +13,7 @@ import ScreenHeader from '../../components/ScreenHeader';
 
 export default function PanditRatingsScreen() {
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
   const [data,       setData]       = useState(null);
   const [loading,    setLoading]    = useState(true);
@@ -43,7 +46,7 @@ export default function PanditRatingsScreen() {
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Ratings & Reviews" />
       {loading ? <LoadingSpinner fullScreen /> : (
         <FlatList
@@ -61,7 +64,7 @@ export default function PanditRatingsScreen() {
           data={data?.reviews || []}
           keyExtractor={(r) => r._id}
           renderItem={renderItem}
-          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
+          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarClearance + 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(true); }} tintColor={C.primary} />}
           ListEmptyComponent={<EmptyState icon="star-outline" title="No reviews yet" subtitle="Complete bookings to receive ratings" />}
         />

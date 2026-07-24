@@ -3,6 +3,8 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, TextInput } from 
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import PincodeInput from '../../components/shared/PincodeInput';
@@ -21,6 +23,7 @@ const RADIUS_PRESETS = [5, 10, 20, 25, 50, 100];
 
 export default function PanditAddressScreen() {
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [loading, setLoading] = useState(true);
@@ -74,9 +77,9 @@ export default function PanditAddressScreen() {
   if (loading) return <LoadingSpinner fullScreen />;
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Address & Coverage" />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 18, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 18, paddingBottom: tabBarClearance + 24 }}>
         <Field label="Languages" C={C}>
           <View style={styles.chipsWrap}>
             {LANGUAGES.map((lang) => (

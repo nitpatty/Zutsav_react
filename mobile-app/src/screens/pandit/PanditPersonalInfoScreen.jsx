@@ -4,6 +4,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { formatDate } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
@@ -17,6 +19,7 @@ const GENDERS = [
 
 export default function PanditPersonalInfoScreen() {
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [loading, setLoading] = useState(true);
@@ -66,9 +69,9 @@ export default function PanditPersonalInfoScreen() {
   if (loading) return <LoadingSpinner fullScreen />;
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Personal Details" />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: tabBarClearance + 24 }}>
         <Field label="Full Name" C={C}>
           <TextInput style={[styles.input, { borderColor: C.border, color: C.text, backgroundColor: C.surface }]} value={name} onChangeText={setName} placeholderTextColor={C.textSecondary} />
         </Field>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
@@ -7,8 +8,8 @@ import { useThemeStore } from '../../store/themeStore';
 import { formatDate, formatCurrency, orderStatusColor } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
+import { SkeletonCard } from '../../components/shared/Skeleton';
 
 export default function OrdersScreen() {
   const navigation = useNavigation();
@@ -29,28 +30,41 @@ export default function OrdersScreen() {
 
   useEffect(() => { fetchOrders(); }, []);
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}
-      onPress={() => navigation.navigate('OrderDetail', { orderId: item._id })}
-      activeOpacity={0.85}
-    >
-      <View style={styles.top}>
-        <Text style={[styles.orderId, { color: C.textSecondary }]}>Order #{item._id?.slice(-6).toUpperCase()}</Text>
-        <StatusBadge status={item.status} colorMap={orderStatusColor} small />
-      </View>
-      <Text style={[styles.itemCount, { color: C.text }]}>{item.items?.length || 0} item(s)</Text>
-      <View style={styles.bottom}>
-        <Text style={[styles.date, { color: C.textSecondary }]}>{formatDate(item.createdAt)}</Text>
-        <Text style={[styles.amount, { color: C.primary }]}>{formatCurrency(item.totalAmount)}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }) => {
+    const color = orderStatusColor[item.status] || C.primary;
+    return (
+      <TouchableOpacity
+        style={[styles.card, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}
+        onPress={() => navigation.navigate('OrderDetail', { orderId: item._id })}
+        activeOpacity={0.88}
+      >
+        <View style={[styles.iconWrap, { backgroundColor: color + '17' }]}>
+          <Ionicons name="cube" size={20} color={color} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={styles.top}>
+            <Text style={[styles.orderId, { color: C.textSecondary }]}>#{item._id?.slice(-6).toUpperCase()}</Text>
+            <StatusBadge status={item.status} colorMap={orderStatusColor} small />
+          </View>
+          <Text style={[styles.itemCount, { color: C.text }]}>{item.items?.length || 0} item(s)</Text>
+          <View style={styles.bottom}>
+            <Text style={[styles.date, { color: C.textSecondary }]}>{formatDate(item.createdAt)}</Text>
+            <Text style={[styles.amount, { color: C.primary }]}>{formatCurrency(item.totalAmount)}</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={C.textLight} />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
       <ScreenHeader title="My Orders" />
-      {loading ? <LoadingSpinner fullScreen /> : (
+      {loading ? (
+        <View style={{ padding: 16, gap: 12 }}>
+          {[1, 2, 3].map((i) => <SkeletonCard key={i} C={C} />)}
+        </View>
+      ) : (
         <FlatList
           data={orders}
           keyExtractor={(o) => o._id}
@@ -65,12 +79,17 @@ export default function OrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-  root:     { flex: 1 },
-  card:     { borderRadius: 16, borderWidth: 1, padding: 14, gap: 6 },
-  top:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  orderId:  { fontSize: 12, fontWeight: '600' },
-  itemCount:{ fontSize: 14, fontWeight: '500' },
-  bottom:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  date:     { fontSize: 12 },
-  amount:   { fontSize: 15, fontWeight: '800' },
+  root: { flex: 1 },
+  card: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 18, padding: 14,
+    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.09, shadowRadius: 10, elevation: 3,
+  },
+  iconWrap:  { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  top:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  orderId:   { fontSize: 11.5, fontWeight: '600' },
+  itemCount: { fontSize: 14, fontWeight: '600', marginTop: 3 },
+  bottom:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  date:      { fontSize: 11.5 },
+  amount:    { fontSize: 15, fontWeight: '800' },
 });

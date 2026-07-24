@@ -10,6 +10,7 @@ import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import Timeline from '../../components/shared/Timeline';
+import { OutlineButton } from '../../components/shared/AppButton';
 
 const INVOICE_ELIGIBLE = ['paid', 'confirmed', 'packed', 'shipped', 'out_for_delivery', 'delivered'];
 
@@ -60,7 +61,7 @@ export default function OrderDetailScreen({ route }) {
         contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(true); }} tintColor={C.primary} />}
       >
-        <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
+        <View style={[styles.card, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
           <View style={styles.row}>
             <Text style={[styles.orderId, { color: C.textSecondary }]}>Order #{order.orderNumber || order._id?.slice(-6).toUpperCase()}</Text>
             <StatusBadge status={order.status} colorMap={orderStatusColor} />
@@ -68,7 +69,7 @@ export default function OrderDetailScreen({ route }) {
           <Text style={[styles.date, { color: C.textSecondary }]}>{formatDateTime(order.createdAt)}</Text>
         </View>
 
-        <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
+        <View style={[styles.card, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
           <Text style={[styles.cardTitle, { color: C.text }]}>Items</Text>
           {(order.items || []).map((item, i) => (
             <View key={i} style={[styles.itemRow, { borderTopColor: C.border }]}>
@@ -81,13 +82,13 @@ export default function OrderDetailScreen({ route }) {
           ))}
         </View>
 
-        <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
+        <View style={[styles.card, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
           <Text style={[styles.cardTitle, { color: C.text }]}>Delivery Address</Text>
           <Text style={[styles.addrText, { color: C.text }]}>{addr.name}{addr.phone ? ` · ${addr.phone}` : ''}</Text>
           <Text style={[styles.addrText, { color: C.textSecondary }]}>{addressStr}</Text>
         </View>
 
-        <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
+        <View style={[styles.card, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
           <Text style={[styles.cardTitle, { color: C.text }]}>Payment</Text>
           <View style={styles.totalRow}>
             <Text style={[styles.totalLabel, { color: C.textSecondary }]}>Total Amount</Text>
@@ -99,7 +100,7 @@ export default function OrderDetailScreen({ route }) {
         </View>
 
         {shipment && (
-          <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
+          <View style={[styles.card, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
             <View style={styles.row}>
               <Text style={[styles.cardTitle, { color: C.text }]}>Shipment & Tracking</Text>
               <StatusBadge status={shipment.shipmentStatus} colorMap={shipmentStatusColor} small />
@@ -133,7 +134,7 @@ export default function OrderDetailScreen({ route }) {
         )}
 
         {orderTimeline.length > 0 && (
-          <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
+          <View style={[styles.card, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
             <Text style={[styles.cardTitle, { color: C.text }]}>Order Timeline</Text>
             <View style={{ marginTop: 10 }}>
               <Timeline events={orderTimeline} />
@@ -142,14 +143,13 @@ export default function OrderDetailScreen({ route }) {
         )}
 
         {canDownloadInvoice && (
-          <TouchableOpacity
-            style={[styles.outlineBtn, { borderColor: C.border }]}
+          <OutlineButton
+            title="Download Invoice"
+            icon={<Ionicons name="document-text-outline" size={18} color={C.primary} />}
             onPress={() => navigation.navigate('Invoice', { type: 'order', id: orderId })}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="document-text-outline" size={18} color={C.text} />
-            <Text style={[styles.outlineBtnText, { color: C.text }]}>Download Invoice</Text>
-          </TouchableOpacity>
+            C={C}
+            fullWidth
+          />
         )}
       </ScrollView>
     </View>
@@ -167,7 +167,10 @@ function MetaRow({ label, value, C }) {
 
 const styles = StyleSheet.create({
   root:       { flex: 1 },
-  card:       { borderRadius: 16, borderWidth: 1, padding: 16, gap: 8 },
+  card: {
+    borderRadius: 20, padding: 16, gap: 8,
+    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.09, shadowRadius: 12, elevation: 3,
+  },
   row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   orderId:    { fontSize: 13, fontWeight: '600' },
   date:       { fontSize: 12 },
@@ -184,11 +187,6 @@ const styles = StyleSheet.create({
   metaLabel:  { fontSize: 12 },
   metaVal:    { fontSize: 12, fontWeight: '600' },
   trackLink:  { fontSize: 13, fontWeight: '700', marginTop: 4 },
-  otpBanner:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12 },
+  otpBanner:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 14, borderWidth: 1, padding: 12 },
   otpText:    { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 18 },
-  outlineBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, borderRadius: 14, paddingVertical: 14, borderWidth: 1.5,
-  },
-  outlineBtnText: { fontSize: 14, fontWeight: '700' },
 });

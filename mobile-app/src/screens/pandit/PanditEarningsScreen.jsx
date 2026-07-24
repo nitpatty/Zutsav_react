@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { formatDate, formatCurrency } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
@@ -18,6 +20,7 @@ const TABS = [
 
 export default function PanditEarningsScreen() {
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [tab,        setTab]        = useState('stats');
@@ -127,7 +130,7 @@ export default function PanditEarningsScreen() {
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Earnings" />
 
       <View style={[styles.tabRow, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
@@ -145,7 +148,7 @@ export default function PanditEarningsScreen() {
 
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(true); }} tintColor={C.primary} />}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: tabBarClearance + 24 }}
       >
         {tab === 'stats' && (
           <View>

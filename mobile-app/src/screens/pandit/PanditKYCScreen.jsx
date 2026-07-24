@@ -8,6 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import api, { imageUrl } from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { kycStatusColor } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -25,6 +27,7 @@ const DOC_FIELDS = [
 
 export default function PanditKYCScreen() {
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [profile,     setProfile]     = useState(null);
@@ -128,9 +131,9 @@ export default function PanditKYCScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="KYC Verification" />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: tabBarClearance + 24 }}>
 
         {/* KYC Status */}
         <View style={[styles.statusCard, { backgroundColor: C.surface, borderColor: C.border }]}>

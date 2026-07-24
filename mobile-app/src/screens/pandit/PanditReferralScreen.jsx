@@ -9,6 +9,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { timeAgo, formatDate, daysUntil, isValidPhone, isValidEmail, referralStatusColor } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
@@ -30,6 +32,7 @@ const STATUS_FILTERS = [
 export default function PanditReferralScreen() {
   const navigation = useNavigation();
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [referrals,  setReferrals]  = useState([]);
@@ -174,7 +177,7 @@ export default function PanditReferralScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader
         title="My Referrals"
         showBack={false}
@@ -220,7 +223,7 @@ export default function PanditReferralScreen() {
           data={referrals}
           keyExtractor={(r) => r._id}
           renderItem={renderItem}
-          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
+          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarClearance + 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.3}

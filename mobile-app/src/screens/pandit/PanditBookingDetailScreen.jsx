@@ -8,6 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { COLORS, RADIUS, SPACING, SHADOW, FONT, ICON_SIZE, SIZES } from '../../theme/tokens';
 import { formatDateTime, formatCurrency, formatStatus, formatAuditAction, bookingStatusColor } from '../../utils/helpers';
 import { callPhone, openWhatsApp, openMaps } from '../../utils/quickActions';
 import StatusBadge from '../../components/StatusBadge';
@@ -15,16 +16,19 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import Timeline from '../../components/shared/Timeline';
 import { InfoCard, Row } from '../../components/shared/InfoCard';
+import StickyActionBar, { useStickyActionBarHeight } from '../../components/pandit/StickyActionBar';
 
 export default function PanditBookingDetailScreen({ route }) {
   const { bookingId } = route.params || {};
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
+  const actionBarHeight = useStickyActionBarHeight();
 
   const [booking,         setBooking]         = useState(null);
   const [referralDetails, setReferralDetails] = useState(null);
   const [paymentLedger,   setPaymentLedger]   = useState([]);
+  const [approvedFee,     setApprovedFee]     = useState(null);
   const [loading,         setLoading]         = useState(true);
   const [refreshing,      setRefreshing]      = useState(false);
   const [acting,          setActing]          = useState(false);
@@ -45,6 +49,7 @@ export default function PanditBookingDetailScreen({ route }) {
       setBooking(data.booking);
       setReferralDetails(data.referralDetails || null);
       setPaymentLedger(data.paymentLedger || []);
+      setApprovedFee(data.approvedFee ?? null);
     } catch {
       Toast.show({ type: 'error', text1: 'Could not load booking' });
     } finally {
@@ -125,10 +130,10 @@ export default function PanditBookingDetailScreen({ route }) {
   }));
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Booking Detail" />
       <ScrollView
-        contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 100 }}
+        contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: actionBarHeight }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(true); }} tintColor={C.primary} />}
       >
         <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
@@ -137,6 +142,23 @@ export default function PanditBookingDetailScreen({ route }) {
             <StatusBadge status={booking.status} colorMap={bookingStatusColor} />
           </View>
           <Text style={[styles.meta, { color: C.textSecondary }]}>Booking #{booking.bookingNumber || booking._id?.slice(-8).toUpperCase()}</Text>
+        </View>
+
+        <View style={styles.feeCard}>
+          <View style={styles.feeIconWrap}>
+            <Ionicons name="wallet" size={ICON_SIZE.md} color={COLORS.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.feeLabel}>Your Approved Fee</Text>
+            {approvedFee > 0 ? (
+              <>
+                <Text style={styles.feeAmount}>{formatCurrency(approvedFee)}</Text>
+                <Text style={styles.feeSub}>Admin Approved Rate</Text>
+              </>
+            ) : (
+              <Text style={styles.feePending}>Pending Admin Approval</Text>
+            )}
+          </View>
         </View>
 
         <InfoCard title="Devotee" C={C}>
@@ -165,14 +187,6 @@ export default function PanditBookingDetailScreen({ route }) {
             {referralDetails.remark ? <Row label="Remark" value={referralDetails.remark} C={C} /> : null}
           </InfoCard>
         )}
-
-        <InfoCard title="Payment" C={C}>
-          <Row label="Total" value={formatCurrency(booking.grandTotal ?? booking.amount ?? 0)} C={C} highlight />
-          <Row label="Paid"  value={formatCurrency(booking.amountPaid || 0)} C={C} />
-          {booking.remainingAmount > 0 && <Row label="Remaining" value={formatCurrency(booking.remainingAmount)} C={C} />}
-          <Row label="Mode"  value={formatStatus(booking.paymentMode)   || '—'} C={C} />
-          <Row label="Status" value={formatStatus(booking.paymentStatus) || '—'} C={C} />
-        </InfoCard>
 
         {paymentLedger.length > 1 && (
           <InfoCard title="Payment History" C={C}>
@@ -203,18 +217,18 @@ export default function PanditBookingDetailScreen({ route }) {
 
       {/* Action footer */}
       {booking.status === 'pandit_assigned' && (
-        <View style={[styles.footer, { backgroundColor: C.surface, borderTopColor: C.border }]}>
+        <StickyActionBar>
           <TouchableOpacity style={[styles.rejectBtn, { borderColor: '#DC2626' }]} onPress={() => setRejectModal(true)} disabled={acting}>
             <Text style={[styles.rejectBtnText, { color: '#DC2626' }]}>Reject</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.acceptBtn, { backgroundColor: '#16A34A' }]} onPress={handleAccept} disabled={acting} activeOpacity={0.85}>
             <Text style={styles.btnText}>{acting ? 'Processing…' : 'Accept'}</Text>
           </TouchableOpacity>
-        </View>
+        </StickyActionBar>
       )}
 
       {booking.status === 'pandit_accepted' && (
-        <View style={[styles.footer, { backgroundColor: C.surface, borderTopColor: C.border }]}>
+        <StickyActionBar>
           <TouchableOpacity
             style={[styles.acceptBtn, { backgroundColor: C.primary, flex: 1 }]}
             onPress={handleRequestCompletion}
@@ -223,11 +237,11 @@ export default function PanditBookingDetailScreen({ route }) {
           >
             <Text style={styles.btnText}>{acting ? 'Sending OTP…' : 'Request Completion'}</Text>
           </TouchableOpacity>
-        </View>
+        </StickyActionBar>
       )}
 
       {booking.status === 'completion_requested' && (
-        <View style={[styles.footer, { backgroundColor: C.surface, borderTopColor: C.border }]}>
+        <StickyActionBar>
           <TouchableOpacity
             style={[styles.acceptBtn, { backgroundColor: C.primary, flex: 1 }]}
             onPress={() => setOtpModal(true)}
@@ -235,7 +249,7 @@ export default function PanditBookingDetailScreen({ route }) {
           >
             <Text style={styles.btnText}>Enter Completion OTP</Text>
           </TouchableOpacity>
-        </View>
+        </StickyActionBar>
       )}
 
       {/* Reject Modal */}
@@ -315,6 +329,20 @@ function QuickAction({ icon, label, C, onPress }) {
 const styles = StyleSheet.create({
   root:       { flex: 1 },
   card:       { borderRadius: 16, borderWidth: 1, padding: 16 },
+  feeCard: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACING.md,
+    backgroundColor: COLORS.card, borderRadius: RADIUS.lg, padding: SPACING.base,
+    borderWidth: 1, borderColor: COLORS.primaryLight,
+    ...SHADOW.raised,
+  },
+  feeIconWrap: {
+    width: SIZES.iconContainerMd, height: SIZES.iconContainerMd, borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary + '18', justifyContent: 'center', alignItems: 'center',
+  },
+  feeLabel:   { fontSize: FONT.size.label, fontWeight: FONT.weight.bold, color: COLORS.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 },
+  feeAmount:  { fontSize: FONT.size.heading, fontWeight: FONT.weight.black, color: COLORS.primaryDark, marginTop: 2 },
+  feeSub:     { fontSize: FONT.size.caption, color: COLORS.textSecondary, marginTop: 1 },
+  feePending: { fontSize: FONT.size.body, fontWeight: FONT.weight.bold, color: COLORS.warning, marginTop: 4 },
   row:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   poojaName:  { fontSize: 17, fontWeight: '700', flex: 1 },
   meta:       { fontSize: 12, marginTop: 4 },
@@ -327,7 +355,6 @@ const styles = StyleSheet.create({
     gap: 8, borderRadius: 14, paddingVertical: 14, borderWidth: 1.5,
   },
   outlineBtnText: { fontSize: 14, fontWeight: '700' },
-  footer:     { flexDirection: 'row', gap: 12, padding: 16, borderTopWidth: StyleSheet.hairlineWidth, position: 'absolute', bottom: 0, left: 0, right: 0 },
   rejectBtn:  { flex: 1, borderWidth: 1.5, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
   rejectBtnText: { fontSize: 15, fontWeight: '700' },
   acceptBtn:  { flex: 2, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },

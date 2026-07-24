@@ -5,6 +5,8 @@ import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api, { imageUrl } from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { formatDate, blogStatusColor } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
@@ -22,6 +24,7 @@ const STATUS_FILTERS = [
 export default function PanditMyBlogsScreen() {
   const navigation = useNavigation();
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [canPublish, setCanPublish] = useState(true);
@@ -80,7 +83,7 @@ export default function PanditMyBlogsScreen() {
   if (!permLoaded || (loading && page === 1)) return <LoadingSpinner fullScreen />;
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader
         title="My Blogs"
         right={
@@ -116,7 +119,7 @@ export default function PanditMyBlogsScreen() {
           <FlatList
             data={blogs}
             keyExtractor={(b) => b._id}
-            contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
+            contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarClearance + 24 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
             onEndReached={onEndReached}
             onEndReachedThreshold={0.3}

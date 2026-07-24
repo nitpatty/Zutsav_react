@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, Alert, TextInput, Modal, ActivityIndicator
+  RefreshControl, Alert, TextInput, Modal, ActivityIndicator, Share
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
@@ -121,6 +121,26 @@ export default function BookingDetailScreen({ navigation, route }) {
       Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not cancel booking' });
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      const ud = booking.userDetails || {};
+      const lines = [
+        `🪔 *Zutsav Booking*`,
+        `Pooja: ${booking.poojaId?.name || '—'}`,
+        `Date: ${booking.scheduledDate ? formatDateTime(booking.scheduledDate) : '—'}`,
+        `Pandit: ${booking.panditId?.name || 'Being assigned'}`,
+        `Amount: ${formatCurrency(booking.grandTotal ?? booking.amount ?? 0)}`,
+        `Status: ${formatStatus(booking.status)}`,
+        `Booking ID: ${booking._id?.slice(-8).toUpperCase()}`,
+        ``,
+        `Track: zutsav.com/my-bookings`,
+      ];
+      await Share.share({ message: lines.join('\n') });
+    } catch {
+      // user dismissed
     }
   };
 
@@ -249,6 +269,15 @@ export default function BookingDetailScreen({ navigation, route }) {
         >
           <Ionicons name="document-text-outline" size={18} color={C.text} />
           <Text style={[styles.outlineBtnText, { color: C.text }]}>Download Invoice</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.outlineBtn, { borderColor: C.border }]}
+          onPress={handleShare}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="share-outline" size={18} color={C.text} />
+          <Text style={[styles.outlineBtnText, { color: C.text }]}>Share Booking</Text>
         </TouchableOpacity>
 
         {canCancel && (

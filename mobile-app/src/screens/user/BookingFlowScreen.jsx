@@ -9,6 +9,7 @@ import api, { imageUrl } from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import { formatCurrency } from '../../utils/helpers';
+import { calculatePrice, roundToPaise } from '../../utils/priceEngine';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import AddressPicker from '../../components/shared/AddressPicker';
@@ -151,7 +152,7 @@ export default function BookingFlowScreen({ navigation, route }) {
   const [submitting, setSubmitting] = useState(false);
 
   // Pricing
-  const [pricing,       setPricing]       = useState(null);
+  const [rates,         setRates]         = useState({ commissionPercent: 0, commissionFixed: 0, commissionType: 'percent', gstPercent: 0 });
   const [partialConfig, setPartialConfig] = useState({ enabled: false, minAmount: 500, mode: 'fixed', options: [] });
 
   // Kits
@@ -166,6 +167,7 @@ export default function BookingFlowScreen({ navigation, route }) {
   const [scheduledTime, setScheduledTime] = useState('');
   const [language,      setLanguage]      = useState('');
   const [paymentMode,   setPaymentMode]   = useState('FULL');
+  const [partialAmount, setPartialAmount] = useState(0);
 
   // User details
   const [userDetails, setUserDetails] = useState({
@@ -196,8 +198,18 @@ export default function BookingFlowScreen({ navigation, route }) {
 
     api.get(`/bookings/pricing-preview?poojaId=${pooja._id}`)
       .then(({ data }) => {
-        if (data.pricing) setPricing(data.pricing);
-        if (data.partialPayment) setPartialConfig(data.partialPayment);
+        if (data.pricing) {
+          setRates({
+            commissionPercent: data.pricing.commissionPercent || 0,
+            commissionFixed:   data.pricing.commissionFixed   || 0,
+            commissionType:    data.pricing.commissionType    || 'percent',
+            gstPercent:        data.pricing.gstPercent        || 0,
+          });
+        }
+        if (data.partialPayment) {
+          setPartialConfig(data.partialPayment);
+          if (!data.partialPayment.enabled) setPaymentMode('FULL');
+        }
       }).catch(() => {});
 
     setKitsLoading(true);
@@ -220,10 +232,16 @@ export default function BookingFlowScreen({ navigation, route }) {
   const barIdx = barSteps.indexOf(stepId);
 
   const poojaPrice = pooja.salePrice || pooja.price || 0;
-  const platformFee = pricing ? (pricing.platformFee || 0) : 0;
-  const platformGST = pricing ? (pricing.platformGST || 0) : 0;
   const kitPrice = withKit && !isUrgent && selectedKit ? (selectedKit.discountPrice || 0) : 0;
-  const grandTotal = poojaPrice + platformFee + platformGST + kitPrice;
+  const pricing = calculatePrice({
+    poojaPrice,
+    kitPrice,
+    commissionPercent: rates.commissionPercent,
+    commissionFixed:   rates.commissionFixed,
+    commissionType:    rates.commissionType,
+    gstPercent:        rates.gstPercent,
+  });
+  const { grandTotal } = pricing;
 
   const goNext = () => {
     const next = activeSteps[currentIdx + 1];
@@ -240,6 +258,17 @@ export default function BookingFlowScreen({ navigation, route }) {
   };
 
   const handleSubmit = async () => {
+    if (paymentMode === 'PARTIAL') {
+      if (!partialAmount || partialAmount < partialConfig.minAmount) {
+        Toast.show({ type: 'error', text1: `Minimum partial payment is ₹${partialConfig.minAmount}` });
+        return;
+      }
+      if (partialAmount >= grandTotal) {
+        Toast.show({ type: 'error', text1: 'Partial amount must be less than the grand total' });
+        return;
+      }
+    }
+
     const ud = {
       name: userDetails.name, phone: userDetails.phone, email: userDetails.email,
       address: userDetails.address, pincode: userDetails.pincode, state: userDetails.state, city: userDetails.city,
@@ -257,6 +286,7 @@ export default function BookingFlowScreen({ navigation, route }) {
         kitId:        withKit && !isUrgent && kitId ? kitId : undefined,
         isUrgent,
         paymentMode,
+        partialAmount: paymentMode === 'PARTIAL' ? partialAmount : undefined,
         userDetails:  ud,
       });
 
@@ -580,17 +610,132 @@ export default function BookingFlowScreen({ navigation, route }) {
             <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
               <Text style={[styles.cardTitle, { color: C.text }]}>Price Breakdown</Text>
               <View style={{ gap: 8, marginTop: 10 }}>
-                <PriceRow label="Pooja Service" amount={poojaPrice} C={C} sub="GST exempt" />
-                {platformFee > 0 && <PriceRow label="Platform Fee" amount={platformFee} C={C} muted />}
-                {platformGST > 0 && <PriceRow label={`GST on Platform Fee`} amount={platformGST} C={C} muted />}
-                {kitPrice > 0 && <PriceRow label={`Samagri Kit — ${selectedKit?.name}`} amount={kitPrice} C={C} muted />}
+                <PriceRow label="Pooja Service" amount={pricing.poojaAmount} C={C} sub="Religious services are GST-exempt" />
+                {pricing.platformFee > 0 && (
+                  <PriceRow
+                    label={rates.commissionType === 'fixed' ? `Platform Fee (₹${rates.commissionFixed} fixed)` : `Platform Fee (${rates.commissionPercent}%)`}
+                    amount={pricing.platformFee} C={C} muted sub="Convenience fee"
+                  />
+                )}
+                {pricing.platformGST > 0 && <PriceRow label={`GST on Platform Fee (${rates.gstPercent}%)`} amount={pricing.platformGST} C={C} muted />}
+                {pricing.kitAmount > 0 && <PriceRow label={`Samagri Kit — ${selectedKit?.name}`} amount={pricing.kitAmount} C={C} muted sub="Delivered to ceremony address" />}
+                {pricing.kitGST > 0 && <PriceRow label={`GST on Kit (${rates.gstPercent}%)`} amount={pricing.kitGST} C={C} muted />}
                 <View style={[styles.divider, { backgroundColor: C.border }]} />
                 <View style={styles.totalRow}>
                   <Text style={[styles.totalLabel, { color: C.text }]}>Grand Total</Text>
-                  <Text style={[styles.totalAmount, { color: C.primary }]}>{formatCurrency(grandTotal)}</Text>
+                  <Text style={[styles.totalAmount, { color: C.primary }]}>{formatCurrency(pricing.grandTotal)}</Text>
                 </View>
               </View>
             </View>
+
+            {/* Payment option */}
+            {partialConfig.enabled && (
+              <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
+                <Text style={[styles.cardTitle, { color: C.text }]}>Payment Option</Text>
+                <View style={{ gap: 10, marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={[styles.payModeRow, { borderColor: paymentMode === 'FULL' ? C.primary : C.border, backgroundColor: paymentMode === 'FULL' ? C.primary + '10' : C.surface }]}
+                    onPress={() => setPaymentMode('FULL')}
+                    activeOpacity={0.85}
+                  >
+                    <View style={[styles.radioCircle, { borderColor: paymentMode === 'FULL' ? C.primary : C.border }]}>
+                      {paymentMode === 'FULL' && <View style={[styles.radioDot, { backgroundColor: C.primary }]} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.payModeTitle, { color: C.text }]}>Pay Full Amount</Text>
+                      <Text style={[styles.payModeSub, { color: C.textSecondary }]}>Pay {formatCurrency(pricing.grandTotal)} now · No pending balance</Text>
+                    </View>
+                    <Text style={[styles.payModeAmt, { color: C.primary }]}>{formatCurrency(pricing.grandTotal)}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.payModeRow, { borderColor: paymentMode === 'PARTIAL' ? '#D97706' : C.border, backgroundColor: paymentMode === 'PARTIAL' ? '#FEF3C720' : C.surface }]}
+                    onPress={() => {
+                      setPaymentMode('PARTIAL');
+                      const opts = partialConfig.mode === 'percentage'
+                        ? partialConfig.options.map(p => roundToPaise(pricing.grandTotal * p / 100))
+                        : partialConfig.options;
+                      if (opts.length > 0 && !partialAmount) setPartialAmount(opts[0]);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <View style={[styles.radioCircle, { borderColor: paymentMode === 'PARTIAL' ? '#D97706' : C.border }]}>
+                      {paymentMode === 'PARTIAL' && <View style={[styles.radioDot, { backgroundColor: '#D97706' }]} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.payModeTitle, { color: C.text }]}>Pay Partial Amount</Text>
+                      <Text style={[styles.payModeSub, { color: C.textSecondary }]}>Minimum ₹{partialConfig.minAmount} · Pay rest later</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  {paymentMode === 'PARTIAL' && (
+                    <View style={{ gap: 10, paddingLeft: 4 }}>
+                      {partialConfig.options.length > 0 && (
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                          {partialConfig.options.map((opt) => {
+                            const resolvedAmt = partialConfig.mode === 'percentage'
+                              ? roundToPaise(pricing.grandTotal * opt / 100)
+                              : opt;
+                            const label = partialConfig.mode === 'percentage' ? `${opt}%` : formatCurrency(resolvedAmt);
+                            const isDisabled = resolvedAmt < partialConfig.minAmount || resolvedAmt >= pricing.grandTotal;
+                            const isSelected = partialAmount === resolvedAmt;
+                            return (
+                              <TouchableOpacity
+                                key={opt}
+                                disabled={isDisabled}
+                                onPress={() => setPartialAmount(resolvedAmt)}
+                                style={[
+                                  styles.partialOptBtn,
+                                  { borderColor: isSelected ? '#D97706' : '#FDE68A', backgroundColor: isSelected ? '#D97706' : 'transparent', opacity: isDisabled ? 0.4 : 1 },
+                                ]}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? '#fff' : '#B45309' }}>
+                                  {label}{partialConfig.mode === 'percentage' ? ` (${formatCurrency(resolvedAmt)})` : ''}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      <View>
+                        <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Or enter custom amount</Text>
+                        <TextInput
+                          style={[styles.input, { borderColor: C.border, color: C.text }]}
+                          value={partialAmount ? String(partialAmount) : ''}
+                          onChangeText={(v) => setPartialAmount(Math.max(0, parseInt(v.replace(/\D/g, ''), 10) || 0))}
+                          placeholder={`Min ₹${partialConfig.minAmount}`}
+                          placeholderTextColor={C.textSecondary}
+                          keyboardType="number-pad"
+                        />
+                        {partialAmount > 0 && partialAmount < partialConfig.minAmount && (
+                          <Text style={{ color: '#DC2626', fontSize: 11, marginTop: 4 }}>Minimum partial payment is ₹{partialConfig.minAmount}</Text>
+                        )}
+                      </View>
+
+                      {partialAmount >= partialConfig.minAmount && partialAmount < pricing.grandTotal && (
+                        <View style={[styles.partialSummary, { borderColor: '#FDE68A', backgroundColor: '#FFFBEB' }]}>
+                          <View style={styles.priceLineRow}>
+                            <Text style={{ fontSize: 13, color: '#78350F' }}>Pay Now</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: '#D97706' }}>{formatCurrency(partialAmount)}</Text>
+                          </View>
+                          <View style={styles.priceLineRow}>
+                            <Text style={{ fontSize: 13, color: '#78350F' }}>Pay Later</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: '#DC2626' }}>{formatCurrency(pricing.grandTotal - partialAmount)}</Text>
+                          </View>
+                          <View style={[styles.divider, { backgroundColor: '#FDE68A', marginVertical: 4 }]} />
+                          <View style={styles.priceLineRow}>
+                            <Text style={{ fontSize: 11, color: '#92400E' }}>Total Booking Amount</Text>
+                            <Text style={{ fontSize: 11, color: '#92400E' }}>{formatCurrency(pricing.grandTotal)}</Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
 
             {/* Trust line */}
             <View style={[styles.trustRow, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
@@ -607,7 +752,11 @@ export default function BookingFlowScreen({ navigation, route }) {
             >
               {submitting
                 ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.payBtnText}>Pay {formatCurrency(grandTotal)} 🙏</Text>
+                : <Text style={styles.payBtnText}>
+                    {paymentMode === 'PARTIAL' && partialAmount >= partialConfig.minAmount
+                      ? `Pay ${formatCurrency(partialAmount)} Now 🙏`
+                      : `Pay ${formatCurrency(pricing.grandTotal)} 🙏`}
+                  </Text>
               }
             </TouchableOpacity>
 
@@ -793,6 +942,12 @@ const styles = StyleSheet.create({
   totalRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalLabel:     { fontSize: 15, fontWeight: '800' },
   totalAmount:    { fontSize: 24, fontWeight: '800', fontStyle: 'italic' },
+  payModeRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 2, borderRadius: 14, padding: 12 },
+  payModeTitle:   { fontSize: 14, fontWeight: '700' },
+  payModeSub:     { fontSize: 11, marginTop: 2 },
+  payModeAmt:     { fontSize: 14, fontWeight: '800' },
+  partialOptBtn:  { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, borderWidth: 1.5 },
+  partialSummary: { borderRadius: 12, borderWidth: 1, padding: 12, gap: 6 },
   trustRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12 },
   trustText:      { fontSize: 12, color: '#3B82F6', flex: 1 },
   payBtn:         { borderRadius: 16, paddingVertical: 16, alignItems: 'center' },

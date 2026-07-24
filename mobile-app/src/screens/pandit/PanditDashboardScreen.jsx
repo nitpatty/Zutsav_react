@@ -11,7 +11,7 @@ import { saveCache, loadCache } from '../../utils/offlineCache';
 import useOnReconnect from '../../hooks/useOnReconnect';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import NotificationBell from '../../components/NotificationBell';
-import DashboardChart from '../../components/admin/DashboardChart';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
 
 import { COLORS, SPACING } from '../../theme/tokens';
 import { Greeting, Heading, Body, Caption, CardTitle } from '../../components/ui/Typography';
@@ -35,6 +35,7 @@ export default function PanditDashboardScreen() {
   const navigation = useNavigation();
   const { user } = useAuthStore();
   const { notifications, fetch: fetchNotifications } = useNotificationStore();
+  const tabBarClearance = useTabBarClearance();
 
   const [dash,          setDash]          = useState(null);
   const [payoutStats,   setPayoutStats]   = useState(null);
@@ -170,7 +171,7 @@ export default function PanditDashboardScreen() {
 
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(true); }} tintColor={COLORS.primary} />}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarClearance + 24 }]}
         showsVerticalScrollIndicator={false}
       >
         {!kycApproved && (
@@ -201,7 +202,6 @@ export default function PanditDashboardScreen() {
         <HeroCard
           label="Total Earnings"
           value={formatCurrency(monthly.earnings)}
-          period="This Month"
           deltaText={monthlyDeltaText}
           onViewDetails={() => navigation.navigate('PanditEarnings')}
         />
@@ -266,14 +266,6 @@ export default function PanditDashboardScreen() {
           </View>
         )}
 
-        <View style={[styles.section, { paddingHorizontal: SPACING.xl }]}>
-          <DashboardChart
-            title="Earnings (30 Days)"
-            series={(dash?.trends?.daily || []).map((d) => ({ date: d.date, value: d.value }))}
-            formatValue={(n) => `₹${Math.round(n / 1000)}k`}
-          />
-        </View>
-
         {referralStats && (
           <TouchableOpacity onPress={() => navigation.navigate('PanditReferralTab')} activeOpacity={0.85} style={styles.section}>
             <SectionHeader title="Referral Statistics" />
@@ -336,7 +328,7 @@ const styles = StyleSheet.create({
   nameRow:      { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   onlineToggle: { alignItems: 'center', gap: 2 },
 
-  scroll: { paddingHorizontal: SPACING.xl, paddingBottom: 120, gap: SPACING.base },
+  scroll: { paddingHorizontal: SPACING.xl, gap: SPACING.base },
 
   alertCard: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   alertText: { flex: 1, fontWeight: '600' },

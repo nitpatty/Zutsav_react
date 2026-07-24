@@ -12,7 +12,7 @@ import { PrimaryButton } from './Button';
 export default function HeroCard({
   label = 'Total Earnings',
   value,
-  period = 'This Month',
+  period,
   onPeriodPress,
   deltaText,
   onViewDetails,
@@ -32,10 +32,12 @@ export default function HeroCard({
 
       <View style={styles.topRow}>
         <Caption color="rgba(255,255,255,0.75)">{label}</Caption>
-        <TouchableOpacity style={styles.periodChip} onPress={onPeriodPress} disabled={!onPeriodPress}>
-          <Label color="#FFFFFF">{period}</Label>
-          <Ionicons name="chevron-down" size={12} color="#FFFFFF" />
-        </TouchableOpacity>
+        {period ? (
+          <TouchableOpacity style={styles.periodChip} onPress={onPeriodPress} disabled={!onPeriodPress}>
+            <Label color="#FFFFFF">{period}</Label>
+            <Ionicons name="chevron-down" size={12} color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <Heading color="#FFFFFF" style={styles.value}>{value}</Heading>

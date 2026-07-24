@@ -802,6 +802,27 @@ function BookingsTab() {
                       </div>
                     )}
 
+                    {['pandit_assigned', 'pandit_accepted', 'pending_reassignment', 'completion_requested'].includes(b.status) && (
+                      <div className="sm:col-span-2">
+                        <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                          <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                            <IndianRupee size={16} className="text-emerald-700" />
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide">Your Approved Fee</p>
+                            {b.approvedFee > 0 ? (
+                              <>
+                                <p className="text-lg font-bold text-emerald-800 leading-tight">₹{b.approvedFee.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</p>
+                                <p className="text-[11px] text-emerald-600">Admin Approved Rate</p>
+                              </>
+                            ) : (
+                              <p className="text-sm font-semibold text-amber-700">Pending Admin Approval</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {b.status === 'pandit_assigned' && (
                       <div className="sm:col-span-2 pt-3 border-t border-gray-100 space-y-3">
                         <div className="bg-purple-50 border border-purple-100 rounded-xl p-3">

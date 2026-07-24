@@ -20,6 +20,7 @@ const { calculateRefundBreakdown }   = require('../utils/refundEngine');
 const { NotificationEngine }         = require('../../notification-engine');
 const { calculatePricing: calcPricing, roundToPaise } = require('../utils/financeUtils');
 const { normalizeBookingPayload } = require('../../notification-engine/variables/PayloadNormalizer');
+const { resolveApprovedPayoutAmount } = require('../utils/payoutUtils');
 const OtpService = require('../../notification-engine/otp/OtpService');
 
 // ── Pricing engine (delegates to the centralized financeUtils engine) ─────────
@@ -597,10 +598,16 @@ exports.getBookingById = async (req, res, next) => {
     const isOwner = booking.userId.toString() === req.user._id.toString();
     const isAdmin = isAdminRole(req.user.role);
     let isPandit = false;
+    let approvedFee;
     if (!isOwner && !isAdmin && req.user.role === 'pandit' && booking.panditId) {
-      const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id');
+      const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id poojaCharges');
       // booking.panditId is already populated above, so compare against its ._id, not the doc itself
       isPandit = Boolean(pandit && booking.panditId._id.toString() === pandit._id.toString());
+      // Pandit-facing "what will I earn" figure — always the admin-approved rate for
+      // this pandit+pooja, never the pandit's own self-declared expected price, and
+      // never derived independently of resolveApprovedPayoutAmount (single source of
+      // truth also used for the actual payout at completion).
+      if (isPandit) approvedFee = resolveApprovedPayoutAmount(booking, pandit);
     }
     if (!isOwner && !isAdmin && !isPandit)
       return res.status(403).json({ success: false, message: 'Access denied' });
@@ -621,7 +628,7 @@ exports.getBookingById = async (req, res, next) => {
       }
     }
 
-    res.json({ success: true, booking, paymentLedger: ledger, referralDetails });
+    res.json({ success: true, booking, paymentLedger: ledger, referralDetails, approvedFee });
   } catch (err) { next(err); }
 };
 

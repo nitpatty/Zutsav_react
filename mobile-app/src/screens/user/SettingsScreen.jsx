@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Switch } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useThemeStore } from '../../store/themeStore';
+import { useAuthStore } from '../../store/authStore';
 import ScreenHeader from '../../components/ScreenHeader';
 
 const THEMES = [
@@ -15,12 +16,24 @@ const THEMES = [
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const { theme, setTheme, themeId } = useThemeStore();
+  const { logout } = useAuthStore();
   const C = theme.colors;
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Logout?',
+      'Are you sure you want to log out from your account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Logout', style: 'destructive', onPress: logout },
+      ]
+    );
+  };
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
       <ScreenHeader title="Settings" />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 120 }}>
 
         <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
           <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Appearance</Text>
@@ -40,15 +53,24 @@ export default function SettingsScreen() {
 
         <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
           <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Account</Text>
+          <TouchableOpacity style={[styles.item, { borderBottomColor: C.border }]} onPress={() => navigation.navigate('ChangePassword')} activeOpacity={0.8}>
+            <Ionicons name="lock-closed-outline" size={20} color={C.text} />
+            <Text style={[styles.itemLabel, { color: C.text }]}>Change Password</Text>
+            <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
+          </TouchableOpacity>
           <TouchableOpacity style={[styles.item, { borderBottomColor: C.border }]} onPress={() => navigation.navigate('Notifications')} activeOpacity={0.8}>
             <Ionicons name="notifications-outline" size={20} color={C.text} />
             <Text style={[styles.itemLabel, { color: C.text }]}>Notifications</Text>
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.item} onPress={() => navigation.navigate('DeleteAccount')} activeOpacity={0.8}>
+          <TouchableOpacity style={[styles.item, { borderBottomColor: C.border }]} onPress={() => navigation.navigate('DeleteAccount')} activeOpacity={0.8}>
             <Ionicons name="trash-outline" size={20} color="#DC2626" />
             <Text style={[styles.itemLabel, { color: '#DC2626' }]}>Delete Account</Text>
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.item} onPress={handleLogout} activeOpacity={0.8}>
+            <Ionicons name="log-out-outline" size={20} color="#DC2626" />
+            <Text style={[styles.itemLabel, { color: '#DC2626' }]}>Logout</Text>
           </TouchableOpacity>
         </View>
 

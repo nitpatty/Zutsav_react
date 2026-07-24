@@ -60,6 +60,7 @@ function HomeStack() {
       <Stack.Screen name="Blogs"          component={BlogsScreen} />
       <Stack.Screen name="BlogDetail"     component={BlogDetailScreen} />
       <Stack.Screen name="Invoice"        component={InvoiceScreen} />
+      <Stack.Screen name="Notifications"  component={NotificationsScreen} />
     </Stack.Navigator>
   );
 }
@@ -103,13 +104,17 @@ function ProfileStack() {
   );
 }
 
-function BadgeIcon({ name, color, size, count }) {
+function BadgeIcon({ name, color, size, count, focused, tint }) {
   return (
-    <View>
+    <View style={{
+      width: 46, height: 32, borderRadius: 16,
+      justifyContent: 'center', alignItems: 'center',
+      backgroundColor: focused ? tint + '20' : 'transparent',
+    }}>
       <Ionicons name={name} size={size} color={color} />
       {count > 0 && (
         <View style={{
-          position:'absolute', top:-4, right:-6,
+          position:'absolute', top:-2, right:6,
           backgroundColor:'#DC2626', borderRadius:8,
           minWidth:16, height:16, justifyContent:'center', alignItems:'center', paddingHorizontal:2,
         }}>
@@ -132,29 +137,45 @@ export default function UserNavigator() {
     <Tab.Navigator
       screenOptions={{
         headerShown:     false,
-        tabBarStyle:     { backgroundColor: C.tabBar, borderTopColor: C.border, height: 62, paddingBottom: 8 },
+        tabBarStyle: {
+          backgroundColor: C.tabBar, borderTopWidth: 0,
+          height: 66, paddingBottom: 10, paddingTop: 8,
+          borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          shadowColor: C.shadow || '#000', shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.12, shadowRadius: 12, elevation: 14,
+        },
         tabBarActiveTintColor:   C.tabBarActive,
         tabBarInactiveTintColor: C.tabBarInactive,
-        tabBarLabelStyle:  { fontSize: 10, fontWeight: '600', marginTop: -2 },
+        tabBarLabelStyle:  { fontSize: 10, fontWeight: '700', marginTop: 2 },
       }}
     >
       <Tab.Screen
         name="HomeTab"
         component={HomeStack}
-        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} /> }}
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, size, focused }) => (
+            <BadgeIcon name={focused ? 'home' : 'home-outline'} size={size} color={color} count={0} focused={focused} tint={C.tabBarActive} />
+          ),
+        }}
       />
       <Tab.Screen
         name="BookingsTab"
         component={BookingsStack}
-        options={{ title: 'Bookings', tabBarIcon: ({ color, size }) => <Ionicons name="calendar" size={size} color={color} /> }}
+        options={{
+          title: 'Bookings',
+          tabBarIcon: ({ color, size, focused }) => (
+            <BadgeIcon name={focused ? 'calendar' : 'calendar-outline'} size={size} color={color} count={0} focused={focused} tint={C.tabBarActive} />
+          ),
+        }}
       />
       <Tab.Screen
         name="ShopTab"
         component={ShopStack}
         options={{
           title: 'Shop',
-          tabBarIcon: ({ color, size }) => (
-            <BadgeIcon name="bag-handle" size={size} color={color} count={cartCount} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <BadgeIcon name={focused ? 'bag-handle' : 'bag-handle-outline'} size={size} color={color} count={cartCount} focused={focused} tint={C.tabBarActive} />
           ),
         }}
       />
@@ -163,8 +184,8 @@ export default function UserNavigator() {
         component={ProfileStack}
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <BadgeIcon name="person-circle" size={size} color={color} count={unreadCount} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <BadgeIcon name={focused ? 'person-circle' : 'person-circle-outline'} size={size} color={color} count={unreadCount} focused={focused} tint={C.tabBarActive} />
           ),
         }}
       />

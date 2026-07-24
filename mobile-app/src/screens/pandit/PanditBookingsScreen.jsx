@@ -5,6 +5,8 @@ import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { formatDate, formatCurrency, bookingStatusColor } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
@@ -25,6 +27,7 @@ const FILTERS = [
 export default function PanditBookingsScreen() {
   const navigation = useNavigation();
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [bookings,   setBookings]   = useState([]);
@@ -132,7 +135,7 @@ export default function PanditBookingsScreen() {
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="My Bookings" showBack={false} />
 
       <View style={[styles.searchWrap, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
@@ -170,7 +173,7 @@ export default function PanditBookingsScreen() {
           data={bookings}
           keyExtractor={(b) => b._id}
           renderItem={renderItem}
-          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
+          contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarClearance + 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.3}

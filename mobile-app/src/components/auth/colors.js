@@ -46,4 +46,31 @@ export const AUTH_COLORS = {
   bellString:   '#8A6A3E',
 
   link:         '#3D2A1A',
+
+  // Sunrise sky (top -> horizon), warmer than the plain cream/gold wash above.
+  skyTop:    '#FFF8EC',
+  skyUpper:  '#FDEACB',
+  skyHorizon:'#F7CE8E',
+  skyLow:    '#F3DFB6',
+
+  sunCore: '#FFF3D6',
+  sunGlow: '#FFC773',
+  godRay:  'rgba(255,197,120,0.22)',
+
+  templeFar:  'rgba(188,140,84,0.20)',
+  templeNear: 'rgba(150,102,52,0.26)',
+  templeGlow: 'rgba(255,224,168,0.55)',
+
+  pillarStone:    'rgba(197,158,104,0.30)',
+  pillarStoneDark:'rgba(140,96,50,0.26)',
+
+  mistWhite: 'rgba(255,251,244,0.60)',
+
+  lotusPetal:     'rgba(224,132,110,0.30)',
+  lotusPetalDark: 'rgba(191,96,80,0.26)',
+  lotusCenter:    'rgba(216,150,60,0.36)',
+
+  bird: 'rgba(94,64,42,0.35)',
+
+  readabilityOverlay: '#FFFDF7',
 };

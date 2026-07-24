@@ -7,6 +7,8 @@ import * as Clipboard from 'expo-clipboard';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { formatDate, formatDateTime, formatStatus, daysUntil, referralStatusColor, referralUrl } from '../../utils/helpers';
 import { openWhatsApp } from '../../utils/quickActions';
 import StatusBadge from '../../components/StatusBadge';
@@ -18,6 +20,7 @@ export default function PanditReferralDetailScreen({ route }) {
   const { referral: initial } = route.params || {};
   const navigation = useNavigation();
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
 
   const [referral, setReferral] = useState(initial);
@@ -74,9 +77,9 @@ export default function PanditReferralDetailScreen({ route }) {
   const booking = referral.bookingId;
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Referral Detail" />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: tabBarClearance + 24 }}>
 
         <View style={styles.row}>
           <StatusBadge status={referral.status} colorMap={referralStatusColor} />

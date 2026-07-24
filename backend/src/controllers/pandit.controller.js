@@ -8,7 +8,7 @@ const path    = require('path');
 const fs      = require('fs');
 const { NotificationEngine } = require('../../notification-engine');
 const { normalizePanditPayload, normalizeBookingPayload } = require('../../notification-engine/variables/PayloadNormalizer');
-const { getPanditPayoutStatusLabel, healPanditPendingPayouts } = require('../utils/payoutUtils');
+const { getPanditPayoutStatusLabel, healPanditPendingPayouts, resolveApprovedPayoutAmount } = require('../utils/payoutUtils');
 
 // Fields a pandit must never see (financial & payment internals)
 const PANDIT_BOOKING_EXCLUDE = '-amount -razorpayOrderId -razorpayPaymentId -razorpaySignature -phonePeMerchantTransactionId -phonePeTransactionId -paymentProvider -panditRejections';
@@ -740,7 +740,7 @@ exports.getRatingHistory = async (req, res, next) => {
 exports.getMyBookings = async (req, res, next) => {
   try {
     // Step 1 — resolve User._id → Pandit._id
-    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id name');
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id name poojaCharges');
     if (!pandit) {
       return res.status(404).json({ success: false, message: 'Pandit profile not found' });
     }
@@ -778,7 +778,10 @@ exports.getMyBookings = async (req, res, next) => {
     const bookings = rawBookings.map((b) => {
       const wasReassigned = (b.panditRejections?.length || 0) > 0;
       delete b.panditRejections;
-      return { ...b, wasReassigned };
+      // Admin-approved rate for this pooja — same resolver used for the actual
+      // payout at completion, never the pandit's own self-declared expected price.
+      const approvedFee = resolveApprovedPayoutAmount(b, pandit);
+      return { ...b, wasReassigned, approvedFee };
     });
 
     console.log(`[Pandit Bookings] Total bookings found: ${total}`);

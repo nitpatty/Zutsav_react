@@ -7,6 +7,7 @@ import useAddresses from '../../hooks/useAddresses';
 import AddressCard from './AddressCard';
 import AddressFormSheet from './AddressFormSheet';
 import PincodeInput from './PincodeInput';
+import { PrimaryButton, OutlineButton } from './AppButton';
 
 const LABELS = ['Home', 'Office', 'Other'];
 const NEW = '__new__';
@@ -120,9 +121,13 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
   return (
     <View style={{ gap: 10 }}>
       {mode === 'manager' && addresses.length === 0 && (
-        <Text style={{ color: C.textSecondary, fontSize: 13, textAlign: 'center', paddingVertical: 12 }}>
-          No saved addresses yet
-        </Text>
+        <View style={{ alignItems: 'center', paddingVertical: 28, gap: 10 }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: C.primary + '15', justifyContent: 'center', alignItems: 'center' }}>
+            <Ionicons name="location-outline" size={28} color={C.primary} />
+          </View>
+          <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>No saved addresses yet</Text>
+          <Text style={{ color: C.textSecondary, fontSize: 12, textAlign: 'center' }}>Add an address to speed up future bookings</Text>
+        </View>
       )}
 
       {addresses.map((addr) => (
@@ -138,21 +143,24 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
 
       {mode === 'picker' && allowInlineNew && (
         <TouchableOpacity
-          style={[styles.newRow, { borderColor: selectedId === NEW ? C.primary : C.border, backgroundColor: selectedId === NEW ? C.primary + '10' : C.surface }]}
+          style={[
+            styles.newRow,
+            { borderColor: selectedId === NEW ? C.primary : C.borderLight, backgroundColor: selectedId === NEW ? C.primary + '0D' : C.surface },
+          ]}
           onPress={selectNew}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
         >
           <Ionicons name="add-circle-outline" size={18} color={C.textSecondary} />
-          <Text style={{ color: C.textSecondary, fontSize: 13 }}>Enter a new address</Text>
+          <Text style={{ color: C.textSecondary, fontSize: 13, fontWeight: '600' }}>Enter a new address</Text>
         </TouchableOpacity>
       )}
 
       {mode === 'picker' && selectedId === NEW && (
-        <View style={{ gap: 10 }}>
+        <View style={[styles.formCard, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
           <View>
             <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Address *</Text>
             <TextInput
-              style={[styles.input, { borderColor: C.border, color: C.text, height: 70, textAlignVertical: 'top' }]}
+              style={[styles.input, { borderColor: C.borderLight, backgroundColor: C.background, color: C.text, height: 70, textAlignVertical: 'top' }]}
               value={value.address}
               onChangeText={(v) => onChange({ ...value, address: v })}
               placeholder="House no., street, area…"
@@ -171,11 +179,11 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
           <View style={styles.fieldRow}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>City</Text>
-              <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={value.city} onChangeText={(v) => onChange({ ...value, city: v })} placeholder="City" placeholderTextColor={C.textSecondary} />
+              <TextInput style={[styles.input, { borderColor: C.borderLight, backgroundColor: C.background, color: C.text }]} value={value.city} onChangeText={(v) => onChange({ ...value, city: v })} placeholder="City" placeholderTextColor={C.textSecondary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>State</Text>
-              <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={value.state} onChangeText={(v) => onChange({ ...value, state: v })} placeholder="State" placeholderTextColor={C.textSecondary} />
+              <TextInput style={[styles.input, { borderColor: C.borderLight, backgroundColor: C.background, color: C.text }]} value={value.state} onChangeText={(v) => onChange({ ...value, state: v })} placeholder="State" placeholderTextColor={C.textSecondary} />
             </View>
           </View>
 
@@ -185,12 +193,12 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
           </TouchableOpacity>
 
           {saveNew && (
-            <View style={{ gap: 8 }}>
+            <View style={{ gap: 10 }}>
               <View style={styles.labelPills}>
                 {LABELS.map((l) => (
                   <TouchableOpacity
                     key={l}
-                    style={[styles.pill, { borderColor: saveLabel === l ? C.primary : C.border, backgroundColor: saveLabel === l ? C.primary : C.background }]}
+                    style={[styles.pill, { borderColor: saveLabel === l ? C.primary : C.borderLight, backgroundColor: saveLabel === l ? C.primary : C.background }]}
                     onPress={() => setSaveLabel(l)}
                     activeOpacity={0.8}
                   >
@@ -198,24 +206,20 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
                   </TouchableOpacity>
                 ))}
               </View>
-              <TouchableOpacity
-                style={[styles.saveBtn, { backgroundColor: C.primary, opacity: savingNew ? 0.6 : 1 }]}
-                onPress={handleSaveInlineAddress}
-                disabled={savingNew}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.saveBtnText}>{savingNew ? 'Saving…' : 'Save Address'}</Text>
-              </TouchableOpacity>
+              <PrimaryButton title={savingNew ? 'Saving…' : 'Save Address'} onPress={handleSaveInlineAddress} loading={savingNew} disabled={savingNew} C={C} fullWidth />
             </View>
           )}
         </View>
       )}
 
       {mode === 'manager' && (
-        <TouchableOpacity style={[styles.addBtn, { borderColor: C.primary }]} onPress={openAdd} activeOpacity={0.85}>
-          <Ionicons name="add" size={18} color={C.primary} />
-          <Text style={[styles.addBtnText, { color: C.primary }]}>Add New Address</Text>
-        </TouchableOpacity>
+        <OutlineButton
+          title="Add New Address"
+          icon={<Ionicons name="add" size={18} color={C.primary} />}
+          onPress={openAdd}
+          C={C}
+          fullWidth
+        />
       )}
 
       <AddressFormSheet
@@ -229,15 +233,15 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
 }
 
 const styles = StyleSheet.create({
-  newRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 14, padding: 12 },
+  newRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 16, padding: 14 },
+  formCard: {
+    borderRadius: 18, padding: 16, gap: 12,
+    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 2,
+  },
   fieldLabel:    { fontSize: 12, fontWeight: '600', marginBottom: 4 },
   fieldRow:      { flexDirection: 'row', gap: 10 },
-  input:         { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
+  input:         { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14 },
   saveToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   labelPills:    { flexDirection: 'row', gap: 8 },
   pill:          { borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
-  saveBtn:       { borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  saveBtnText:   { color: '#fff', fontSize: 14, fontWeight: '700' },
-  addBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: 14, paddingVertical: 13, borderStyle: 'dashed' },
-  addBtnText:    { fontSize: 14, fontWeight: '700' },
 });

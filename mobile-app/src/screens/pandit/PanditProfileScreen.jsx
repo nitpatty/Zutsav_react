@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import api, { imageUrl } from '../../api/axios';
-import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
+import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import { COLORS } from '../../theme/tokens';
 import { kycStatusColor } from '../../utils/helpers';
 import { saveCache, loadCache } from '../../utils/offlineCache';
 import useOnReconnect from '../../hooks/useOnReconnect';
@@ -44,15 +45,8 @@ const COMPLETION_FIELDS = [
 export default function PanditProfileScreen() {
   const navigation = useNavigation();
   const { theme } = useThemeStore();
+  const tabBarClearance = useTabBarClearance();
   const C = theme.colors;
-  const { logout } = useAuthStore();
-
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
-    ]);
-  };
 
   const [profile,   setProfile]   = useState(null);
   const [loading,   setLoading]   = useState(true);
@@ -102,9 +96,9 @@ export default function PanditProfileScreen() {
   const completionPct = Math.round((completedCount / COMPLETION_FIELDS.length) * 100);
 
   return (
-    <View style={[styles.root, { backgroundColor: C.background }]}>
+    <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Profile" showBack={false} />
-      <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: tabBarClearance + 24 }}>
         <View style={[styles.heroSection, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
           <TouchableOpacity onPress={handlePickAvatar} style={styles.avatarWrap} activeOpacity={0.85}>
             {profile.profilePhoto ? (
@@ -150,15 +144,6 @@ export default function PanditProfileScreen() {
             </TouchableOpacity>
           ))}
         </View>
-
-        <TouchableOpacity
-          style={[styles.logoutBtn, { borderColor: '#DC262640' }]}
-          onPress={handleLogout}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="log-out-outline" size={20} color="#DC2626" />
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -193,9 +178,4 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   menuLabel:         { flex: 1, fontSize: 15, fontWeight: '500' },
-  logoutBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, marginHorizontal: 16, marginTop: 16, borderWidth: 1.5, borderRadius: 14, paddingVertical: 14,
-  },
-  logoutText:        { color: '#DC2626', fontSize: 15, fontWeight: '700' },
 });

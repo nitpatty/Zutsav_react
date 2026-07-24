@@ -64,9 +64,8 @@ export default function LoginScreen({ navigation }) {
 
   const handleContinueLogout = () => setDeletionData(null);
 
-  // UI placeholder — no forgot-password flow wired up yet.
   const handleForgotPassword = () => {
-    Toast.show({ type: 'info', text1: 'Coming soon' });
+    navigation.navigate('ForgotPassword');
   };
 
   if (deletionData) {
