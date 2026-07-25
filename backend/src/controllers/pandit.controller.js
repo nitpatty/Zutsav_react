@@ -4,11 +4,17 @@ const User        = require('../models/User');
 const Booking     = require('../models/Booking');
 const Referral    = require('../models/Referral');
 const PayoutBatch = require('../models/PayoutBatch');
+const OTP         = require('../models/OTP');
 const path    = require('path');
 const fs      = require('fs');
 const { NotificationEngine } = require('../../notification-engine');
-const { normalizePanditPayload, normalizeBookingPayload } = require('../../notification-engine/variables/PayloadNormalizer');
+const { normalizePanditPayload, normalizeBookingPayload, normalizeUserPayload } = require('../../notification-engine/variables/PayloadNormalizer');
+const OtpService = require('../../notification-engine/otp/OtpService');
 const { getPanditPayoutStatusLabel, healPanditPendingPayouts, resolveApprovedPayoutAmount } = require('../utils/payoutUtils');
+const { KYC_FIELD_MAP, resolveStoredFile, deleteStoredFile } = require('../utils/kycFileStorage');
+
+const KYC_VIEW_SESSION_MS = 5 * 60 * 1000; // 5 minutes, per the retained-document viewing flow
+const KYC_OTP_PURPOSE     = 'kyc_document_view';
 
 // Fields a pandit must never see (financial & payment internals)
 const PANDIT_BOOKING_EXCLUDE = '-amount -razorpayOrderId -razorpayPaymentId -razorpaySignature -phonePeMerchantTransactionId -phonePeTransactionId -paymentProvider -panditRejections';
@@ -110,6 +116,165 @@ exports.submitKYC = async (req, res, next) => {
     NotificationEngine.emit('KYC_SUBMITTED', normalizePanditPayload({ pandit })).catch(() => {});
 
     res.json({ success: true, message: 'KYC submitted successfully. Awaiting admin verification.', pandit: updated });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/pandits/me/kyc/document/:field — stream a KYC document to its owner.
+// Pre-approval this is a plain ownership-gated read (matches prior behavior).
+// Once approved, access follows the Pandit's retention choice: deleted docs
+// are gone for good, kept docs require a live OTP view session.
+exports.getKycDocument = async (req, res, next) => {
+  try {
+    const dbField = KYC_FIELD_MAP[req.params.field];
+    if (!dbField) return res.status(400).json({ success: false, message: 'Invalid document field' });
+
+    const pandit = await Pandit.findOne({ userId: req.user._id });
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    if (pandit.kycStatus === 'approved') {
+      if (pandit.kycDocumentRetention === 'deleted') {
+        return res.status(404).json({ success: false, message: 'This document has been deleted per your privacy preference.' });
+      }
+      if (pandit.kycDocumentRetention !== 'kept') {
+        return res.status(403).json({ success: false, message: 'Please choose whether to keep or delete your document first.' });
+      }
+      if (!pandit.kycViewSessionExpiresAt || pandit.kycViewSessionExpiresAt < new Date()) {
+        return res.status(403).json({ success: false, code: 'OTP_REQUIRED', message: 'Verification required to view this document.' });
+      }
+    }
+
+    const abs = resolveStoredFile(pandit[dbField]);
+    if (!abs) return res.status(404).json({ success: false, message: 'Document not found' });
+
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(abs);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/pandits/me/kyc/document/send-otp — reuses the shared OTP model/
+// service (see auth.controller.js send-otp / delete-account flows) under a
+// dedicated purpose so it doesn't collide with registration/deletion OTPs.
+exports.sendKycDocumentOtp = async (req, res, next) => {
+  try {
+    const { channel } = req.body;
+    if (!['email', 'whatsapp'].includes(channel)) {
+      return res.status(400).json({ success: false, message: 'Channel must be email or whatsapp' });
+    }
+
+    const pandit = await Pandit.findOne({ userId: req.user._id });
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+    if (pandit.kycStatus !== 'approved' || pandit.kycDocumentRetention !== 'kept') {
+      return res.status(400).json({ success: false, message: 'No retained document available to view' });
+    }
+
+    const identifier = channel === 'email' ? pandit.email?.toLowerCase() : pandit.phone;
+    if (!identifier) {
+      return res.status(400).json({ success: false, message: `No ${channel === 'email' ? 'email' : 'mobile number'} on file` });
+    }
+
+    const otp = OtpService.generate();
+    await OTP.deleteMany({ identifier, purpose: KYC_OTP_PURPOSE });
+    await OTP.create({ identifier, channel, otp, purpose: KYC_OTP_PURPOSE });
+
+    await NotificationEngine.emit(
+      'OTP_VERIFICATION',
+      normalizeUserPayload({ user: { name: pandit.name, email: pandit.email, phone: pandit.phone }, otp, reason: 'kyc_document_view' }),
+      { channel }
+    ).catch(() => {});
+
+    res.json({ success: true, message: `OTP sent to your registered ${channel === 'email' ? 'email' : 'mobile number'}` });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/pandits/me/kyc/document/verify-otp — on success, opens a 5-minute
+// viewing window (kycViewSessionExpiresAt) checked by getKycDocument above.
+exports.verifyKycDocumentOtp = async (req, res, next) => {
+  try {
+    const { channel, otp } = req.body;
+    if (!['email', 'whatsapp'].includes(channel) || !otp) {
+      return res.status(400).json({ success: false, message: 'Channel and OTP are required' });
+    }
+
+    const pandit = await Pandit.findOne({ userId: req.user._id });
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    const identifier = channel === 'email' ? pandit.email?.toLowerCase() : pandit.phone;
+    const record = await OTP.findOne({ identifier, purpose: KYC_OTP_PURPOSE });
+    if (!record) {
+      return res.status(400).json({ success: false, message: 'OTP expired or not found. Please request a new OTP.' });
+    }
+    if (OtpService.isRateLimited(record.attempts)) {
+      await OTP.deleteOne({ _id: record._id });
+      return res.status(400).json({ success: false, message: 'Too many attempts. Please request a new OTP.' });
+    }
+    if (!(await OtpService.compare(otp.trim(), record.otp, false))) {
+      await OTP.findByIdAndUpdate(record._id, { $inc: { attempts: 1 } });
+      return res.status(400).json({ success: false, message: 'Invalid OTP. Please try again.' });
+    }
+
+    await OTP.deleteOne({ _id: record._id });
+
+    const viewSessionExpiresAt = new Date(Date.now() + KYC_VIEW_SESSION_MS);
+    await Pandit.findByIdAndUpdate(pandit._id, { kycViewSessionExpiresAt: viewSessionExpiresAt });
+
+    res.json({ success: true, message: 'Verified. You can view your document for the next 5 minutes.', viewSessionExpiresAt });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/pandits/me/kyc/document-decision — the post-approval privacy
+// choice. Deleting removes the files from disk and nulls the stored paths;
+// verification metadata (status, dates, ID type, kycVerifiedBy) is untouched
+// and the KYC approval itself is never affected either way.
+exports.updateKycDocumentDecision = async (req, res, next) => {
+  try {
+    const { decision } = req.body;
+    if (!['keep', 'delete'].includes(decision)) {
+      return res.status(400).json({ success: false, message: 'decision must be "keep" or "delete"' });
+    }
+
+    const pandit = await Pandit.findOne({ userId: req.user._id });
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+    if (pandit.kycStatus !== 'approved') {
+      return res.status(400).json({ success: false, message: 'This choice is only available after KYC approval' });
+    }
+    if (pandit.kycDocumentRetention === 'deleted') {
+      return res.status(400).json({ success: false, message: 'Document has already been deleted' });
+    }
+
+    const updates = { kycDocumentDecisionAt: new Date() };
+
+    if (decision === 'delete') {
+      [pandit.kycFrontImage, pandit.kycBackImage, pandit.kycSelfieImage, pandit.kycAddressProof, pandit.govtIdImage]
+        .filter(Boolean)
+        .forEach(deleteStoredFile);
+
+      updates.kycFrontImage           = null;
+      updates.kycBackImage            = null;
+      updates.kycSelfieImage          = null;
+      updates.kycAddressProof         = null;
+      updates.govtIdImage             = null;
+      updates.kycDocumentRetention    = 'deleted';
+      updates.kycViewSessionExpiresAt = null;
+    } else {
+      updates.kycDocumentRetention = 'kept';
+    }
+
+    const updated = await Pandit.findOneAndUpdate({ userId: req.user._id }, updates, { new: true });
+    res.json({
+      success: true,
+      message: decision === 'delete'
+        ? 'Your uploaded document has been permanently deleted. Your KYC approval remains active.'
+        : 'Your document will be kept securely. OTP verification will be required to view it.',
+      pandit: updated,
+    });
   } catch (err) {
     next(err);
   }

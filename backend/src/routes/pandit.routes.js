@@ -37,6 +37,10 @@ router.patch('/me/bookings/:id/request-completion',   ctrl.requestCompletion);
 router.post('/me/bookings/:id/verify-completion-otp', ctrl.verifyCompletionOtp);
 router.patch('/me/bank',             ctrl.updateBankDetails);
 router.post('/me/kyc',               uploadKYCDocs, ctrl.submitKYC);
+router.get('/me/kyc/document/:field',      ctrl.getKycDocument);
+router.post('/me/kyc/document/send-otp',   ctrl.sendKycDocumentOtp);
+router.post('/me/kyc/document/verify-otp', ctrl.verifyKycDocumentOtp);
+router.post('/me/kyc/document-decision',   ctrl.updateKycDocumentDecision);
 router.post('/me/photo',             uploadProfile.single('photo'), ctrl.uploadPhoto);
 router.delete('/me/photo',           ctrl.removePhoto);
 

@@ -2093,6 +2093,23 @@ function OdPriceLine({ label, value, muted = false, bold = false }) {
   );
 }
 
+// KYC/Govt-ID files are no longer served statically (see backend app.js) —
+// fetch through the authenticated admin endpoint and open in a new tab. The
+// blank tab is opened synchronously so the async fetch that follows isn't
+// caught by popup blockers.
+async function openAdminKycDocument(panditId, field) {
+  const win = window.open('', '_blank');
+  try {
+    const res = await API.get(`/admin/pandits/${panditId}/kyc-document/${field}`, { responseType: 'blob' });
+    const url = window.URL.createObjectURL(res.data);
+    if (win) win.location = url;
+    setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+  } catch (err) {
+    win?.close();
+    toast.error(err.response?.data?.message || 'Could not load document');
+  }
+}
+
 // ─── Pandit Profile Drawer ────────────────────────────────────
 function PanditProfileDrawer({ panditId, onClose }) {
   const [pandit,   setPandit]   = useState(null);
@@ -2312,21 +2329,21 @@ function PanditProfileDrawer({ panditId, onClose }) {
             </div>
 
             {/* KYC Documents */}
-            {pandit.kycFrontImage && (
+            {Object.values(pandit.kycDocuments || {}).some(Boolean) && (
               <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">KYC Documents</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {[
-                    ['Front', pandit.kycFrontImage],
-                    ['Back',  pandit.kycBackImage],
-                    ['Selfie',pandit.kycSelfieImage],
-                    ['Address Proof', pandit.kycAddressProof],
-                  ].map(([label, url]) => url ? (
-                    <a key={label} href={getImageUrl(url)} target="_blank" rel="noopener noreferrer"
+                    ['frontImage',   'Front'],
+                    ['backImage',    'Back'],
+                    ['selfieImage',  'Selfie'],
+                    ['addressProof', 'Address Proof'],
+                  ].map(([field, label]) => pandit.kycDocuments?.[field] ? (
+                    <button key={field} type="button" onClick={() => openAdminKycDocument(pandit._id, field)}
                       className="bg-white border border-gray-100 rounded-xl p-3 flex items-center gap-2 hover:border-saffron-300 transition-colors">
                       <FileText size={14} className="text-saffron-500 shrink-0" />
                       <span className="text-xs text-gray-600">{label}</span>
-                    </a>
+                    </button>
                   ) : null)}
                 </div>
               </div>
@@ -2610,22 +2627,30 @@ function PanditsTab() {
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">KYC Documents</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {[
-                        ['Front Image',           p.kycFrontImage],
-                        ['Back Image',            p.kycBackImage],
-                        ['Selfie',                p.kycSelfieImage],
-                        ['Address Proof',         p.kycAddressProof],
-                        ['Legacy Govt ID',        p.govtIdImage],
-                      ].map(([label, url]) => (
-                        <div key={label} className="bg-white rounded-xl border border-gray-100 p-3">
+                        ['frontImage',   'Front Image'],
+                        ['backImage',    'Back Image'],
+                        ['selfieImage',  'Selfie'],
+                        ['addressProof', 'Address Proof'],
+                      ].map(([field, label]) => (
+                        <div key={field} className="bg-white rounded-xl border border-gray-100 p-3">
                           <p className="text-[10px] text-gray-400 mb-1.5">{label}</p>
-                          {url ? (
-                            <a href={getImageUrl(url)} target="_blank" rel="noopener noreferrer"
+                          {p.kycDocuments?.[field] ? (
+                            <button type="button" onClick={() => openAdminKycDocument(p._id, field)}
                               className="text-xs text-saffron-600 hover:underline flex items-center gap-1">
                               <FileText size={12} /> View
-                            </a>
+                            </button>
                           ) : <p className="text-[10px] text-gray-300">Not uploaded</p>}
                         </div>
                       ))}
+                      <div className="bg-white rounded-xl border border-gray-100 p-3">
+                        <p className="text-[10px] text-gray-400 mb-1.5">Legacy Govt ID</p>
+                        {p.hasLegacyGovtId ? (
+                          <button type="button" onClick={() => openAdminKycDocument(p._id, 'legacy')}
+                            className="text-xs text-saffron-600 hover:underline flex items-center gap-1">
+                            <FileText size={12} /> View
+                          </button>
+                        ) : <p className="text-[10px] text-gray-300">Not uploaded</p>}
+                      </div>
                       <div className="bg-white rounded-xl border border-gray-100 p-3">
                         <p className="text-[10px] text-gray-400 mb-1.5">ID Type</p>
                         <p className="text-xs font-semibold capitalize">{p.govtIdType || '—'}</p>

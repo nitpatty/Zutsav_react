@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
-import api, { imageUrl } from '../../api/axios';
+import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import { kycStatusColor, formatDate, formatCurrency } from '../../utils/helpers';
 import { callPhone, openWhatsApp, openMaps } from '../../utils/quickActions';
@@ -14,11 +14,28 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 
 const KYC_DOC_FIELDS = [
-  { key: 'kycFrontImage',   label: 'Front Image' },
-  { key: 'kycBackImage',    label: 'Back Image' },
-  { key: 'kycSelfieImage',  label: 'Selfie' },
-  { key: 'kycAddressProof', label: 'Address Proof' },
+  { key: 'frontImage',   dbKey: 'kycFrontImage',   label: 'Front Image' },
+  { key: 'backImage',    dbKey: 'kycBackImage',    label: 'Back Image' },
+  { key: 'selfieImage',  dbKey: 'kycSelfieImage',  label: 'Selfie' },
+  { key: 'addressProof', dbKey: 'kycAddressProof', label: 'Address Proof' },
 ];
+
+// KYC/Govt-ID images are no longer served as static files — fetch through
+// the authenticated admin endpoint and render as a data URI (RN's <Image>
+// can't attach an Authorization header to a plain uri).
+function blobToDataUri(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function fetchAdminKycDocumentUri(panditId, field) {
+  const res = await api.get(`/admin/pandits/${panditId}/kyc-document/${field}`, { responseType: 'blob' });
+  return blobToDataUri(res.data);
+}
 
 export default function AdminPanditDetailScreen({ navigation, route }) {
   const { panditId } = route.params || {};
@@ -29,6 +46,7 @@ export default function AdminPanditDetailScreen({ navigation, route }) {
   const [loading,       setLoading]       = useState(true);
   const [refreshing,    setRefreshing]    = useState(false);
   const [acting,        setActing]        = useState(false);
+  const [docUris,       setDocUris]       = useState({});
 
   // Reject modal state
   const [rejectModal,   setRejectModal]   = useState(false);
@@ -51,6 +69,21 @@ export default function AdminPanditDetailScreen({ navigation, route }) {
   };
 
   useEffect(() => { fetch(); }, [panditId]);
+
+  useEffect(() => {
+    if (!pandit) return;
+    const activeFields = KYC_DOC_FIELDS.map((f) => f.key).filter((key) => pandit.kycDocuments?.[key]);
+    if (activeFields.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(activeFields.map(async (key) => {
+        try { return [key, await fetchAdminKycDocumentUri(panditId, key)]; }
+        catch { return [key, null]; }
+      }));
+      if (!cancelled) setDocUris(Object.fromEntries(entries));
+    })();
+    return () => { cancelled = true; };
+  }, [pandit?.kycDocuments, panditId]);
 
   const handleApproveKYC = async () => {
     Alert.alert('Approve KYC', 'Approve this pandit\'s KYC?', [
@@ -188,15 +221,15 @@ export default function AdminPanditDetailScreen({ navigation, route }) {
         </View>
 
         {/* KYC Documents */}
-        {KYC_DOC_FIELDS.some((f) => pandit[f.key]) && (
+        {Object.values(pandit.kycDocuments || {}).some(Boolean) && (
           <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
             <Text style={[styles.cardTitle, { color: C.text }]}>KYC Documents</Text>
             {pandit.govtIdType && <Row label="ID Type" value={pandit.govtIdType.replace(/_/g, ' ')} C={C} />}
             {pandit.govtIdNumber && <Row label="ID Number" value={pandit.govtIdNumber} C={C} />}
-            {KYC_DOC_FIELDS.map(({ key, label }) => pandit[key] ? (
+            {KYC_DOC_FIELDS.map(({ key, label }) => pandit.kycDocuments?.[key] ? (
               <View key={key} style={{ gap: 6 }}>
                 <Text style={[styles.docLabel, { color: C.textSecondary }]}>{label}</Text>
-                <Image source={{ uri: imageUrl(pandit[key]) }} style={styles.docImg} resizeMode="cover" />
+                {docUris[key] && <Image source={{ uri: docUris[key] }} style={styles.docImg} resizeMode="cover" />}
               </View>
             ) : null)}
           </View>

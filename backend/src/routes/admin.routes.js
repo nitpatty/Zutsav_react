@@ -23,6 +23,7 @@ router.get('/pandits/search',               ctrl.searchPandits);
 router.get('/pandits/:id',                  ctrl.getPanditProfile);
 router.patch('/pandits/:id/approve',        ctrl.approvePandit);
 router.patch('/pandits/:id/kyc',            ctrl.updateKYCStatus);
+router.get('/pandits/:id/kyc-document/:field', ctrl.getPanditKycDocument);
 router.patch('/pandits/:id/pooja-price',    ctrl.setPoojaApprovedPrice);
 router.delete('/pandits/:id',               ctrl.deletePandit);
 

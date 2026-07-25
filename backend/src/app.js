@@ -114,6 +114,13 @@ app.use('/api/', (req, res, next) => {
 });
 
 // ✅ Static files
+// KYC / Govt-ID documents hold sensitive PII and must never be reachable as
+// static files — they're only served through the authenticated controllers
+// in pandit.routes.js (self, OTP-gated after approval) and admin.routes.js
+// (admin review). This must be mounted before the static handler below.
+app.use(['/uploads/kycdocs', '/uploads/govtids'], (req, res) => {
+  res.status(403).json({ success: false, message: 'Direct access to this resource is not permitted' });
+});
 app.use('/uploads', express.static(path.join(__dirname, '..', config.constants.uploadDir)));
 
 // ✅ Routes

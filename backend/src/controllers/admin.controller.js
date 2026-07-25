@@ -12,6 +12,7 @@ const Pooja                = require('../models/Pooja');
 const EducationMaster      = require('../models/EducationMaster');
 const SpecializationMaster = require('../models/SpecializationMaster');
 const { audit }            = require('../services/auditService');
+const { KYC_FIELD_MAP: ADMIN_KYC_FIELD_MAP, resolveStoredFile } = require('../utils/kycFileStorage');
 const {
   COURIER_PROVIDERS,
   LOCAL_DELIVERY_PARTNERS,
@@ -649,6 +650,13 @@ exports.updateKYCStatus = async (req, res, next) => {
       updates.kycStatus          = 'approved';
       updates.canReceiveBookings = true;
       updates.kycRejectionReason = '';
+      // Audit metadata that survives even if the pandit later deletes the
+      // uploaded document images (see Pandit.kycDocumentRetention).
+      updates.kycVerifiedBy          = req.user?.name || 'Admin';
+      updates.kycVerifiedByAdminId   = req.user?._id || null;
+      updates.kycDocumentRetention   = 'pending_decision';
+      updates.kycDocumentDecisionAt  = null;
+      updates.kycViewSessionExpiresAt = null;
       NotificationEngine.emit('KYC_APPROVED', panditPayload).catch(() => {});
     } else if (kycAction === 'reject') {
       if (!reason || reason.trim().length < 5) {
@@ -673,6 +681,31 @@ exports.updateKYCStatus = async (req, res, next) => {
     const updated = await Pandit.findByIdAndUpdate(req.params.id, updates, { new: true })
       .populate('userId', 'name email phone');
     res.json({ success: true, pandit: updated });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/admin/pandits/:id/kyc-document/:field — the only way admins may
+// read a KYC/Govt-ID image now that /uploads/kycdocs and /uploads/govtids
+// are no longer served statically (see app.js). Admin review access itself
+// is unchanged — same auth (protect + authorize('admin')) as every other
+// admin route, no OTP/retention gate (that gate applies only to the Pandit's
+// own post-approval access).
+exports.getPanditKycDocument = async (req, res, next) => {
+  try {
+    const field   = req.params.field;
+    const dbField = field === 'legacy' ? 'govtIdImage' : ADMIN_KYC_FIELD_MAP[field];
+    if (!dbField) return res.status(400).json({ success: false, message: 'Invalid document field' });
+
+    const pandit = await Pandit.findById(req.params.id);
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit not found' });
+
+    const abs = resolveStoredFile(pandit[dbField]);
+    if (!abs) return res.status(404).json({ success: false, message: 'Document not found' });
+
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(abs);
   } catch (err) {
     next(err);
   }

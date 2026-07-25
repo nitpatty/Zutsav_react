@@ -3,6 +3,7 @@ import {
   User, MapPin, GraduationCap, Briefcase, Star, Heart, CreditCard, ShieldCheck,
   Save, Upload, Plus, Trash2, Search, CheckCircle, Clock, XCircle, FileText,
   BadgeCheck, AlertTriangle, RefreshCw, Info, Loader, Languages,
+  Mail, Smartphone, Lock, X, Eye, Trash,
 } from 'lucide-react';
 import ZutsavLoader, { ZutsavLoaderInline } from '../components/shared/ZutsavLoader';
 import { Link, Navigate } from 'react-router-dom';
@@ -12,7 +13,6 @@ import ProfilePhoto from '../components/shared/ProfilePhoto';
 import PincodeInput from '../components/shared/PincodeInput';
 import MapPicker, { forwardGeocode } from '../components/shared/MapPicker';
 import { formatDuration, parseDurationForForm } from '../utils/durationFormatter';
-import { getImageUrl } from '../config';
 
 const LANGUAGE_OPTIONS = [
   'Hindi','English','Sanskrit','Marathi','Punjabi','Gujarati',
@@ -1069,14 +1069,31 @@ const GOVT_ID_OPTIONS = [
   { value: 'driving',  label: 'Driving Licence' },
 ];
 
+const KYC_DOC_LABELS = [
+  ['frontImage',   'Front Image'],
+  ['backImage',    'Back Image'],
+  ['selfieImage',  'Selfie with Document'],
+  ['addressProof', 'Address Proof'],
+];
+
 function KycVerificationTab({ pandit, reload }) {
-  const kycStatus = pandit.kycStatus || 'not_submitted';
-  const canEdit   = ['not_submitted', 'rejected', 'reupload_required'].includes(kycStatus);
+  const kycStatus  = pandit.kycStatus || 'not_submitted';
+  const canEdit    = ['not_submitted', 'rejected', 'reupload_required'].includes(kycStatus);
+  const kycDocs    = pandit.kycDocuments || {};
+  const retention  = pandit.kycDocumentRetention || 'pending_decision';
   const [form, setForm]             = useState({ govtIdType: pandit.govtIdType || '', govtIdNumber: '' });
   const [files, setFiles]           = useState({ frontImage: null, backImage: null, selfieImage: null, addressProof: null });
   const [previews, setPreviews]     = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [decisionSaving, setDecisionSaving] = useState(false);
+  const [selectedDecision, setSelectedDecision] = useState('delete');
   const setF = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }));
+
+  // OTP-gated viewer for retained documents — a verified session is tracked
+  // client-side (viewSession.expiresAt) so repeat clicks within the same
+  // 5-minute window skip straight to fetching the file.
+  const [viewSession, setViewSession] = useState(null);
+  const [otpModal, setOtpModal] = useState(null); // { field, step: 'channel'|'otp', channel, otp, busy }
 
   const handleFile = (field) => (e) => {
     const file = e.target.files[0];
@@ -1090,7 +1107,7 @@ function KycVerificationTab({ pandit, reload }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.govtIdType) { toast.error('Select a Government ID type'); return; }
-    if (!files.frontImage && !pandit.kycFrontImage) { toast.error('Front image of document is required'); return; }
+    if (!files.frontImage && !kycDocs.frontImage) { toast.error('Front image of document is required'); return; }
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -1108,23 +1125,84 @@ function KycVerificationTab({ pandit, reload }) {
     } finally { setSubmitting(false); }
   };
 
-  const FileUploadField = ({ field, label, required, existingUrl }) => (
+  const submitDecision = async (decision) => {
+    setDecisionSaving(true);
+    try {
+      await API.post('/pandits/me/kyc/document-decision', { decision });
+      await reload();
+      toast.success(decision === 'delete' ? 'Document deleted. Your KYC approval is still active.' : 'Document will be kept securely.');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not save your choice');
+    } finally { setDecisionSaving(false); }
+  };
+
+  // Fetches the file through the authenticated endpoint (never a bare URL)
+  // and opens it in a new tab. A blank tab is opened synchronously first so
+  // the async fetch that follows doesn't get caught by popup blockers.
+  const fetchAndOpenDocument = async (field) => {
+    const win = window.open('', '_blank');
+    try {
+      const res = await API.get(`/pandits/me/kyc/document/${field}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      if (win) win.location = url;
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      win?.close();
+      if (err.response?.status === 403) {
+        setOtpModal({ field, step: 'channel', channel: '', otp: '', busy: false });
+      } else {
+        toast.error(err.response?.data?.message || 'Could not load document');
+      }
+    }
+  };
+
+  const viewDocument = (field) => {
+    if (retention === 'kept' && (!viewSession || viewSession.expiresAt < Date.now())) {
+      setOtpModal({ field, step: 'channel', channel: '', otp: '', busy: false });
+      return;
+    }
+    fetchAndOpenDocument(field);
+  };
+
+  const sendDocumentOtp = async () => {
+    if (!otpModal.channel) { toast.error('Choose where to receive the OTP'); return; }
+    setOtpModal((m) => ({ ...m, busy: true }));
+    try {
+      await API.post('/pandits/me/kyc/document/send-otp', { channel: otpModal.channel });
+      setOtpModal((m) => ({ ...m, step: 'otp', busy: false }));
+      toast.success(`OTP sent to your ${otpModal.channel === 'email' ? 'email' : 'registered mobile number'}`);
+    } catch (err) {
+      setOtpModal((m) => ({ ...m, busy: false }));
+      toast.error(err.response?.data?.message || 'Could not send OTP');
+    }
+  };
+
+  const verifyDocumentOtp = async () => {
+    if (!otpModal.otp) { toast.error('Enter the OTP'); return; }
+    setOtpModal((m) => ({ ...m, busy: true }));
+    try {
+      const { data } = await API.post('/pandits/me/kyc/document/verify-otp', { channel: otpModal.channel, otp: otpModal.otp });
+      setViewSession({ expiresAt: new Date(data.viewSessionExpiresAt).getTime() });
+      const field = otpModal.field;
+      setOtpModal(null);
+      await fetchAndOpenDocument(field);
+    } catch (err) {
+      setOtpModal((m) => ({ ...m, busy: false }));
+      toast.error(err.response?.data?.message || 'Invalid OTP');
+    }
+  };
+
+  const FileUploadField = ({ field, label, required, hasExisting }) => (
     <div>
       <label className="label">{label}{required && ' *'}</label>
       <label className={`flex items-center gap-3 border-2 border-dashed rounded-xl p-4 cursor-pointer transition-colors ${files[field] ? 'border-saffron-400 bg-saffron-50' : 'border-gray-200 hover:border-saffron-300 hover:bg-saffron-50'}`}>
         <Upload size={18} className="text-saffron-500 shrink-0" />
         <span className="text-sm text-gray-600 flex-1 truncate">
-          {files[field] ? files[field].name : (existingUrl ? '✓ Already uploaded (re-upload to replace)' : `Upload ${label} (JPG/PNG)`)}
+          {files[field] ? files[field].name : (hasExisting ? '✓ Already uploaded (re-upload to replace)' : `Upload ${label} (JPG/PNG)`)}
         </span>
         <input type="file" accept="image/*" className="hidden" onChange={handleFile(field)} disabled={!canEdit} />
       </label>
       {previews[field] && <img src={previews[field]} alt={label} className="mt-2 max-h-28 rounded-xl border border-gray-200 object-contain" />}
-      {!previews[field] && existingUrl && (
-        <a href={getImageUrl(existingUrl)} target="_blank" rel="noopener noreferrer"
-          className="mt-1 text-xs text-saffron-600 hover:underline flex items-center gap-1">
-          <FileText size={12} /> View uploaded file
-        </a>
-      )}
     </div>
   );
 
@@ -1178,10 +1256,10 @@ function KycVerificationTab({ pandit, reload }) {
               <Upload size={16} className="text-saffron-500" /> Upload Documents
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FileUploadField field="frontImage"   label="Front Image"          required existingUrl={pandit.kycFrontImage} />
-              <FileUploadField field="backImage"    label="Back Image"           required={false} existingUrl={pandit.kycBackImage} />
-              <FileUploadField field="selfieImage"  label="Selfie with Document" required={false} existingUrl={pandit.kycSelfieImage} />
-              <FileUploadField field="addressProof" label="Address Proof"        required={false} existingUrl={pandit.kycAddressProof} />
+              <FileUploadField field="frontImage"   label="Front Image"          required hasExisting={kycDocs.frontImage} />
+              <FileUploadField field="backImage"    label="Back Image"           required={false} hasExisting={kycDocs.backImage} />
+              <FileUploadField field="selfieImage"  label="Selfie with Document" required={false} hasExisting={kycDocs.selfieImage} />
+              <FileUploadField field="addressProof" label="Address Proof"        required={false} hasExisting={kycDocs.addressProof} />
             </div>
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex gap-2 text-xs text-amber-700">
               <AlertTriangle size={14} className="shrink-0 mt-0.5" />
@@ -1194,22 +1272,17 @@ function KycVerificationTab({ pandit, reload }) {
         </form>
       )}
 
-      {!canEdit && (
+      {!canEdit && kycStatus !== 'approved' && (
         <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
           <h3 className="font-semibold text-gray-800">Submitted Documents</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[
-              ['Front Image',          pandit.kycFrontImage],
-              ['Back Image',           pandit.kycBackImage],
-              ['Selfie with Document', pandit.kycSelfieImage],
-              ['Address Proof',        pandit.kycAddressProof],
-            ].map(([label, url]) => url && (
-              <div key={label} className="bg-saffron-50 border border-saffron-100 rounded-xl p-3">
+            {KYC_DOC_LABELS.map(([field, label]) => kycDocs[field] && (
+              <div key={field} className="bg-saffron-50 border border-saffron-100 rounded-xl p-3">
                 <p className="text-xs text-gray-400 mb-1">{label}</p>
-                <a href={getImageUrl(url)} target="_blank" rel="noopener noreferrer"
+                <button type="button" onClick={() => fetchAndOpenDocument(field)}
                   className="text-sm text-saffron-600 hover:underline flex items-center gap-1.5">
                   <FileText size={13} /> View Document
-                </a>
+                </button>
               </div>
             ))}
             <div className="bg-saffron-50 border border-saffron-100 rounded-xl p-3">
@@ -1228,6 +1301,121 @@ function KycVerificationTab({ pandit, reload }) {
               Documents are being reviewed. You will receive a notification once the review is complete.
             </p>
           )}
+        </div>
+      )}
+
+      {kycStatus === 'approved' && retention === 'pending_decision' && (
+        <div className="bg-white rounded-2xl border border-saffron-200 p-5 space-y-4">
+          <div>
+            <h3 className="font-semibold text-gray-800">Your identity has been successfully verified.</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              For your privacy, what would you like to do with your uploaded Government ID? Deleting it does
+              <span className="font-semibold"> not</span> affect your approved KYC status.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <label className={`flex items-start gap-3 border-2 rounded-xl p-3 cursor-pointer transition-colors ${selectedDecision === 'delete' ? 'border-saffron-400 bg-saffron-50' : 'border-gray-200'}`}>
+              <input type="radio" name="kyc-decision" className="mt-1" checked={selectedDecision === 'delete'} onChange={() => setSelectedDecision('delete')} />
+              <span>
+                <span className="font-semibold text-gray-800 flex items-center gap-1.5">
+                  <Trash size={14} className="text-saffron-600" /> Delete my uploaded document
+                  <span className="text-[10px] font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">Recommended</span>
+                </span>
+                <span className="text-xs text-gray-500">Permanently removes the file from our servers. Your KYC stays approved.</span>
+              </span>
+            </label>
+            <label className={`flex items-start gap-3 border-2 rounded-xl p-3 cursor-pointer transition-colors ${selectedDecision === 'keep' ? 'border-saffron-400 bg-saffron-50' : 'border-gray-200'}`}>
+              <input type="radio" name="kyc-decision" className="mt-1" checked={selectedDecision === 'keep'} onChange={() => setSelectedDecision('keep')} />
+              <span>
+                <span className="font-semibold text-gray-800 flex items-center gap-1.5">
+                  <Lock size={14} className="text-saffron-600" /> Keep my document securely stored
+                </span>
+                <span className="text-xs text-gray-500">Viewing it later will require OTP verification every time.</span>
+              </span>
+            </label>
+          </div>
+          <button type="button" disabled={decisionSaving} onClick={() => submitDecision(selectedDecision)}
+            className="btn-primary px-6 py-2.5 flex items-center gap-2">
+            <ShieldCheck size={15} /> {decisionSaving ? 'Saving...' : 'Confirm Choice'}
+          </button>
+        </div>
+      )}
+
+      {kycStatus === 'approved' && retention === 'deleted' && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 flex items-start gap-3">
+          <Trash size={20} className="text-gray-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-gray-800">Document deleted</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Your uploaded Government ID was permanently deleted per your choice. Your KYC approval remains active.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {kycStatus === 'approved' && retention === 'kept' && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
+          <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+            <Lock size={16} className="text-saffron-500" /> Retained Document
+          </h3>
+          <p className="text-xs text-gray-500">OTP verification is required to view your document. Access expires 5 minutes after verification.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {KYC_DOC_LABELS.map(([field, label]) => kycDocs[field] && (
+              <div key={field} className="bg-saffron-50 border border-saffron-100 rounded-xl p-3">
+                <p className="text-xs text-gray-400 mb-1">{label}</p>
+                <button type="button" onClick={() => viewDocument(field)}
+                  className="text-sm text-saffron-600 hover:underline flex items-center gap-1.5">
+                  <Eye size={13} /> View Document
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {otpModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800">Verify to view document</h3>
+              <button type="button" onClick={() => setOtpModal(null)}><X size={18} className="text-gray-400" /></button>
+            </div>
+
+            {otpModal.step === 'channel' && (
+              <>
+                <p className="text-sm text-gray-600">Choose where to receive your one-time code.</p>
+                <div className="space-y-2">
+                  <label className={`flex items-center gap-3 border-2 rounded-xl p-3 cursor-pointer ${otpModal.channel === 'email' ? 'border-saffron-400 bg-saffron-50' : 'border-gray-200'}`}>
+                    <input type="radio" name="otp-channel" checked={otpModal.channel === 'email'} onChange={() => setOtpModal((m) => ({ ...m, channel: 'email' }))} />
+                    <Mail size={16} className="text-saffron-600" /> Registered Email
+                  </label>
+                  <label className={`flex items-center gap-3 border-2 rounded-xl p-3 cursor-pointer ${otpModal.channel === 'whatsapp' ? 'border-saffron-400 bg-saffron-50' : 'border-gray-200'}`}>
+                    <input type="radio" name="otp-channel" checked={otpModal.channel === 'whatsapp'} onChange={() => setOtpModal((m) => ({ ...m, channel: 'whatsapp' }))} />
+                    <Smartphone size={16} className="text-saffron-600" /> Registered Mobile Number
+                  </label>
+                </div>
+                <button type="button" disabled={otpModal.busy} onClick={sendDocumentOtp} className="btn-primary w-full py-2.5">
+                  {otpModal.busy ? 'Sending...' : 'Send OTP'}
+                </button>
+              </>
+            )}
+
+            {otpModal.step === 'otp' && (
+              <>
+                <p className="text-sm text-gray-600">Enter the 6-digit code sent to your {otpModal.channel === 'email' ? 'email' : 'registered mobile number'}.</p>
+                <input className="input" maxLength={6} value={otpModal.otp}
+                  onChange={(e) => setOtpModal((m) => ({ ...m, otp: e.target.value.replace(/\D/g, '') }))}
+                  placeholder="6-digit OTP" autoFocus />
+                <button type="button" disabled={otpModal.busy} onClick={verifyDocumentOtp} className="btn-primary w-full py-2.5">
+                  {otpModal.busy ? 'Verifying...' : 'Verify & View'}
+                </button>
+                <button type="button" onClick={() => setOtpModal((m) => ({ ...m, step: 'channel', otp: '' }))}
+                  className="text-xs text-gray-500 hover:underline w-full text-center">
+                  Choose a different channel / resend
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

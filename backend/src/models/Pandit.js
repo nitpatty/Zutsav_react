@@ -72,6 +72,17 @@ const panditSchema = new mongoose.Schema({
   kycReviewedAt:      { type: Date },
   canReceiveBookings: { type: Boolean, default: false },
 
+  // Post-approval document retention choice (privacy control) — the Pandit
+  // decides whether the uploaded Government ID stays on disk after approval.
+  // 'pending_decision' until they choose; KYC stays 'approved' regardless.
+  kycDocumentRetention:   { type: String, enum: ['pending_decision', 'kept', 'deleted'], default: 'pending_decision' },
+  kycDocumentDecisionAt:  { type: Date, default: null },
+  // Short OTP-granted window during which a retained document may be viewed.
+  kycViewSessionExpiresAt:{ type: Date, default: null },
+  // Audit trail preserved even after the document image itself is deleted.
+  kycVerifiedBy:          { type: String, default: '' },
+  kycVerifiedByAdminId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
   // Personal info
   gender: { type: String, enum: ['male', 'female', 'other'], default: null },
   dob:    { type: Date, default: null },
@@ -173,5 +184,27 @@ const panditSchema = new mongoose.Schema({
   totalReviews: { type: Number, default: 0 },
   totalBookings:{ type: Number, default: 0 },
 }, { timestamps: true });
+
+// Govt-ID / KYC file paths are internal storage details and must never reach
+// an API response (documents are only readable through the authenticated
+// controllers in pandit.controller.js / admin.controller.js). Callers get a
+// boolean presence map instead; the real fields stay queryable internally.
+panditSchema.set('toJSON', {
+  transform: (doc, ret) => {
+    ret.kycDocuments = {
+      frontImage:   !!ret.kycFrontImage,
+      backImage:    !!ret.kycBackImage,
+      selfieImage:  !!ret.kycSelfieImage,
+      addressProof: !!ret.kycAddressProof,
+    };
+    ret.hasLegacyGovtId = !!ret.govtIdImage;
+    delete ret.kycFrontImage;
+    delete ret.kycBackImage;
+    delete ret.kycSelfieImage;
+    delete ret.kycAddressProof;
+    delete ret.govtIdImage;
+    return ret;
+  },
+});
 
 module.exports = mongoose.model('Pandit', panditSchema);
