@@ -131,12 +131,12 @@ export default function PanditDashboardScreen() {
 
   const quickActions = [
     { label: 'Availability', icon: 'time-outline', nav: 'PanditAvailability' },
-    { label: 'My Services', icon: 'sparkles-outline', nav: 'PanditPoojaServices' },
-    { label: 'Manage Pujas', icon: 'flame-outline', nav: 'PanditPoojaServices' },
+    { label: 'My Services', icon: 'sparkles-outline', nav: 'PanditProfileTab', params: { screen: 'PanditPoojaServices' } },
+    { label: 'Manage Pujas', icon: 'flame-outline', nav: 'PanditProfileTab', params: { screen: 'PanditPoojaServices' } },
     { label: 'Earnings Report', icon: 'bar-chart-outline', nav: 'PanditEarnings' },
     { label: 'Customer Reviews', icon: 'star-outline', nav: 'PanditRatings' },
-    { label: 'Profile', icon: 'person-outline', nav: 'PanditProfileMain' },
-    { label: 'KYC', icon: 'document-text-outline', nav: 'PanditKYC' },
+    { label: 'Profile', icon: 'person-outline', nav: 'PanditProfileTab', params: { screen: 'PanditProfileMain' } },
+    { label: 'KYC', icon: 'document-text-outline', nav: 'PanditProfileTab', params: { screen: 'PanditKYC' } },
     { label: 'Referrals', icon: 'people-outline', nav: 'PanditReferralTab' },
     { label: 'My Blogs', icon: 'newspaper-outline', nav: 'PanditMyBlogs' },
     { label: 'Festivals', icon: 'calendar-outline', nav: 'Festivals' },
@@ -175,7 +175,7 @@ export default function PanditDashboardScreen() {
         showsVerticalScrollIndicator={false}
       >
         {!kycApproved && (
-          <TouchableOpacity onPress={() => navigation.navigate('PanditKYC')} activeOpacity={0.85}>
+          <TouchableOpacity onPress={() => navigation.navigate('PanditProfileTab', { screen: 'PanditKYC' })} activeOpacity={0.85}>
             <Card padding={SPACING.md} style={[styles.alertCard, { backgroundColor: COLORS.warningBg }]} elevation="raised">
               <IconContainer name="warning-outline" size="sm" color={COLORS.warning} />
               <Body color="#7A4B12" style={styles.alertText}>
@@ -225,7 +225,7 @@ export default function PanditDashboardScreen() {
           <View style={styles.actionsGrid}>
             {quickActions.map((a) => (
               <View key={a.label} style={styles.actionCol}>
-                <ActionCard icon={a.icon} label={a.label} onPress={() => navigation.navigate(a.nav)} />
+                <ActionCard icon={a.icon} label={a.label} onPress={() => navigation.navigate(a.nav, a.params)} />
               </View>
             ))}
           </View>
@@ -293,7 +293,7 @@ export default function PanditDashboardScreen() {
 
         {notifications.length > 0 && (
           <View style={styles.section}>
-            <SectionHeader title="Recent Notifications" onSeeAll={() => navigation.navigate('PanditNotifications')} />
+            <SectionHeader title="Recent Notifications" onSeeAll={() => navigation.navigate('PanditProfileTab', { screen: 'PanditNotifications' })} />
             <View style={{ gap: SPACING.sm }}>
               {notifications.slice(0, 3).map((n) => (
                 <Card key={n._id} padding={SPACING.md} style={styles.rowCard} elevation="raised">

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import API from '../../api/axios';
+import { fmtTime } from '../booking/constants';
 
 // ─── Constants ────────────────────────────────────────────────
 const DAYS = [
@@ -37,14 +38,6 @@ const TIME_OPTIONS = (() => {
   return opts;
 })();
 
-const fmt12 = (t) => {
-  if (!t) return '';
-  const [h, m] = t.split(':').map(Number);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const hr = h % 12 || 12;
-  return `${hr}:${String(m).padStart(2, '0')} ${ampm}`;
-};
-
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -67,7 +60,7 @@ function TimeSelect({ value, onChange, label }) {
       aria-label={label}
     >
       {TIME_OPTIONS.map((t) => (
-        <option key={t} value={t}>{fmt12(t)}</option>
+        <option key={t} value={t}>{fmtTime(t)}</option>
       ))}
     </select>
   );
@@ -355,7 +348,7 @@ function SpecialDatesTab({ pandit, onSave }) {
                   <div>
                     <p className="font-semibold text-gray-800 text-sm">{fmtDate(sd.date)}</p>
                     <p className={`text-xs font-medium ${sd.type === 'unavailable' ? 'text-red-600' : 'text-yellow-700'}`}>
-                      {sd.type === 'unavailable' ? 'Unavailable' : 'Custom: ' + sd.slots.map((s) => `${fmt12(s.start)}–${fmt12(s.end)}`).join(', ')}
+                      {sd.type === 'unavailable' ? 'Unavailable' : 'Custom: ' + sd.slots.map((s) => `${fmtTime(s.start)}–${fmtTime(s.end)}`).join(', ')}
                     </p>
                   </div>
                 </div>

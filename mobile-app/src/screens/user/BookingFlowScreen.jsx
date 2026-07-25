@@ -8,25 +8,20 @@ import Toast from 'react-native-toast-message';
 import api, { imageUrl } from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
-import { formatCurrency } from '../../utils/helpers';
+import { formatCurrency, formatSlotTime } from '../../utils/helpers';
 import { calculatePrice, roundToPaise } from '../../utils/priceEngine';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import AddressPicker from '../../components/shared/AddressPicker';
 
-// ── Time slots (same as website) ─────────────────────────────
+// ── Time slots (same as website) — full day, 30-minute steps, midnight to midnight ──
 const TIME_SLOTS = [
-  '05:00','05:30','06:00','06:30','07:00','07:30','08:00','08:30',
-  '09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30',
-  '13:00','14:00','15:00','16:00','17:00','18:00','19:00',
+  '00:00','00:30','01:00','01:30','02:00','02:30','03:00','03:30','04:00','04:30',
+  '05:00','05:30','06:00','06:30','07:00','07:30','08:00','08:30','09:00','09:30',
+  '10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30',
+  '15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00','19:30',
+  '20:00','20:30','21:00','21:30','22:00','22:30','23:00','23:30',
 ];
-const fmtTime = (t) => {
-  const [h, m] = t.split(':').map(Number);
-  const suffix = h >= 12 ? 'PM' : 'AM';
-  const hr = h % 12 || 12;
-  return `${hr}:${String(m).padStart(2, '0')} ${suffix}`;
-};
-
 // ── Months / weekdays for calendar ───────────────────────────
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const FULL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -501,7 +496,7 @@ export default function BookingFlowScreen({ navigation, route }) {
                   onPress={() => setScheduledTime(slot)}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.timeSlotText, { color: scheduledTime === slot ? '#fff' : C.text }]}>{fmtTime(slot)}</Text>
+                  <Text style={[styles.timeSlotText, { color: scheduledTime === slot ? '#fff' : C.text }]}>{formatSlotTime(slot)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -510,7 +505,7 @@ export default function BookingFlowScreen({ navigation, route }) {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Ionicons name="checkmark-circle" size={14} color="#059669" />
                   <Text style={{ color: '#065F46', fontSize: 12 }}>
-                    {new Date(scheduledDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} at {fmtTime(scheduledTime)}
+                    {new Date(scheduledDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} at {formatSlotTime(scheduledTime)}
                   </Text>
                 </View>
               </View>
@@ -594,7 +589,7 @@ export default function BookingFlowScreen({ navigation, route }) {
               <View style={[styles.reviewGrid, { borderTopColor: C.border }]}>
                 {[
                   ['Date', scheduledDate ? new Date(scheduledDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''],
-                  ['Time', scheduledTime ? fmtTime(scheduledTime) : ''],
+                  ['Time', scheduledTime ? formatSlotTime(scheduledTime) : ''],
                   ['Language', language],
                   ['Address', userDetails.address ? `${userDetails.address}${userDetails.city ? ', ' + userDetails.city : ''}` : ''],
                 ].filter(([, v]) => v).map(([l, v]) => (
@@ -607,9 +602,9 @@ export default function BookingFlowScreen({ navigation, route }) {
             </View>
 
             {/* Price breakdown */}
-            <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-              <Text style={[styles.cardTitle, { color: C.text }]}>Price Breakdown</Text>
-              <View style={{ gap: 8, marginTop: 10 }}>
+            <View style={[styles.pbCard, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
+              <Text style={[styles.cardTitle, styles.pbTitle, { color: C.text }]}>Price Breakdown</Text>
+              <View style={styles.pbRowsWrap}>
                 <PriceRow label="Pooja Service" amount={pricing.poojaAmount} C={C} sub="Religious services are GST-exempt" />
                 {pricing.platformFee > 0 && (
                   <PriceRow
@@ -620,11 +615,13 @@ export default function BookingFlowScreen({ navigation, route }) {
                 {pricing.platformGST > 0 && <PriceRow label={`GST on Platform Fee (${rates.gstPercent}%)`} amount={pricing.platformGST} C={C} muted />}
                 {pricing.kitAmount > 0 && <PriceRow label={`Samagri Kit — ${selectedKit?.name}`} amount={pricing.kitAmount} C={C} muted sub="Delivered to ceremony address" />}
                 {pricing.kitGST > 0 && <PriceRow label={`GST on Kit (${rates.gstPercent}%)`} amount={pricing.kitGST} C={C} muted />}
-                <View style={[styles.divider, { backgroundColor: C.border }]} />
-                <View style={styles.totalRow}>
-                  <Text style={[styles.totalLabel, { color: C.text }]}>Grand Total</Text>
-                  <Text style={[styles.totalAmount, { color: C.primary }]}>{formatCurrency(pricing.grandTotal)}</Text>
-                </View>
+              </View>
+
+              <View style={[styles.pbDivider, { backgroundColor: C.border }]} />
+
+              <View style={[styles.pbTotalWrap, { backgroundColor: (C.success || '#16A34A') + '0F' }]}>
+                <Text style={[styles.pbTotalLabel, { color: C.text }]}>Grand Total</Text>
+                <Text style={[styles.pbTotalAmount, { color: C.success || '#16A34A' }]}>{formatCurrency(pricing.grandTotal)}</Text>
               </View>
             </View>
 
@@ -848,12 +845,12 @@ function KitPrefCard({ selected, onPress, icon, title, sub, badge, C }) {
 
 function PriceRow({ label, amount, C, muted = false, sub }) {
   return (
-    <View style={styles.priceLineRow}>
-      <View>
-        <Text style={{ fontSize: 13, color: muted ? C.textSecondary : C.text }}>{label}</Text>
-        {sub && <Text style={{ fontSize: 10, color: C.textSecondary }}>{sub}</Text>}
+    <View style={styles.pbRow}>
+      <View style={styles.pbRowLeft}>
+        <Text style={[styles.pbRowLabel, { color: muted ? C.textSecondary : C.text }]}>{label}</Text>
+        {sub && <Text style={[styles.pbRowSub, { color: C.textLight || C.textSecondary }]}>{sub}</Text>}
       </View>
-      <Text style={{ fontSize: 13, fontWeight: '600', color: muted ? C.textSecondary : C.text }}>{formatCurrency(amount)}</Text>
+      <Text style={[styles.pbRowAmount, { color: muted ? C.textSecondary : C.text }]}>{formatCurrency(amount)}</Text>
     </View>
   );
 }
@@ -939,9 +936,26 @@ const styles = StyleSheet.create({
   reviewItemVal:  { flex: 1, fontSize: 12, fontWeight: '500' },
   priceLineRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   divider:        { height: 1 },
-  totalRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  totalLabel:     { fontSize: 15, fontWeight: '800' },
-  totalAmount:    { fontSize: 24, fontWeight: '800', fontStyle: 'italic' },
+
+  // ── Price Breakdown card (dedicated — do not reuse elsewhere) ──────────
+  pbCard: {
+    borderRadius: 20, padding: 20,
+    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.09, shadowRadius: 14, elevation: 3,
+  },
+  pbTitle:      { marginBottom: 18 },
+  pbRowsWrap:   { gap: 16 },
+  pbRow:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pbRowLeft:    { flex: 1, paddingRight: 12, gap: 3 },
+  pbRowLabel:   { fontSize: 14, lineHeight: 19 },
+  pbRowSub:     { fontSize: 11.5, lineHeight: 15 },
+  pbRowAmount:  { fontSize: 14, fontWeight: '700' },
+  pbDivider:    { height: 1, marginTop: 20, marginBottom: 16 },
+  pbTotalWrap: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+  },
+  pbTotalLabel:  { fontSize: 15.5, fontWeight: '800' },
+  pbTotalAmount: { fontSize: 27, fontWeight: '800', fontStyle: 'italic' },
   payModeRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 2, borderRadius: 14, padding: 12 },
   payModeTitle:   { fontSize: 14, fontWeight: '700' },
   payModeSub:     { fontSize: 11, marginTop: 2 },

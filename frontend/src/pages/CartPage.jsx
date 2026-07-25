@@ -9,15 +9,11 @@ import { formatINR } from '../utils/priceEngine';
 import API from '../api/axios';
 import AddressPicker from '../components/shared/AddressPicker';
 import { getImageUrl } from '../config';
+import { fmtTime } from '../components/booking/constants';
 
 function fmtDate(d) {
   if (!d) return '—';
   return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-function fmtTime(t) {
-  if (!t) return '—';
-  const [h, m] = t.split(':').map(Number);
-  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
 const fadeUp = (d = 0) => ({ initial:{ opacity:0, y:16 }, animate:{ opacity:1, y:0, transition:{ duration:0.35, delay:d } } });
@@ -169,7 +165,7 @@ export default function CartPage() {
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-gray-500">
                       <Clock size={11} className="text-orange-400 shrink-0" />
-                      {fmtTime(item.bookingDetails?.scheduledTime)}
+                      {item.bookingDetails?.scheduledTime ? fmtTime(item.bookingDetails.scheduledTime) : '—'}
                     </div>
                     {item.bookingDetails?.userDetails?.city && (
                       <div className="flex items-center gap-1.5 text-xs text-gray-500 col-span-2">

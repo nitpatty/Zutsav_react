@@ -121,7 +121,6 @@ export default function PanditBookingDetailScreen({ route }) {
 
   const ud = booking.userDetails || {};
   const addressStr = [ud.address, ud.city, ud.state, ud.pincode].filter(Boolean).join(', ') || '—';
-  const invoiceEligible = ['paid', 'pandit_assigned', 'pandit_accepted', 'completion_requested', 'completed'].includes(booking.status);
 
   const timelineEvents = (booking.auditLog || []).map((a) => ({
     label: formatAuditAction(a.action),
@@ -203,16 +202,6 @@ export default function PanditBookingDetailScreen({ route }) {
           <Timeline events={timelineEvents} />
         </InfoCard>
 
-        {invoiceEligible && (
-          <TouchableOpacity
-            style={[styles.outlineBtn, { borderColor: C.border }]}
-            onPress={() => navigation.navigate('Invoice', { type: 'booking', id: bookingId })}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="document-text-outline" size={18} color={C.text} />
-            <Text style={[styles.outlineBtnText, { color: C.text }]}>Download Invoice</Text>
-          </TouchableOpacity>
-        )}
       </ScrollView>
 
       {/* Action footer */}
@@ -350,11 +339,6 @@ const styles = StyleSheet.create({
   quickActionsRow: { flexDirection: 'row', gap: 10 },
   quickActionBtn:  { flex: 1, alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 14, paddingVertical: 12 },
   quickActionText: { fontSize: 11, fontWeight: '600' },
-  outlineBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, borderRadius: 14, paddingVertical: 14, borderWidth: 1.5,
-  },
-  outlineBtnText: { fontSize: 14, fontWeight: '700' },
   rejectBtn:  { flex: 1, borderWidth: 1.5, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
   rejectBtnText: { fontSize: 15, fontWeight: '700' },
   acceptBtn:  { flex: 2, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },

@@ -6,8 +6,19 @@ export const formatDate = (date, fmt = 'dd MMM yyyy') => {
   catch { return '—'; }
 };
 
-export const formatTime = (date) => formatDate(date, 'hh:mm a');
-export const formatDateTime = (date) => formatDate(date, 'dd MMM yyyy, hh:mm a');
+export const formatTime = (date) => formatDate(date, 'HH:mm');
+export const formatDateTime = (date) => formatDate(date, 'dd MMM yyyy, HH:mm');
+
+// Formats a raw "HH:mm" booking-slot string (already stored in 24-hour form)
+// into a consistent, zero-padded 24-hour display — the single formatter
+// every screen showing a booking time slot should use, so none of them
+// independently reintroduce 12-hour/AM-PM formatting. Mirrors the web
+// equivalent in frontend/src/components/booking/constants.js.
+export const formatSlotTime = (t) => {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  return `${String(h).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`;
+};
 export const timeAgo = (date) => {
   try { return formatDistanceToNow(typeof date === 'string' ? parseISO(date) : date, { addSuffix: true }); }
   catch { return '—'; }

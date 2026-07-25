@@ -179,7 +179,7 @@ function InfoRow({ label, value, bold, gold }) {
 
 function InvoiceHeader({ b, invoice, pmtStatus, displayInvNumber, paymentTypeLabel, C }) {
   const ud = b.userDetails || {};
-  const genTime = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+  const genTime = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', hour12: false });
 
   return (
     <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: '#1B1F3B' }}>
@@ -488,7 +488,7 @@ function AmountInWordsCard({ amtPaid, pmtStatus, C }) {
 }
 
 function InvoiceFooter() {
-  const genTime = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+  const genTime = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', hour12: false });
   return (
     <View style={{ backgroundColor: '#1B1F3B', borderRadius: 16, padding: 24, gap: 12 }}>
       <View style={{ alignItems: 'center', gap: 4 }}>

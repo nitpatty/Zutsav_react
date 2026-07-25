@@ -7,7 +7,7 @@ import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
 import { COLORS } from '../../theme/tokens';
-import { formatDate, formatCurrency, bookingStatusColor } from '../../utils/helpers';
+import { formatDate, bookingStatusColor } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -110,7 +110,6 @@ export default function PanditBookingsScreen() {
       <Text style={[styles.userName, { color: C.textSecondary }]}>{item.userId?.name || item.userDetails?.name || 'Devotee'}</Text>
       <View style={styles.meta}>
         <Text style={[styles.date, { color: C.textSecondary }]}>{item.scheduledDate ? formatDate(item.scheduledDate) : '—'}</Text>
-        <Text style={[styles.amount, { color: C.primary }]}>{formatCurrency(item.grandTotal || item.amount || 0)}</Text>
       </View>
 
       {item.status === 'pandit_assigned' && (
@@ -195,9 +194,8 @@ const styles = StyleSheet.create({
   cardTop:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   poojaName:  { fontSize: 15, fontWeight: '700', flex: 1, marginRight: 8 },
   userName:   { fontSize: 13 },
-  meta:       { flexDirection: 'row', justifyContent: 'space-between' },
+  meta:       { flexDirection: 'row' },
   date:       { fontSize: 12 },
-  amount:     { fontSize: 14, fontWeight: '700' },
   actionRow:  { flexDirection: 'row', gap: 10, marginTop: 4 },
   acceptBtn:  { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   rejectBtn:  { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1.5 },
