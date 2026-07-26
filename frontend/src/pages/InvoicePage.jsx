@@ -75,8 +75,24 @@ function resolvePricing(b) {
 
 /* ─────────────────────────────────────────────────────────
    Effective payment status (handles backward-compat)
+
+   Cancellation is a terminal state and always takes priority over
+   whatever paymentStatus the booking happened to be in when it was
+   cancelled — cancelBooking() only flips paymentStatus to REFUNDED
+   when something was actually paid (booking.controller.js), so a
+   booking cancelled *before* any payment keeps paymentStatus:'PENDING'
+   forever. Without this check that reads as "still pending", which is
+   wrong — the order isn't pending, it's cancelled.
+
+   `b` (booking) is expected to always be present — bookings are never
+   hard-deleted anywhere in this codebase, cancellation only ever sets
+   status:'cancelled'. If it's still missing, that's an orphaned
+   invoice->booking reference (data integrity issue), not a normal
+   invoice state, so this returns 'UNKNOWN' rather than guessing.
 ──────────────────────────────────────────────────────────── */
-function resolvePaymentStatus(b) {
+function resolvePaymentStatus(invoice, b) {
+  if (invoice?.status === 'cancelled' || b?.status === 'cancelled') return 'CANCELLED';
+  if (!b) return 'UNKNOWN';
   if (b.paymentStatus === 'FULLY_PAID')    return 'FULLY_PAID';
   if (b.paymentStatus === 'PARTIALLY_PAID') return 'PARTIALLY_PAID';
   if (b.paymentStatus === 'REFUNDED')      return 'REFUNDED';
@@ -84,6 +100,17 @@ function resolvePaymentStatus(b) {
   const ACTIVE = ['paid','pandit_assigned','pandit_accepted','pending_reassignment','completion_requested','completed'];
   if (ACTIVE.includes(b.status)) return 'FULLY_PAID';
   return 'PENDING';
+}
+
+/* What happened to the money on a cancelled invoice — derived from the
+   same booking.refund subdocument the cancellation flow already
+   populates (booking.controller.js cancelBooking), never guessed. */
+function cancelledPaymentNote(b) {
+  if (!b) return 'Not Applicable';
+  if (!((b.amountPaid || 0) > 0)) return 'Not Applicable';
+  if (['completed', 'processed'].includes(b.refund?.status)) return 'Refunded';
+  if (['pending', 'approved'].includes(b.refund?.status)) return 'Refund Pending';
+  return 'Payment Cancelled';
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -110,6 +137,8 @@ const STATUS_CFG = {
   PENDING:       { label: 'Payment Pending',  bg:'#fef3c7', color:'#b45309', border:'#fde68a' },
   REFUNDED:      { label: 'Refunded',         bg:'#f3f4f6', color:'#374151', border:'#d1d5db' },
   FAILED:        { label: 'Payment Failed',   bg:'#fee2e2', color:'#b91c1c', border:'#fca5a5' },
+  CANCELLED:     { label: 'Cancelled',        bg:'#f3f4f6', color:'#6b7280', border:'#d1d5db' },
+  UNKNOWN:       { label: 'Status Unavailable', bg:'#f3f4f6', color:'#6b7280', border:'#d1d5db' },
 };
 
 function StatusPill({ status }) {
@@ -254,8 +283,36 @@ export default function InvoicePage() {
   const invoice = data.invoice || (data.invoices && data.invoices[0]) || null;
   const invoices = data.invoices || (data.invoice ? [data.invoice] : []);
 
+  // Bookings are never hard-deleted in this system (cancellation only sets
+  // status:'cancelled') — so `b` missing here means the invoice's bookingId
+  // doesn't resolve to a real booking, an orphaned-reference data problem,
+  // not a normal invoice state. Rendering the rest of this page from `b.xxx`
+  // would either crash or silently mix invoice-snapshot data with fabricated
+  // placeholders on a real tax document — surface it clearly instead.
+  if (!b) {
+    console.error(
+      `[InvoicePage] No booking found for invoice ${invoice?.invoiceNumber || invoiceNumber || ''} ` +
+      `(bookingId: ${invoice?.bookingId || bookingId || 'unknown'}). The booking record may have been removed.`
+    );
+    return (
+      <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center',
+                    background:'#f1f5f9', flexDirection:'column', gap:16, padding:24, textAlign:'center' }}>
+        <p style={{ color:'#b91c1c', fontWeight:600, fontSize:16, maxWidth:440 }}>
+          This invoice's booking details could not be loaded
+          {invoice?.invoiceNumber ? ` (Invoice #${invoice.invoiceNumber})` : ''}.
+          {invoice?.status === 'cancelled' ? ' This invoice is cancelled.' : ''} Please contact support.
+        </p>
+        <button onClick={() => navigate('/my-bookings')}
+          style={{ padding:'10px 24px', borderRadius:12, background:'#1B1F3B',
+                   color:'white', fontWeight:700, cursor:'pointer', border:'none' }}>
+          Back to My Bookings
+        </button>
+      </div>
+    );
+  }
+
   const pricing   = resolvePricing(invoice || b);
-  const pmtStatus = resolvePaymentStatus(b);
+  const pmtStatus = resolvePaymentStatus(invoice, b);
   const lineItems = buildLineItems(b, pricing);
   const subtotal  = lineItems.reduce((s, i) => s + i.amt, 0);
 
@@ -263,7 +320,9 @@ export default function InvoicePage() {
   const amtPaid         = invoice?.amountPaid      ?? b.amountPaid  ?? (pmtStatus === 'FULLY_PAID' ? pricing.grandTotal : 0);
   const previouslyPaid  = invoice?.previouslyPaid  ?? 0;
   const outstandingAfter = invoice?.outstandingAfter ?? b.remainingAmount ?? 0;
-  const isPartial       = outstandingAfter > 0;
+  // Cancelled orders never have a real balance still "due" — the service
+  // isn't happening — regardless of whatever remainingAmount was snapshotted.
+  const isPartial       = pmtStatus !== 'CANCELLED' && outstandingAfter > 0;
   const paymentTypeLabel = PMT_LABEL[invoice?.paymentType] || 'Payment Receipt';
   const displayInvNumber = invoice?.invoiceNumber || b.bookingNumber;
 
@@ -373,6 +432,11 @@ export default function InvoicePage() {
             </div>
             <div style={{ marginTop:18 }}>
               <StatusPill status={pmtStatus} />
+              {pmtStatus === 'CANCELLED' && (
+                <div style={{ marginTop:6, fontSize:11, color:'rgba(255,255,255,0.5)' }}>
+                  Payment: {cancelledPaymentNote(b)}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -716,6 +780,11 @@ export default function InvoicePage() {
             <div style={{ fontSize:11, color:'#9ca3af', marginBottom:6,
               textTransform:'uppercase', letterSpacing:0.8 }}>Payment Status</div>
             <StatusPill status={pmtStatus} />
+            {pmtStatus === 'CANCELLED' && (
+              <div style={{ marginTop:6, fontSize:11, color:'#9ca3af' }}>
+                Payment: {cancelledPaymentNote(b)}
+              </div>
+            )}
           </div>
         </div>
 
