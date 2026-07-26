@@ -12,7 +12,7 @@
  * never undefined, so {{path}} interpolation never renders "undefined"):
  *   {
  *     customer: { userId, name, phone, email, address },
- *     booking:  { id, number, date, time, amount, status, language },
+ *     booking:  { id, number, date, time, amount, remainingAmount, status, language },
  *     payment:  { amount, method, transactionId, status },
  *     order:    { id, number, total, status },
  *     pandit:   { userId, name, phone, email },
@@ -140,6 +140,13 @@ function normalizeBookingPayload({ booking, user, pandit, poojaName, payment, re
   const u = toPlain(user);
   const p = toPlain(pandit);
 
+  // Remaining balance is always derived here — Grand Total minus Total Paid
+  // — rather than trusted from the mutable booking.remainingAmount DB field
+  // or left for a template to compute. Single source of truth for every
+  // channel/template that needs it.
+  const amount     = b.grandTotal ?? b.amount ?? 0;
+  const paidAmount = payment?.amount ?? b.amountPaid ?? 0;
+
   return withLegacyAliases({
     customer: customerFromBooking(b, u),
     booking: {
@@ -147,13 +154,14 @@ function normalizeBookingPayload({ booking, user, pandit, poojaName, payment, re
       number:   b.bookingNumber || '',
       date:     b.scheduledDate || null,
       time:     b.scheduledTime || '',
-      amount:   b.grandTotal ?? b.amount ?? 0,
+      amount,
+      remainingAmount: Math.max(0, amount - paidAmount),
       status:   b.status || '',
       language: b.language || '',
       poojaName: poojaName || '',
     },
     payment: {
-      amount:        payment?.amount ?? b.amountPaid ?? 0,
+      amount:        paidAmount,
       method:        payment?.method || b.paymentProvider || '',
       transactionId: payment?.transactionId || b.phonePeTransactionId || b.razorpayPaymentId || '',
       status:        payment?.status || b.paymentStatus || '',
@@ -183,7 +191,7 @@ function normalizeOrderPayload({ order, user, shipment, reason, otp } = {}) {
 
   return withLegacyAliases({
     customer: customerFromOrder(o, u),
-    booking: { id: '', number: '', date: null, time: '', amount: 0, status: '', language: '', poojaName: '' },
+    booking: { id: '', number: '', date: null, time: '', amount: 0, remainingAmount: 0, status: '', language: '', poojaName: '' },
     payment: { amount: o.totalAmount ?? 0, method: o.paymentProvider || '', transactionId: '', status: o.status || '' },
     order: {
       id:     String(o._id || ''),
@@ -210,7 +218,7 @@ function normalizePanditPayload({ pandit, user, reason, amount, batchId, booking
 
   return withLegacyAliases({
     customer: customerFromUser(u),
-    booking: { id: '', number: '', date: null, time: '', amount: 0, status: '', language: '', poojaName: '' },
+    booking: { id: '', number: '', date: null, time: '', amount: 0, remainingAmount: 0, status: '', language: '', poojaName: '' },
     payment: { amount: amount ?? 0, method: '', transactionId: '', status: '' },
     order: { id: '', number: '', total: 0, status: '' },
     pandit: { ...pandItInfo(p), reason: reason || '', batchId: batchId || '', bookingCount: bookingCount || 0 },
@@ -232,7 +240,7 @@ function normalizePoojaRequestPayload({ request, pandit } = {}) {
 
   return withLegacyAliases({
     customer: emptyCustomer(),
-    booking: { id: '', number: '', date: null, time: '', amount: 0, status: '', language: '', poojaName: '' },
+    booking: { id: '', number: '', date: null, time: '', amount: 0, remainingAmount: 0, status: '', language: '', poojaName: '' },
     payment: { amount: 0, method: '', transactionId: '', status: '' },
     order: { id: '', number: '', total: 0, status: '' },
     pandit: pandItInfo(p),
@@ -257,7 +265,7 @@ function normalizeUserPayload({ user, otp, reason, scheduledDate, requestedDate 
   const u = toPlain(user) || {};
   return withLegacyAliases({
     customer: customerFromUser(u),
-    booking: { id: '', number: '', date: null, time: '', amount: 0, status: '', language: '', poojaName: '' },
+    booking: { id: '', number: '', date: null, time: '', amount: 0, remainingAmount: 0, status: '', language: '', poojaName: '' },
     payment: { amount: 0, method: '', transactionId: '', status: '' },
     order: { id: '', number: '', total: 0, status: '' },
     pandit: { name: '', phone: '', email: '' },

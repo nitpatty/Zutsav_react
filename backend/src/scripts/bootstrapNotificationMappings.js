@@ -44,11 +44,18 @@
  *          this mapping (whether or not it matches the reference data
  *          exactly — it may be a deliberate customization) and bootstrap
  *          never overwrites that without being asked to.
- *   - One named exception: SERVICE_COMPLETION_OTP is additionally checked
- *     for the specific known-wrong legacy template ("puja_completed",
- *     see fixWhatsappVariableMappings.js's own history) and corrected to
- *     "whatsapp_verification" even if variables are already set, since
- *     that's a known bug fix, not a variable-completion case.
+ *   - Named exceptions (corrected even when variables are already set,
+ *     since these are known bug fixes, not variable-completion cases):
+ *       - SERVICE_COMPLETION_OTP: known-wrong legacy template
+ *         ("puja_completed", see fixWhatsappVariableMappings.js's own
+ *         history) corrected to "whatsapp_verification".
+ *       - PARTIAL_PAYMENT_RECEIVED: known-wrong legacy variable mapping
+ *         (position 3 pointed at booking.amount/"Booking total" instead of
+ *         booking.remainingAmount — see the 2026-07-26 "Remaining balance
+ *         shows booking total" investigation) corrected to the verified
+ *         mapping below. Only this exact known-wrong signature is
+ *         corrected; any other mismatch is still treated as a deliberate
+ *         admin customization and preserved.
  *
  * REPORT: after every run, writes docs/notification-bootstrap-report.md —
  * what was created, what was filled in, what was left alone, and (reusing
@@ -109,7 +116,7 @@ const VERIFIED_MAPPINGS = [
     whatsappVariables: withPositions([v('customer.name', 'Customer name'), v('booking.number', 'Booking number'), v('payment.amount', 'Amount paid')]) },
   { eventName: 'PARTIAL_PAYMENT_RECEIVED', recipientType: 'user', enabled: true,
     whatsappTemplateName: 'partial_payment_received',
-    whatsappVariables: withPositions([v('customer.name', 'Customer name'), v('payment.amount', 'Amount paid'), v('booking.amount', 'Booking total')]) },
+    whatsappVariables: withPositions([v('customer.name', 'Customer name'), v('payment.amount', 'Amount paid'), v('booking.remainingAmount', 'Remaining balance')]) },
   { eventName: 'FINAL_PAYMENT_RECEIVED', recipientType: 'user', enabled: true,
     whatsappTemplateName: 'final_payment_received',
     whatsappVariables: withPositions([v('customer.name', 'Customer name'), v('payment.amount', 'Amount paid'), v('booking.amount', 'Booking total')]) },
@@ -210,6 +217,17 @@ const VERIFIED_MAPPINGS = [
 
 const sameVariables = (a, b) => JSON.stringify(a || []) === JSON.stringify(b);
 
+// Known-wrong legacy variable set for PARTIAL_PAYMENT_RECEIVED (see the
+// 2026-07-26 "Remaining balance shows booking total" investigation): the
+// WhatsApp template body reads "...Remaining balance: ₹{{3}}" but position 3
+// was mapped to booking.amount (the grand total) instead of the newly added
+// booking.remainingAmount. Databases already bootstrapped before this fix
+// carry this exact wrong mapping and need it corrected, same as the
+// SERVICE_COMPLETION_OTP legacy-template exception below.
+const LEGACY_WRONG_PARTIAL_PAYMENT_VARIABLES = withPositions([
+  v('customer.name', 'Customer name'), v('payment.amount', 'Amount paid'), v('booking.amount', 'Booking total'),
+]);
+
 /** Applies one VERIFIED_MAPPINGS entry to the database. Never overwrites an
  * already-configured mapping except the one named SERVICE_COMPLETION_OTP
  * legacy-template exception. Returns a result record for the report. */
@@ -243,6 +261,17 @@ async function applyEntry(entry) {
     return { entry, action: 'corrected-legacy-template', id: existing._id };
   }
 
+  // Named exception: known-wrong "remaining balance shows total" mapping,
+  // corrected regardless of whether variables are already set (see
+  // LEGACY_WRONG_PARTIAL_PAYMENT_VARIABLES above for the incident this
+  // traces back to). A mismatch that ISN'T this exact known-wrong signature
+  // is still treated as a deliberate admin customization and preserved.
+  if (entry.eventName === 'PARTIAL_PAYMENT_RECEIVED'
+    && sameVariables(existing.whatsappVariables, LEGACY_WRONG_PARTIAL_PAYMENT_VARIABLES)) {
+    await NotificationMapping.updateOne({ _id: existing._id }, { $set: bootstrapFields });
+    return { entry, action: 'corrected-legacy-mapping', id: existing._id };
+  }
+
   if ((existing.whatsappVariables || []).length === 0) {
     await NotificationMapping.updateOne({ _id: existing._id }, { $set: bootstrapFields });
     return { entry, action: 'configured', id: existing._id };
@@ -258,6 +287,7 @@ function buildReportMarkdown(results, validation) {
   const created = by('created');
   const configured = by('configured');
   const corrected = by('corrected-legacy-template');
+  const correctedMapping = by('corrected-legacy-mapping');
   const alreadyCorrect = by('already-correct');
   const preservedCustom = by('preserved-custom');
 
@@ -276,6 +306,7 @@ Database: ${mongoose.connection.name} @ ${mongoose.connection.host}
 | Created (mapping didn't exist) | ${created.length} |
 | Configured (existed, was blank) | ${configured.length} |
 | Corrected (known-wrong legacy template) | ${corrected.length} |
+| Corrected (known-wrong legacy variable mapping) | ${correctedMapping.length} |
 | Already correct (matches reference exactly) | ${alreadyCorrect.length} |
 | Preserved (existing custom configuration, untouched) | ${preservedCustom.length} |
 | **Total verified mappings processed** | **${results.length}** |
@@ -288,6 +319,9 @@ ${configured.length ? configured.map(line).join('\n') : '_none_'}
 
 ## Corrected (legacy wrong template repointed)
 ${corrected.length ? corrected.map(line).join('\n') : '_none_'}
+
+## Corrected (legacy wrong variable mapping repointed)
+${correctedMapping.length ? correctedMapping.map(line).join('\n') : '_none_'}
 
 ## Preserved — existing administrator customization left untouched
 ${preservedCustom.length ? preservedCustom.map(line).join('\n') : '_none_'}
@@ -326,6 +360,7 @@ This report is regenerated every time \`bootstrapNotificationMappings.js\` runs 
   console.log(`Created:                 ${stats['created'] || 0}`);
   console.log(`Configured:              ${stats['configured'] || 0}`);
   console.log(`Corrected (legacy):      ${stats['corrected-legacy-template'] || 0}`);
+  console.log(`Corrected (mapping):     ${stats['corrected-legacy-mapping'] || 0}`);
   console.log(`Already correct:         ${stats['already-correct'] || 0}`);
   console.log(`Preserved (customized):  ${stats['preserved-custom'] || 0}`);
 

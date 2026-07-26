@@ -26,7 +26,7 @@ const REQUIRED_VARIABLES = {
   PAYMENT_CREATED:           ['customer.name', 'payment.amount'],
   PAYMENT_SUCCESS:           ['customer.name', 'booking.number', 'payment.amount'],
   PAYMENT_FAILED:            ['customer.name', 'payment.amount'],
-  PARTIAL_PAYMENT_RECEIVED:  ['customer.name', 'payment.amount', 'booking.amount'],
+  PARTIAL_PAYMENT_RECEIVED:  ['customer.name', 'payment.amount', 'booking.remainingAmount'],
   FINAL_PAYMENT_RECEIVED:    ['customer.name', 'booking.amount'],
   REFUND_INITIATED:          ['customer.name', 'refund.amount'],
   REFUND_COMPLETED:          ['customer.name', 'refund.amount'],
