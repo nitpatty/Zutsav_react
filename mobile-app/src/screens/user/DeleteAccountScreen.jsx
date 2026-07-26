@@ -22,6 +22,7 @@ export default function DeleteAccountScreen({ navigation }) {
   const [showPwd,      setShowPwd]      = useState(false);
   const [otpChannel,   setOtpChannel]   = useState('email');
   const [otp,          setOtp]          = useState('');
+  const [otpId,        setOtpId]        = useState(''); // identifier used for OTP (email or phone), captured at send time
   const [loading,      setLoading]      = useState(false);
   const [scheduledDate, setScheduledDate] = useState(null);
 
@@ -45,6 +46,7 @@ export default function DeleteAccountScreen({ navigation }) {
     try {
       setLoading(true);
       await api.post('/auth/delete-account/send-otp', { channel: otpChannel });
+      setOtpId(otpChannel === 'email' ? user?.email : user?.phone);
       setStep('otp_verify');
       Toast.show({ type: 'success', text1: `OTP sent to your ${otpChannel}` });
     } catch (err) {
@@ -58,7 +60,7 @@ export default function DeleteAccountScreen({ navigation }) {
     if (otp.length < 6) { Toast.show({ type: 'error', text1: 'Enter 6-digit OTP' }); return; }
     try {
       setLoading(true);
-      await api.post('/auth/verify-otp', { phone: user?.phone, otp, purpose: 'account_deletion' });
+      await api.post('/auth/verify-otp', { identifier: otpId, otp, purpose: 'account_deletion' });
       setStep('confirm');
     } catch (err) {
       Toast.show({ type: 'error', text1: err.response?.data?.message || 'Invalid OTP' });
@@ -70,7 +72,7 @@ export default function DeleteAccountScreen({ navigation }) {
   const handleConfirmDeletion = async () => {
     try {
       setLoading(true);
-      const { data } = await api.post('/auth/delete-account/confirm');
+      const { data } = await api.post('/auth/delete-account/confirm', { channel: otpChannel });
       setScheduledDate(data.scheduledDeletionDate);
       Toast.show({ type: 'info', text1: 'Account scheduled for deletion' });
       setTimeout(() => logout(), 3000);

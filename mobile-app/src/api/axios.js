@@ -35,7 +35,13 @@ api.interceptors.response.use(
 export const imageUrl = (path) => {
   if (!path) return null;
   if (path.startsWith('http')) return path;
-  return `${urls.baseUrl}/${path}`;
+  // Strip any leading slash(es) — most upload endpoints return a bare
+  // `uploads/...` path, but a couple (e.g. pooja images) return one with a
+  // leading slash. Naively concatenating that onto baseUrl produces a
+  // double slash (`host//uploads/...`) that the static file server won't
+  // match, so the image silently fails to load. Mirrors the same guard in
+  // the web app's getImageUrl().
+  return `${urls.baseUrl}/${path.replace(/^\/+/, '')}`;
 };
 
 export default api;

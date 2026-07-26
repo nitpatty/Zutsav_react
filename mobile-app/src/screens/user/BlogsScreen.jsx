@@ -13,6 +13,21 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import EmptyState from '../../components/EmptyState';
 import ScreenHeader from '../../components/ScreenHeader';
 
+// Falls back to the placeholder box if the URL is missing OR if it fails to
+// actually load (404, host unreachable, etc.) — previously a load failure
+// just left a blank RN <Image> with no visible fallback.
+function BlogCoverImage({ uri, C }) {
+  const [failed, setFailed] = useState(false);
+  if (!uri || failed) {
+    return (
+      <View style={[styles.coverPlaceholder, { backgroundColor: C.primary + '15' }]}>
+        <Ionicons name="newspaper-outline" size={32} color={C.primary} />
+      </View>
+    );
+  }
+  return <Image source={{ uri }} style={styles.cover} resizeMode="cover" onError={() => setFailed(true)} />;
+}
+
 export default function BlogsScreen() {
   const navigation = useNavigation();
   const { theme } = useThemeStore();
@@ -60,13 +75,7 @@ export default function BlogsScreen() {
       onPress={() => navigation.navigate('BlogDetail', { slug: item.slug, blog: item })}
       activeOpacity={0.85}
     >
-      {item.featuredImage ? (
-        <Image source={{ uri: imageUrl(item.featuredImage) }} style={styles.cover} resizeMode="cover" />
-      ) : (
-        <View style={[styles.coverPlaceholder, { backgroundColor: C.primary + '15' }]}>
-          <Ionicons name="newspaper-outline" size={32} color={C.primary} />
-        </View>
-      )}
+      <BlogCoverImage uri={imageUrl(item.featuredImage)} C={C} />
       <View style={styles.cardContent}>
         {item.category?.name && (
           <View style={[styles.catChip, { backgroundColor: C.primary + '15' }]}>

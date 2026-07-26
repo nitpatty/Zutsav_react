@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Image,
-  TouchableOpacity, RefreshControl, TextInput, Share
+  TouchableOpacity, RefreshControl, TextInput, Share, Linking, useWindowDimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
+import RenderHtml from 'react-native-render-html';
 import api, { imageUrl } from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import { formatDate, timeAgo } from '../../utils/helpers';
@@ -15,10 +16,16 @@ export default function BlogDetailScreen({ route }) {
   const { slug, blog: blogParam } = route.params || {};
   const { theme } = useThemeStore();
   const C = theme.colors;
+  const { width: windowWidth } = useWindowDimensions();
 
   const [blog,       setBlog]       = useState(blogParam || null);
+  // A blog passed via navigation params is only the trimmed list-card
+  // payload (the /blogs list endpoint omits `content` for bandwidth), so it
+  // is never sufficient on its own — only skip the initial *spinner*, never
+  // the fetch itself. See fetchBlog() below.
   const [loading,    setLoading]    = useState(!blogParam);
   const [refreshing, setRefreshing] = useState(false);
+  const [coverFailed,setCoverFailed]= useState(false);
   const [comments,   setComments]   = useState([]);
   const [commLoading,setCommLoading]= useState(false);
   const [newComment, setNewComment] = useState('');
@@ -49,7 +56,11 @@ export default function BlogDetailScreen({ route }) {
   };
 
   useEffect(() => {
-    if (!blogParam && slug) fetchBlog();
+    // Always fetch the full blog (it's the only source of `content`) — if we
+    // already have a partial blog from the list card, do it silently so the
+    // screen shows that instantly instead of a spinner, then swaps in the
+    // full content once the request resolves.
+    if (slug) fetchBlog(!!blogParam);
   }, [slug]);
 
   useEffect(() => {
@@ -110,9 +121,18 @@ export default function BlogDetailScreen({ route }) {
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchBlog(true); }} tintColor={C.primary} />}
       >
-        {blog.featuredImage ? (
-          <Image source={{ uri: imageUrl(blog.featuredImage) }} style={styles.cover} resizeMode="cover" />
-        ) : null}
+        {blog.featuredImage && !coverFailed ? (
+          <Image
+            source={{ uri: imageUrl(blog.featuredImage) }}
+            style={styles.cover}
+            resizeMode="cover"
+            onError={() => setCoverFailed(true)}
+          />
+        ) : (
+          <View style={[styles.coverPlaceholder, { backgroundColor: C.primary + '15' }]}>
+            <Ionicons name="newspaper-outline" size={40} color={C.primary} />
+          </View>
+        )}
 
         <View style={{ padding: 20, gap: 12 }}>
           {blog.category && (
@@ -143,9 +163,38 @@ export default function BlogDetailScreen({ route }) {
             </View>
           )}
 
-          {/* Content (plain text rendering) */}
+          {/* Content — rendered from sanitized HTML (Tiptap output), matching
+              the website's typography as closely as RN allows. */}
           {blog.content ? (
-            <Text style={[styles.content, { color: C.text }]}>{blog.content}</Text>
+            <RenderHtml
+              contentWidth={windowWidth - 40}
+              source={{ html: blog.content }}
+              baseStyle={{ color: C.text, fontSize: 15.5, lineHeight: 26 }}
+              tagsStyles={{
+                p:          { marginTop: 0, marginBottom: 14 },
+                h1:         { color: C.text, fontSize: 24, fontWeight: '800', marginTop: 22, marginBottom: 12 },
+                h2:         { color: C.text, fontSize: 21, fontWeight: '800', marginTop: 20, marginBottom: 10 },
+                h3:         { color: C.text, fontSize: 18, fontWeight: '700', marginTop: 18, marginBottom: 8 },
+                h4:         { color: C.text, fontSize: 16, fontWeight: '700', marginTop: 16, marginBottom: 8 },
+                strong:     { fontWeight: '800' },
+                b:          { fontWeight: '800' },
+                em:         { fontStyle: 'italic' },
+                i:          { fontStyle: 'italic' },
+                a:          { color: C.primary, textDecorationLine: 'underline' },
+                blockquote: {
+                  marginLeft: 0, marginRight: 0, marginVertical: 12,
+                  paddingLeft: 14, paddingVertical: 4,
+                  borderLeftWidth: 3, borderLeftColor: C.primary,
+                  color: C.textSecondary, fontStyle: 'italic',
+                },
+                ul:         { marginVertical: 8 },
+                ol:         { marginVertical: 8 },
+                li:         { marginBottom: 6 },
+                img:        { borderRadius: 12, marginVertical: 12 },
+              }}
+              renderersProps={{ img: { enableExperimentalPercentWidth: true } }}
+              onLinkPress={(_, href) => href && Linking.openURL(href).catch(() => {})}
+            />
           ) : null}
 
           {/* Like / Bookmark / Share */}
@@ -230,6 +279,7 @@ export default function BlogDetailScreen({ route }) {
 const styles = StyleSheet.create({
   root:           { flex: 1 },
   cover:          { width: '100%', height: 240 },
+  coverPlaceholder: { width: '100%', height: 240, justifyContent: 'center', alignItems: 'center' },
   catChip:        { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
   catText:        { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   title:          { fontSize: 22, fontWeight: '900', lineHeight: 30 },
@@ -238,7 +288,6 @@ const styles = StyleSheet.create({
   tags:           { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tagChip:        { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 16 },
   tagText:        { fontSize: 12 },
-  content:        { fontSize: 15, lineHeight: 26 },
   actionsRow:     { flexDirection: 'row', gap: 10 },
   actionBtn:      { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
   actionBtnText:  { fontSize: 13, fontWeight: '600' },

@@ -13,6 +13,7 @@ import { calculatePrice, roundToPaise } from '../../utils/priceEngine';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import AddressPicker from '../../components/shared/AddressPicker';
+import KitItemsSheet from '../../components/shared/KitItemsSheet';
 
 // ── Time slots (same as website) — full day, 30-minute steps, midnight to midnight ──
 const TIME_SLOTS = [
@@ -153,6 +154,7 @@ export default function BookingFlowScreen({ navigation, route }) {
   // Kits
   const [kits,        setKits]        = useState([]);
   const [kitsLoading, setKitsLoading] = useState(false);
+  const [viewItemsKit, setViewItemsKit] = useState(null); // kit currently shown in the "View Items" sheet
 
   // Booking choices
   const [isUrgent,  setIsUrgent]  = useState(false);
@@ -382,13 +384,24 @@ export default function BookingFlowScreen({ navigation, route }) {
               )}
 
               <View style={[styles.priceRow, { borderTopColor: C.border }]}>
-                <View>
-                  <Text style={[styles.priceLabel, { color: C.textSecondary }]}>Starting from</Text>
-                  <Text style={[styles.priceAmount, { color: C.primary }]}>{formatCurrency(poojaPrice)}</Text>
-                  <Text style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }}>Platform fee & taxes shown at checkout</Text>
+                <View style={styles.priceBlock}>
+                  <Text style={[styles.priceLabel, { color: C.textSecondary }]} numberOfLines={1}>Starting from</Text>
+                  <Text
+                    style={[styles.priceAmount, { color: C.primaryDark || C.primary }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.6}
+                  >
+                    {formatCurrency(poojaPrice)}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }} numberOfLines={2}>Platform fee & taxes shown at checkout</Text>
                 </View>
-                <TouchableOpacity style={[styles.bookNowBtn, { backgroundColor: C.primary }]} onPress={goNext} activeOpacity={0.85}>
-                  <Text style={styles.bookNowText}>Book Now</Text>
+                <TouchableOpacity
+                  style={[styles.bookNowBtn, { backgroundColor: C.primaryDark || C.primary, shadowColor: C.primaryDark || C.primary }]}
+                  onPress={goNext}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.bookNowText} numberOfLines={1}>Book Now</Text>
                   <Ionicons name="arrow-forward" size={16} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -461,9 +474,20 @@ export default function BookingFlowScreen({ navigation, route }) {
                   </View>
                   {kitId === kit._id && <Ionicons name="checkmark-circle" size={22} color={C.primary} />}
                 </View>
+                <View style={[styles.kitCardFooter, { borderTopColor: C.border }]}>
+                  <TouchableOpacity
+                    style={styles.viewItemsBtn}
+                    onPress={() => setViewItemsKit(kit)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="eye-outline" size={14} color={C.info || '#2563EB'} />
+                    <Text style={[styles.viewItemsText, { color: C.info || '#2563EB' }]}>View Items</Text>
+                  </TouchableOpacity>
+                </View>
               </TouchableOpacity>
             ))}
             {!kitId && <Text style={{ color: '#DC2626', fontSize: 12 }}>Please select a kit to continue</Text>}
+            <KitItemsSheet visible={!!viewItemsKit} kit={viewItemsKit} onClose={() => setViewItemsKit(null)} />
             <NavRow onBack={goBack} onNext={() => { if (!kitId) { Toast.show({ type: 'error', text1: 'Please select a kit' }); return; } goNext(); }} C={C} />
           </View>
         )}
@@ -627,26 +651,36 @@ export default function BookingFlowScreen({ navigation, route }) {
 
             {/* Payment option */}
             {partialConfig.enabled && (
-              <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
+              <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border, padding: 16 }]}>
                 <Text style={[styles.cardTitle, { color: C.text }]}>Payment Option</Text>
-                <View style={{ gap: 10, marginTop: 10 }}>
+                <View style={{ gap: 10, marginTop: 12 }}>
                   <TouchableOpacity
-                    style={[styles.payModeRow, { borderColor: paymentMode === 'FULL' ? C.primary : C.border, backgroundColor: paymentMode === 'FULL' ? C.primary + '10' : C.surface }]}
+                    style={[
+                      styles.payModeRow,
+                      { borderColor: paymentMode === 'FULL' ? C.primaryDark || C.primary : C.border,
+                        backgroundColor: paymentMode === 'FULL' ? (C.primary + '14') : (C.card || C.background) },
+                      paymentMode === 'FULL' && styles.payModeRowSelected,
+                    ]}
                     onPress={() => setPaymentMode('FULL')}
                     activeOpacity={0.85}
                   >
-                    <View style={[styles.radioCircle, { borderColor: paymentMode === 'FULL' ? C.primary : C.border }]}>
-                      {paymentMode === 'FULL' && <View style={[styles.radioDot, { backgroundColor: C.primary }]} />}
+                    <View style={[styles.radioCircle, { borderColor: paymentMode === 'FULL' ? C.primaryDark || C.primary : C.textLight || C.border }]}>
+                      {paymentMode === 'FULL' && <View style={[styles.radioDot, { backgroundColor: C.primaryDark || C.primary }]} />}
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.payModeTitle, { color: C.text }]}>Pay Full Amount</Text>
                       <Text style={[styles.payModeSub, { color: C.textSecondary }]}>Pay {formatCurrency(pricing.grandTotal)} now · No pending balance</Text>
                     </View>
-                    <Text style={[styles.payModeAmt, { color: C.primary }]}>{formatCurrency(pricing.grandTotal)}</Text>
+                    <Text style={[styles.payModeAmt, { color: C.primaryDark || C.primary }]}>{formatCurrency(pricing.grandTotal)}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.payModeRow, { borderColor: paymentMode === 'PARTIAL' ? '#D97706' : C.border, backgroundColor: paymentMode === 'PARTIAL' ? '#FEF3C720' : C.surface }]}
+                    style={[
+                      styles.payModeRow,
+                      { borderColor: paymentMode === 'PARTIAL' ? '#D97706' : C.border,
+                        backgroundColor: paymentMode === 'PARTIAL' ? '#FEF3C720' : (C.card || C.background) },
+                      paymentMode === 'PARTIAL' && styles.payModeRowSelected,
+                    ]}
                     onPress={() => {
                       setPaymentMode('PARTIAL');
                       const opts = partialConfig.mode === 'percentage'
@@ -656,7 +690,7 @@ export default function BookingFlowScreen({ navigation, route }) {
                     }}
                     activeOpacity={0.85}
                   >
-                    <View style={[styles.radioCircle, { borderColor: paymentMode === 'PARTIAL' ? '#D97706' : C.border }]}>
+                    <View style={[styles.radioCircle, { borderColor: paymentMode === 'PARTIAL' ? '#D97706' : C.textLight || C.border }]}>
                       {paymentMode === 'PARTIAL' && <View style={[styles.radioDot, { backgroundColor: '#D97706' }]} />}
                     </View>
                     <View style={{ flex: 1 }}>
@@ -742,7 +776,7 @@ export default function BookingFlowScreen({ navigation, route }) {
 
             {/* Pay button */}
             <TouchableOpacity
-              style={[styles.payBtn, { backgroundColor: C.primary }]}
+              style={[styles.payBtn, { backgroundColor: C.primaryDark || C.primary, shadowColor: C.primaryDark || C.primary }]}
               onPress={handleSubmit}
               disabled={submitting}
               activeOpacity={0.85}
@@ -873,10 +907,18 @@ const styles = StyleSheet.create({
   bulletRow:      { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   bullet:         { width: 6, height: 6, borderRadius: 3, marginTop: 5 },
   bulletText:     { flex: 1, fontSize: 12, lineHeight: 18 },
-  priceRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, paddingTop: 12, marginTop: 4 },
+  // `flexWrap: 'wrap'` is the safety net: if the price block and button still
+  // can't both fit at their natural size on a very narrow device, the button
+  // reflows onto its own line instead of being pushed past the card edge —
+  // Yoga (RN's layout engine) defaults flexShrink to 0 on both children
+  // (unlike web flexbox's default of 1), so without an explicit shrink/wrap
+  // strategy neither child ever yields, and the button gets clipped by the
+  // parent card's `overflow: hidden`.
+  priceRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, borderTopWidth: 1, paddingTop: 12, marginTop: 4 },
+  priceBlock:     { flexGrow: 1, flexShrink: 1, minWidth: 0 },
   priceLabel:     { fontSize: 11 },
   priceAmount:    { fontSize: 28, fontWeight: '800', fontStyle: 'italic' },
-  bookNowBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14 },
+  bookNowBtn:     { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 14, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 4 },
   bookNowText:    { color: '#fff', fontWeight: '700', fontSize: 15 },
   stepHeaderRow:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stepHeaderIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#FEF3C7', justifyContent: 'center', alignItems: 'center' },
@@ -906,6 +948,9 @@ const styles = StyleSheet.create({
   kitName:        { fontSize: 14, fontWeight: '700' },
   kitDesc:        { fontSize: 12, lineHeight: 16 },
   kitPrice:       { fontSize: 15, fontWeight: '800' },
+  kitCardFooter:  { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingTop: 10 },
+  viewItemsBtn:   { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start' },
+  viewItemsText:  { fontSize: 12, fontWeight: '700' },
   calendar:       { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   calHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   calMonth:       { fontSize: 14, fontWeight: '700' },
@@ -921,8 +966,8 @@ const styles = StyleSheet.create({
   timeSlotText:   { fontSize: 12, fontWeight: '600', textAlign: 'center' },
   langRow:        { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 2, borderRadius: 14, padding: 14 },
   langText:       { fontSize: 15, fontWeight: '600' },
-  radioCircle:    { width: 20, height: 20, borderRadius: 10, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
-  radioDot:       { width: 10, height: 10, borderRadius: 5 },
+  radioCircle:    { width: 22, height: 22, borderRadius: 11, borderWidth: 2.5, justifyContent: 'center', alignItems: 'center' },
+  radioDot:       { width: 11, height: 11, borderRadius: 6 },
   fieldRow:       { flexDirection: 'row', gap: 10 },
   fieldLabel:     { fontSize: 12, fontWeight: '600', marginBottom: 4 },
   input:          { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
@@ -956,7 +1001,8 @@ const styles = StyleSheet.create({
   },
   pbTotalLabel:  { fontSize: 15.5, fontWeight: '800' },
   pbTotalAmount: { fontSize: 27, fontWeight: '800', fontStyle: 'italic' },
-  payModeRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 2, borderRadius: 14, padding: 12 },
+  payModeRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1.5, borderRadius: 14, padding: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
+  payModeRowSelected: { borderWidth: 2, shadowOpacity: 0.12, shadowRadius: 6, elevation: 2 },
   payModeTitle:   { fontSize: 14, fontWeight: '700' },
   payModeSub:     { fontSize: 11, marginTop: 2 },
   payModeAmt:     { fontSize: 14, fontWeight: '800' },
@@ -964,7 +1010,7 @@ const styles = StyleSheet.create({
   partialSummary: { borderRadius: 12, borderWidth: 1, padding: 12, gap: 6 },
   trustRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1, padding: 12 },
   trustText:      { fontSize: 12, color: '#3B82F6', flex: 1 },
-  payBtn:         { borderRadius: 16, paddingVertical: 16, alignItems: 'center' },
+  payBtn:         { borderRadius: 16, paddingVertical: 16, alignItems: 'center', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4 },
   payBtnText:     { color: '#fff', fontSize: 16, fontWeight: '800' },
   backBtnAlt:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: 14, paddingVertical: 13 },
   backBtnAltText: { fontWeight: '600', fontSize: 14 },
