@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MapPin, Loader } from 'lucide-react';
-import { thirdParty } from '../../config';
+import { geocodeLocation, reverseGeocodeLocation } from '../../services/geocodingService';
 
 // Leaflet is loaded dynamically to avoid SSR issues and to inject CSS
 let L = null;
@@ -40,6 +40,9 @@ const loadLeaflet = () => {
 
 /**
  * MapPicker — Leaflet-based OpenStreetMap with a draggable pin.
+ * Geocoding (forward + reverse) is handled entirely by
+ * ../../services/geocodingService — this component only renders the map
+ * and reports the coordinates the user ends up with.
  *
  * Props:
  *   lat, lng            — initial coordinates (default: India center)
@@ -52,7 +55,6 @@ export default function MapPicker({ lat = 20.5937, lng = 78.9629, onPinMove, hei
   const mapRef       = useRef(null);
   const markerRef    = useRef(null);
   const [ready, setReady]     = useState(false);
-  const [resolving, setResolving] = useState(false);
 
   useEffect(() => {
     loadLeaflet().then(() => setReady(true));
@@ -78,14 +80,14 @@ export default function MapPicker({ lat = 20.5937, lng = 78.9629, onPinMove, hei
     if (!readOnly) {
       marker.on('dragend', async () => {
         const pos = marker.getLatLng();
-        const address = await reverseGeocode(pos.lat, pos.lng);
-        onPinMove && onPinMove(pos.lat, pos.lng, address);
+        const { displayName } = await reverseGeocodeLocation(pos.lat, pos.lng);
+        onPinMove && onPinMove(pos.lat, pos.lng, displayName);
       });
 
       map.on('click', async (e) => {
         marker.setLatLng(e.latlng);
-        const address = await reverseGeocode(e.latlng.lat, e.latlng.lng);
-        onPinMove && onPinMove(e.latlng.lat, e.latlng.lng, address);
+        const { displayName } = await reverseGeocodeLocation(e.latlng.lat, e.latlng.lng);
+        onPinMove && onPinMove(e.latlng.lat, e.latlng.lng, displayName);
       });
     }
 
@@ -93,7 +95,7 @@ export default function MapPicker({ lat = 20.5937, lng = 78.9629, onPinMove, hei
     markerRef.current = marker;
   }, [ready]);
 
-  // Update marker position when lat/lng props change externally (e.g. pincode lookup)
+  // Update marker position when lat/lng props change externally (e.g. address/pincode lookup)
   useEffect(() => {
     if (!mapRef.current || !markerRef.current) return;
     if (!lat || !lng) return;
@@ -130,38 +132,13 @@ export default function MapPicker({ lat = 20.5937, lng = 78.9629, onPinMove, hei
   );
 }
 
-async function reverseGeocode(lat, lng) {
-  try {
-    const res = await fetch(
-      `${thirdParty.nominatimApiUrl}/reverse?format=json&lat=${lat}&lon=${lng}`,
-      { headers: { 'Accept-Language': 'en' } }
-    );
-    const data = await res.json();
-    return data.display_name || '';
-  } catch {
-    return '';
-  }
-}
-
 /**
- * Forward geocode: convert address text into coordinates using Nominatim.
- * Returns { lat, lng, found: true } on success or { found: false } on failure.
+ * Backward-compatible wrapper around geocodingService.geocodeLocation() —
+ * kept so existing callers (e.g. PanditMyProfile.jsx) that import
+ * `forwardGeocode(address, city, state, pincode)` and read `{found, lat, lng}`
+ * keep working unmodified. New callers should prefer geocodeLocation()
+ * directly (richer result: displayName, boundingBox, cancellation support).
  */
 export async function forwardGeocode(address, city, state, pincode) {
-  try {
-    const parts = [address, city, state, pincode, 'India'].filter(Boolean);
-    if (!parts.length) return { found: false };
-    const q = encodeURIComponent(parts.join(', '));
-    const res = await fetch(
-      `${thirdParty.nominatimApiUrl}/search?q=${q}&format=json&limit=1&countrycodes=in`,
-      { headers: { 'Accept-Language': 'en' } }
-    );
-    const data = await res.json();
-    if (data.length > 0) {
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), found: true };
-    }
-    return { found: false };
-  } catch {
-    return { found: false };
-  }
+  return geocodeLocation({ address, city, state, pincode });
 }

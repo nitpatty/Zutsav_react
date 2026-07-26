@@ -12,7 +12,8 @@ import API from '../api/axios';
 import { roundToPaise } from '../utils/priceEngine';
 import { useAuth } from '../context/AuthContext';
 import ProfilePhoto from '../components/shared/ProfilePhoto';
-import MapPicker, { forwardGeocode } from '../components/shared/MapPicker';
+import MapPicker from '../components/shared/MapPicker';
+import { geocodeLocation } from '../services/geocodingService';
 import PincodeInput from '../components/shared/PincodeInput';
 import { getImageUrl, handleImageError, thirdParty, company } from '../config';
 import RichTextEditor from '../components/editor/RichTextEditor';
@@ -7154,7 +7155,9 @@ function TemplesTab() {
   const [view,    setView]    = useState('list'); // 'list' | 'add' | 'edit'
   const [saving,  setSaving]  = useState(false);
   const [geoStatus, setGeoStatus] = useState('idle'); // 'idle' | 'loading' | 'notfound'
+  const [geoDisplayName, setGeoDisplayName] = useState(''); // Nominatim display_name of the last resolved location
   const geocodeTimerRef   = useRef(null);
+  const geocodeAbortRef   = useRef(null);
   const userChangedFormRef = useRef(false);
 
   // ── Detail / delete modal state ─────────────────────────────
@@ -7200,53 +7203,65 @@ function TemplesTab() {
     }).catch(() => {});
   }, []);
 
-  // Debounced forward geocoding when address/city/state fields change
+  // Unified debounced geocoding — fires whenever address, city, state, or
+  // PIN code changes (temple Name is also used inside the search-priority
+  // cascade, see geocodingService.buildQueryTiers, but editing the name
+  // alone doesn't re-trigger a lookup — it's read fresh at call time via
+  // closure). geocodeLocation() runs the full India-first priority cascade
+  // (full address+city+state+PIN → address+city+state → temple name+city+
+  // state → city+state → PIN fallback) — this effect just fires it once,
+  // debounced, per edit, and cancels any still-in-flight request before
+  // starting a new one so an older, slower lookup can never clobber a newer
+  // result (see request cancellation via AbortController below).
   useEffect(() => {
     if (!userChangedFormRef.current) return;
-    const hasContent = form.address || form.city || form.state;
+    const hasContent = form.address || form.city || form.state || form.pincode;
     if (!hasContent) return;
 
     if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
     setGeoStatus('loading');
 
     geocodeTimerRef.current = setTimeout(async () => {
-      const result = await forwardGeocode(form.address, form.city, form.state, form.pincode);
+      const controller = new AbortController();
+      geocodeAbortRef.current = controller;
+      const result = await geocodeLocation(
+        { address: form.address, city: form.city, state: form.state, pincode: form.pincode, name: form.name },
+        { signal: controller.signal }
+      );
+      if (result.aborted) return; // superseded by a newer edit — ignore
       if (result.found) {
         setMapCoords({ lat: result.lat, lng: result.lng });
+        setGeoDisplayName(result.displayName || '');
         setGeoStatus('idle');
       } else {
+        setGeoDisplayName('');
         setGeoStatus('notfound');
-        setTimeout(() => setGeoStatus((prev) => prev === 'notfound' ? 'idle' : prev), 3000);
+        setTimeout(() => setGeoStatus((prev) => prev === 'notfound' ? 'idle' : prev), 4000);
       }
-    }, 900);
-  }, [form.address, form.city, form.state]);
-
-  // When pincode auto-fills city/state, geocode immediately
-  const handlePincodeFill = useCallback(({ state, city }) => {
-    if (!city && !state) return;
-    userChangedFormRef.current = true;
-    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
-    setGeoStatus('loading');
-    forwardGeocode('', city, state, '').then((result) => {
-      if (result.found) {
-        setMapCoords({ lat: result.lat, lng: result.lng });
-        setGeoStatus('idle');
-      } else {
-        setGeoStatus('notfound');
-        setTimeout(() => setGeoStatus((prev) => prev === 'notfound' ? 'idle' : prev), 3000);
-      }
-    });
-  }, []);
+    }, 700);
+  }, [form.address, form.city, form.state, form.pincode]);
 
   const handleFormChange = useCallback((field) => (e) => {
     userChangedFormRef.current = true;
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
   }, []);
 
-  const handlePinMove = useCallback((lat, lng, address) => {
+  const handlePinMove = useCallback((lat, lng, displayName) => {
+    // Manual placement is authoritative and final — cancel any in-flight/
+    // pending automatic geocode so a stale lookup can never overwrite it,
+    // and don't re-arm auto-geocode until the user performs another search.
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
+    setGeoStatus('idle');
     setMapCoords({ lat, lng });
-    if (address) {
-      setForm((prev) => ({ ...prev, address: address.split(',').slice(0, 3).join(',').trim() }));
+    setGeoDisplayName(displayName || '');
+    if (displayName) {
+      // Reverse-geocoded text describing where the pin now sits — not a
+      // fresh user edit, so it must NOT re-trigger a forward geocode (that
+      // could nudge the marker away from the exact spot just chosen).
+      userChangedFormRef.current = false;
+      setForm((prev) => ({ ...prev, address: displayName.split(',').slice(0, 3).join(',').trim() }));
     }
   }, []);
 
@@ -7260,6 +7275,7 @@ function TemplesTab() {
     setNewImages([]);
     setStatus('draft');
     setGeoStatus('idle');
+    setGeoDisplayName('');
     userChangedFormRef.current = false;
   };
 
@@ -7279,6 +7295,7 @@ function TemplesTab() {
     setNewImages([]);
     setStatus(t.status || 'published');
     setGeoStatus('idle');
+    setGeoDisplayName('');
     userChangedFormRef.current = false;
     setDetailTemple(null);
     setView('edit');
@@ -7402,8 +7419,12 @@ function TemplesTab() {
                     value={form.pincode}
                     onChange={(v) => { userChangedFormRef.current = true; setForm((p) => ({ ...p, pincode: v })); }}
                     onFill={({ state, city }) => {
+                      // Just update the fields — the unified debounced effect
+                      // above already watches form.pincode/city/state and will
+                      // fire the geocode itself. A separate immediate call here
+                      // would just duplicate that request.
+                      userChangedFormRef.current = true;
                       setForm((p) => ({ ...p, state, city }));
-                      handlePincodeFill({ state, city });
                     }}
                   />
                 </div>
@@ -7433,7 +7454,12 @@ function TemplesTab() {
                 )}
                 {geoStatus === 'notfound' && (
                   <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-xl">
-                    Nearby location shown — enter more details for a precise pin.
+                    Unable to locate the address automatically. Please drag the map marker to the correct location.
+                  </div>
+                )}
+                {geoStatus === 'idle' && geoDisplayName && (
+                  <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 px-3 py-2 rounded-xl truncate" title={geoDisplayName}>
+                    📍 Located: {geoDisplayName}
                   </div>
                 )}
                 <p className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
