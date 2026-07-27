@@ -12,6 +12,8 @@ import { formatCurrency } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import EmptyState from '../../components/EmptyState';
 import ScreenHeader from '../../components/ScreenHeader';
+import ExpandableText from '../../components/shared/ExpandableText';
+import { stripHtml } from '../../utils/htmlToText';
 
 export default function PoojaListScreen() {
   const navigation = useNavigation();
@@ -71,7 +73,12 @@ export default function PoojaListScreen() {
       <View style={styles.info}>
         <Text style={[styles.name, { color: C.text }]} numberOfLines={2}>{item.name}</Text>
         {item.description && (
-          <Text style={[styles.desc, { color: C.textSecondary }]} numberOfLines={2}>{item.description}</Text>
+          <ExpandableText
+            text={stripHtml(item.description)}
+            style={[styles.desc, { color: C.textSecondary }]}
+            numberOfLines={3}
+            toggleColor={C.primary}
+          />
         )}
         <View style={styles.bottom}>
           <Text style={[styles.price, { color: C.primary }]}>{formatCurrency(item.salePrice || item.price || 0)}</Text>
