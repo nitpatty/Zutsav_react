@@ -70,8 +70,9 @@ const notificationMappingSchema = new mongoose.Schema(
     translationVersion: { type: Number, default: 1 },
 
     // ── Bootstrap provenance (optional) ─────────────────────────────────
-    // Set only when this mapping's WhatsApp config (template/variables/
-    // button) was created or filled in by scripts/bootstrapNotificationMappings.js
+    // Set only when this mapping's channel config (WhatsApp template/
+    // variables/button, Email subject/HTML, or In-App type/title/message)
+    // was created or filled in by scripts/bootstrapNotificationMappings.js
     // from its verified reference data, rather than hand-configured through
     // the Admin UI. Never set retroactively on documents bootstrap didn't
     // touch — absence means "admin-configured" or "predates bootstrap."

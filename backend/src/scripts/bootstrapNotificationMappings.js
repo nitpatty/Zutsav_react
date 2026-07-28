@@ -64,8 +64,23 @@
  *
  * Run via `node src/scripts/bootstrapNotificationMappings.js` from backend/,
  * with MONGO_URI pointed at the target database.
+ *
+ * v1.1.0 (2026-07-28 sync audit — see
+ * docs/notification-bootstrap-sync-audit-2026-07-28.md): a full field-by-field
+ * diff against the live working database found the 41 WhatsApp entries below
+ * still matched with zero drift, but 10 verified mappings were missing
+ * entirely — 4 WhatsApp events (PANDIT_ACCEPTED, PANDIT_ASSIGNED,
+ * PANDIT_ASSIGNMENT_PENDING, REFERRAL_PENDING_REMARK) plus, extending this
+ * script's scope for the first time beyond WhatsApp, 4 Email and 2 In-App
+ * mappings (VERIFIED_EMAIL_MAPPINGS / VERIFIED_INAPP_MAPPINGS below). Same
+ * idempotency rules apply per channel: create if absent, fill in if the
+ * channel's content fields are blank, never overwrite a non-blank field an
+ * administrator may have customized. One legacy mapping (PASSWORD_RESET/user,
+ * disabled, not in EventRegistry.EVENTS, superseded by
+ * PASSWORD_RESET_EMAIL_OTP/PASSWORD_RESET_WHATSAPP_OTP) was found in the
+ * database and deliberately excluded — see the audit doc.
  */
-const BOOTSTRAP_VERSION = '1.0.0';
+const BOOTSTRAP_VERSION = '1.1.0';
 
 require('dotenv').config();
 const fs = require('fs');
@@ -180,6 +195,21 @@ const VERIFIED_MAPPINGS = [
   { eventName: 'PANDIT_REGISTERED', recipientType: 'pandit', enabled: true,
     whatsappTemplateName: 'pandit_registered',
     whatsappVariables: withPositions([v('pandit.name', 'Pandit name')]) },
+  // Added in the 2026-07-28 sync audit — verified against the working
+  // database, confirmed against the synced (APPROVED) WhatsAppTemplate body
+  // param count for each template.
+  { eventName: 'PANDIT_ACCEPTED', recipientType: 'user', enabled: true,
+    whatsappTemplateName: 'pandit_accepted',
+    whatsappVariables: withPositions([v('customer.name', 'Customer name'), v('pandit.name', 'Pandit name'), v('booking.number', 'Booking number')]) },
+  { eventName: 'PANDIT_ASSIGNED', recipientType: 'user', enabled: true,
+    whatsappTemplateName: 'pandit_assigned',
+    whatsappVariables: withPositions([v('customer.name', 'Customer name'), v('pandit.name', 'Pandit name'), v('booking.date', 'Date'), v('booking.time', 'Time'), v('booking.number', 'Booking number')]) },
+  { eventName: 'PANDIT_ASSIGNMENT_PENDING', recipientType: 'pandit', enabled: true,
+    whatsappTemplateName: 'pandit_assignment_pending',
+    whatsappVariables: withPositions([v('pandit.name', 'Pandit name'), v('booking.poojaName', 'Pooja name'), v('booking.date', 'Date'), v('booking.time', 'Time')]) },
+  { eventName: 'REFERRAL_PENDING_REMARK', recipientType: 'pandit', enabled: true,
+    whatsappTemplateName: 'referral_pending_remark',
+    whatsappVariables: withPositions([v('pandit.name', 'Pandit name'), v('booking.number', 'Booking number')]) },
   { eventName: 'PANDIT_POOJA_APPROVED', recipientType: 'pandit', enabled: true,
     whatsappTemplateName: 'pandit_pooja_approved',
     whatsappVariables: withPositions([v('pandit.name', 'Pandit name'), v('pooja.name', 'Pooja name'), v('pooja.approvedPrice', 'Approved price')]) },
@@ -213,6 +243,69 @@ const VERIFIED_MAPPINGS = [
   { eventName: 'PAYOUT_RELEASED', recipientType: 'pandit', enabled: true,
     whatsappTemplateName: 'payout_released',
     whatsappVariables: withPositions([v('pandit.name', 'Pandit name'), v('payment.amount', 'Amount')]) },
+];
+
+// ── Email mappings, verified against the working database in the 2026-07-28
+// sync audit. Same rule as WhatsApp: this is real HTML a human wrote and
+// confirmed sends correctly, not template inference.
+const VERIFIED_EMAIL_MAPPINGS = [
+  { eventName: 'OTP_VERIFICATION', recipientType: 'user', enabled: true,
+    emailSubject: 'Your Zutsav OTP Code',
+    emailHtml: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+          <h2 style="color:#b91c1c">🤔 Zutsav — Verify Your Account</h2>
+          <p>Namaste <strong>{{customer.name}}</strong>,</p>
+          <p>Your OTP code for account verification is:</p>
+          <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#d97706;text-align:center;padding:20px;background:#fef3c7;border-radius:12px;margin:20px 0">{{otp.code}}</div>
+          <p style="color:#6b7280;font-size:14px">This code is valid for <strong>10 minutes</strong>. Do not share it with anyone.</p>
+          <p style="color:#b91c1c">🙏 Team Zutsav</p>
+        </div>` },
+  { eventName: 'OTP_VERIFICATION', recipientType: 'pandit', enabled: true,
+    emailSubject: 'Your Zutsav OTP Code',
+    emailHtml: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+          <h2 style="color:#b91c1c">🤔 Zutsav — Verify Your Account</h2>
+          <p>Namaste <strong>{{customer.name}}</strong>,</p>
+          <p>Your OTP code for account verification is:</p>
+          <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#d97706;text-align:center;padding:20px;background:#fef3c7;border-radius:12px;margin:20px 0">{{otp.code}}</div>
+          <p style="color:#6b7280;font-size:14px">This code is valid for <strong>10 minutes</strong>. Do not share it with anyone.</p>
+          <p style="color:#b91c1c">🙏 Team Zutsav</p>
+        </div>` },
+  { eventName: 'PASSWORD_RESET_EMAIL_OTP', recipientType: 'user', enabled: true,
+    emailSubject: 'Your Zutsav Password Reset Code',
+    emailHtml: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+          <h2 style="color:#b91c1c">🔐 Zutsav — Password Reset</h2>
+          <p>Hi <strong>{{customer.name}}</strong>,</p>
+          <p>Your Zutsav password reset code is:</p>
+          <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#d97706;text-align:center;padding:20px;background:#fef3c7;border-radius:12px;margin:20px 0">{{otp.code}}</div>
+          <p style="color:#6b7280;font-size:14px">This code is valid for <strong>10 minutes</strong>.</p>
+          <p style="color:#6b7280;font-size:14px">If you didn't request this, please ignore this message — your password will not be changed.</p>
+          <p style="color:#b91c1c">🙏 Team Zutsav</p>
+        </div>` },
+  { eventName: 'PASSWORD_RESET_EMAIL_OTP', recipientType: 'pandit', enabled: true,
+    emailSubject: 'Your Zutsav Password Reset Code',
+    emailHtml: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+          <h2 style="color:#b91c1c">🔐 Zutsav — Password Reset</h2>
+          <p>Hi <strong>{{pandit.name}}</strong>,</p>
+          <p>Your Zutsav password reset code is:</p>
+          <div style="font-size:36px;font-weight:bold;letter-spacing:8px;color:#d97706;text-align:center;padding:20px;background:#fef3c7;border-radius:12px;margin:20px 0">{{otp.code}}</div>
+          <p style="color:#6b7280;font-size:14px">This code is valid for <strong>10 minutes</strong>.</p>
+          <p style="color:#6b7280;font-size:14px">If you didn't request this, please ignore this message — your password will not be changed.</p>
+          <p style="color:#b91c1c">🙏 Team Zutsav</p>
+        </div>` },
+];
+
+// ── In-App mappings, verified against the working database in the 2026-07-28
+// sync audit.
+const VERIFIED_INAPP_MAPPINGS = [
+  { eventName: 'KIT_SHIPPED', recipientType: 'user', enabled: true,
+    label: 'Kit Shipped (In-App)',
+    inAppType: 'kit_shipped',
+    inAppTitle: 'Your Samagri Kit Has Been Shipped!',
+    inAppMessage: 'Your pooja samagri kit for booking #{{booking.number}} has been dispatched via {{kit.courier}}. Tracking ID: {{kit.trackingId}}. It will arrive before your scheduled pooja.' },
+  { eventName: 'KIT_DELIVERED', recipientType: 'user', enabled: true,
+    label: 'Kit Delivered (In-App)',
+    inAppType: 'kit_delivered',
+    inAppTitle: 'Samagri Kit Delivered!',
+    inAppMessage: 'Your pooja samagri kit for booking #{{booking.number}} has been delivered. You are all set for your pooja!' },
 ];
 
 const sameVariables = (a, b) => JSON.stringify(a || []) === JSON.stringify(b);
@@ -282,7 +375,75 @@ async function applyEntry(entry) {
   return { entry, action: matchesReference ? 'already-correct' : 'preserved-custom', id: existing._id };
 }
 
-function buildReportMarkdown(results, validation) {
+/** Same idempotent contract as applyEntry, for the 'email' channel: create if
+ * absent, fill in if both emailSubject and emailHtml are blank, otherwise
+ * leave an administrator's existing content untouched. */
+async function applyEmailEntry(entry) {
+  const filter = { eventName: entry.eventName, recipientType: entry.recipientType, channel: 'email' };
+  const existing = await NotificationMapping.findOne(filter);
+
+  const bootstrapFields = {
+    emailSubject: entry.emailSubject,
+    emailHtml: entry.emailHtml,
+    bootstrapVersion: BOOTSTRAP_VERSION,
+    bootstrappedAt: new Date(),
+  };
+
+  if (!existing) {
+    const created = await NotificationMapping.create({
+      eventName: entry.eventName, recipientType: entry.recipientType, channel: 'email',
+      enabled: entry.enabled !== false,
+      ...bootstrapFields,
+    });
+    return { entry, action: 'created', id: created._id };
+  }
+
+  if (!existing.emailSubject && !existing.emailHtml) {
+    await NotificationMapping.updateOne({ _id: existing._id }, { $set: bootstrapFields });
+    return { entry, action: 'configured', id: existing._id };
+  }
+
+  const matchesReference = existing.emailSubject === entry.emailSubject && existing.emailHtml === entry.emailHtml;
+  return { entry, action: matchesReference ? 'already-correct' : 'preserved-custom', id: existing._id };
+}
+
+/** Same idempotent contract as applyEntry, for the 'inapp' channel: create if
+ * absent, fill in if both inAppTitle and inAppMessage are blank, otherwise
+ * leave an administrator's existing content untouched. */
+async function applyInAppEntry(entry) {
+  const filter = { eventName: entry.eventName, recipientType: entry.recipientType, channel: 'inapp' };
+  const existing = await NotificationMapping.findOne(filter);
+
+  const bootstrapFields = {
+    inAppType: entry.inAppType,
+    inAppTitle: entry.inAppTitle,
+    inAppMessage: entry.inAppMessage,
+    bootstrapVersion: BOOTSTRAP_VERSION,
+    bootstrappedAt: new Date(),
+  };
+
+  if (!existing) {
+    const created = await NotificationMapping.create({
+      eventName: entry.eventName, recipientType: entry.recipientType, channel: 'inapp',
+      enabled: entry.enabled !== false,
+      label: entry.label || '',
+      ...bootstrapFields,
+    });
+    return { entry, action: 'created', id: created._id };
+  }
+
+  if (!existing.inAppTitle && !existing.inAppMessage) {
+    await NotificationMapping.updateOne({ _id: existing._id }, { $set: bootstrapFields });
+    return { entry, action: 'configured', id: existing._id };
+  }
+
+  const matchesReference = existing.inAppType === entry.inAppType
+    && existing.inAppTitle === entry.inAppTitle
+    && existing.inAppMessage === entry.inAppMessage;
+  return { entry, action: matchesReference ? 'already-correct' : 'preserved-custom', id: existing._id };
+}
+
+function buildReportMarkdown(results, emailResults, inAppResults, validation) {
   const by = (action) => results.filter((r) => r.action === action);
   const created = by('created');
   const configured = by('configured');
@@ -293,13 +454,27 @@ function buildReportMarkdown(results, validation) {
 
   const line = (r) => `- \`${r.entry.eventName}\` / ${r.entry.recipientType} (\`${r.id}\`) → \`${r.entry.whatsappTemplateName}\``;
 
+  const byChannel = (list, action) => list.filter((r) => r.action === action);
+  const emailLine = (r) => `- \`${r.entry.eventName}\` / ${r.entry.recipientType} (\`${r.id}\`) → "${r.entry.emailSubject}"`;
+  const inAppLine = (r) => `- \`${r.entry.eventName}\` / ${r.entry.recipientType} (\`${r.id}\`) → \`${r.entry.inAppType}\``;
+  const emailCreated = byChannel(emailResults, 'created');
+  const emailConfigured = byChannel(emailResults, 'configured');
+  const emailAlreadyCorrect = byChannel(emailResults, 'already-correct');
+  const emailPreserved = byChannel(emailResults, 'preserved-custom');
+  const inAppCreated = byChannel(inAppResults, 'created');
+  const inAppConfigured = byChannel(inAppResults, 'configured');
+  const inAppAlreadyCorrect = byChannel(inAppResults, 'already-correct');
+  const inAppPreserved = byChannel(inAppResults, 'preserved-custom');
+
+  const totalProcessed = results.length + emailResults.length + inAppResults.length;
+
   return `# Notification Mappings Bootstrap Report
 
 Generated: ${new Date().toISOString()}
 Bootstrap script version: ${BOOTSTRAP_VERSION}
 Database: ${mongoose.connection.name} @ ${mongoose.connection.host}
 
-## Summary
+## Summary — WhatsApp
 
 | Outcome | Count |
 |---|---|
@@ -309,12 +484,34 @@ Database: ${mongoose.connection.name} @ ${mongoose.connection.host}
 | Corrected (known-wrong legacy variable mapping) | ${correctedMapping.length} |
 | Already correct (matches reference exactly) | ${alreadyCorrect.length} |
 | Preserved (existing custom configuration, untouched) | ${preservedCustom.length} |
-| **Total verified mappings processed** | **${results.length}** |
+| **Total WhatsApp mappings processed** | **${results.length}** |
 
-## Created
+## Summary — Email
+
+| Outcome | Count |
+|---|---|
+| Created | ${emailCreated.length} |
+| Configured (existed, was blank) | ${emailConfigured.length} |
+| Already correct | ${emailAlreadyCorrect.length} |
+| Preserved (existing custom content, untouched) | ${emailPreserved.length} |
+| **Total Email mappings processed** | **${emailResults.length}** |
+
+## Summary — In-App
+
+| Outcome | Count |
+|---|---|
+| Created | ${inAppCreated.length} |
+| Configured (existed, was blank) | ${inAppConfigured.length} |
+| Already correct | ${inAppAlreadyCorrect.length} |
+| Preserved (existing custom content, untouched) | ${inAppPreserved.length} |
+| **Total In-App mappings processed** | **${inAppResults.length}** |
+
+**Grand total verified mappings processed (all channels): ${totalProcessed}**
+
+## Created — WhatsApp
 ${created.length ? created.map(line).join('\n') : '_none_'}
 
-## Configured (filled in blank whatsappVariables)
+## Configured (filled in blank whatsappVariables) — WhatsApp
 ${configured.length ? configured.map(line).join('\n') : '_none_'}
 
 ## Corrected (legacy wrong template repointed)
@@ -323,14 +520,33 @@ ${corrected.length ? corrected.map(line).join('\n') : '_none_'}
 ## Corrected (legacy wrong variable mapping repointed)
 ${correctedMapping.length ? correctedMapping.map(line).join('\n') : '_none_'}
 
-## Preserved — existing administrator customization left untouched
+## Preserved — existing administrator customization left untouched (WhatsApp)
 ${preservedCustom.length ? preservedCustom.map(line).join('\n') : '_none_'}
+
+## Created — Email
+${emailCreated.length ? emailCreated.map(emailLine).join('\n') : '_none_'}
+
+## Configured (filled in blank subject/HTML) — Email
+${emailConfigured.length ? emailConfigured.map(emailLine).join('\n') : '_none_'}
+
+## Preserved — existing administrator content left untouched (Email)
+${emailPreserved.length ? emailPreserved.map(emailLine).join('\n') : '_none_'}
+
+## Created — In-App
+${inAppCreated.length ? inAppCreated.map(inAppLine).join('\n') : '_none_'}
+
+## Configured (filled in blank title/message) — In-App
+${inAppConfigured.length ? inAppConfigured.map(inAppLine).join('\n') : '_none_'}
+
+## Preserved — existing administrator content left untouched (In-App)
+${inAppPreserved.length ? inAppPreserved.map(inAppLine).join('\n') : '_none_'}
 
 ## Mappings that still require manual configuration
 
 These are not covered by verified reference data (or were already flagged as
 unresolved even after bootstrap ran) — reusing the same startup validator
-notification-engine/bootstrap.js uses, not a separate check:
+notification-engine/bootstrap.js uses, not a separate check. Note this check
+is WhatsApp-specific (Email/In-App have no Meta template to validate against):
 
 ${validation.problems.length
     ? validation.problems.map((p) => `- ${p}`).join('\n')
@@ -345,18 +561,35 @@ This report is regenerated every time \`bootstrapNotificationMappings.js\` runs 
   await mongoose.connect(process.env.MONGO_URI);
   console.log(`Connected to ${mongoose.connection.name} @ ${mongoose.connection.host}`);
   console.log(`bootstrapNotificationMappings.js v${BOOTSTRAP_VERSION}`);
-  console.log(`Processing ${VERIFIED_MAPPINGS.length} verified mapping(s)\n`);
+  console.log(`Processing ${VERIFIED_MAPPINGS.length} WhatsApp + ${VERIFIED_EMAIL_MAPPINGS.length} Email + ${VERIFIED_INAPP_MAPPINGS.length} In-App verified mapping(s)\n`);
 
   const results = [];
   for (const entry of VERIFIED_MAPPINGS) {
     const result = await applyEntry(entry);
     results.push(result);
     MappingCache.invalidate(entry.eventName);
-    console.log(`${result.action.toUpperCase().padEnd(24)} ${entry.eventName}/${entry.recipientType} (${result.id})`);
+    console.log(`${result.action.toUpperCase().padEnd(24)} whatsapp  ${entry.eventName}/${entry.recipientType} (${result.id})`);
   }
 
-  const stats = results.reduce((acc, r) => { acc[r.action] = (acc[r.action] || 0) + 1; return acc; }, {});
-  console.log('\n================ STATISTICS ================');
+  const emailResults = [];
+  for (const entry of VERIFIED_EMAIL_MAPPINGS) {
+    const result = await applyEmailEntry(entry);
+    emailResults.push(result);
+    MappingCache.invalidate(entry.eventName);
+    console.log(`${result.action.toUpperCase().padEnd(24)} email     ${entry.eventName}/${entry.recipientType} (${result.id})`);
+  }
+
+  const inAppResults = [];
+  for (const entry of VERIFIED_INAPP_MAPPINGS) {
+    const result = await applyInAppEntry(entry);
+    inAppResults.push(result);
+    MappingCache.invalidate(entry.eventName);
+    console.log(`${result.action.toUpperCase().padEnd(24)} inapp     ${entry.eventName}/${entry.recipientType} (${result.id})`);
+  }
+
+  const allResults = [...results, ...emailResults, ...inAppResults];
+  const stats = allResults.reduce((acc, r) => { acc[r.action] = (acc[r.action] || 0) + 1; return acc; }, {});
+  console.log('\n================ STATISTICS (all channels) ================');
   console.log(`Created:                 ${stats['created'] || 0}`);
   console.log(`Configured:              ${stats['configured'] || 0}`);
   console.log(`Corrected (legacy):      ${stats['corrected-legacy-template'] || 0}`);
@@ -369,7 +602,7 @@ This report is regenerated every time \`bootstrapNotificationMappings.js\` runs 
   console.log(`Validation: ${validation.ok}/${validation.total} enabled WhatsApp mapping(s) fully configured, ${validation.problems.length} still need manual attention.`);
 
   const reportPath = path.resolve(__dirname, '../../../docs/notification-bootstrap-report.md');
-  fs.writeFileSync(reportPath, buildReportMarkdown(results, validation));
+  fs.writeFileSync(reportPath, buildReportMarkdown(results, emailResults, inAppResults, validation));
   console.log(`\nReport written to ${reportPath}`);
 
   await mongoose.disconnect();
