@@ -41,7 +41,7 @@ import TempleActionsMenu from './temple-admin/TempleActionsMenu';
 
 
 const statusColor  = { pending_payment:'badge-pending', paid:'badge-paid', pandit_assigned:'badge-assigned', pandit_accepted:'badge-approved', pending_reassignment:'badge-rejected', completion_requested:'badge-pending', completed:'badge-approved', cancelled:'badge-rejected' };
-const statusLabel  = { pending_payment:'Pending Payment', paid:'New Booking', pandit_assigned:'Pandit Assigned', pandit_accepted:'Pandit Accepted', pending_reassignment:'Needs Reassignment', completion_requested:'Completion Pending', completed:'Completed', cancelled:'Cancelled', refunded:'Refunded', with_kit:'With Kit' };
+const statusLabel  = { pending_payment:'Failed Payments', paid:'New Booking', pandit_assigned:'Pandit Assigned', pandit_accepted:'Pandit Accepted', pending_reassignment:'Needs Reassignment', completion_requested:'Completion Pending', completed:'Completed', cancelled:'Cancelled', refunded:'Refunded', with_kit:'With Kit' };
 const kitStatusColor = { pending:'bg-gray-100 text-gray-600', packed:'bg-blue-100 text-blue-700', shipped:'bg-amber-100 text-amber-700', out_for_delivery:'bg-orange-100 text-orange-700', delivered:'bg-green-100 text-green-700' };
 const kitStatusLabel = { pending:'Pending', packed:'Packed', shipped:'Shipped', out_for_delivery:'Out for Delivery', delivered:'Delivered' };
 const panditStatus = { pending:'badge-pending', under_review:'badge-paid', approved:'badge-approved', rejected:'badge-rejected', suspended:'badge-rejected', reupload_required:'badge-pending' };
@@ -541,6 +541,40 @@ function BookingsTab() {
     }
   };
 
+  // ── Failed Payments remediation ──────────────────────────────
+  const handleApprovePayLater = async (bookingId) => {
+    if (!window.confirm('Confirm this booking as Pay Later? The customer will not be charged online.')) return;
+    try {
+      await API.patch(`/admin/bookings/${bookingId}/pay-later`);
+      toast.success('Booking confirmed with Pay Later.');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not approve Pay Later');
+    }
+  };
+
+  const handleApproveCOD = async (bookingId) => {
+    if (!window.confirm('Confirm this booking as Cash on Delivery?')) return;
+    try {
+      await API.patch(`/admin/bookings/${bookingId}/cod`);
+      toast.success('Booking confirmed with Cash on Delivery.');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not approve COD');
+    }
+  };
+
+  const handleDeleteFailedBooking = async (bookingId) => {
+    if (!window.confirm('Permanently delete this booking? This cannot be undone and should only be used for stuck/abandoned payments.')) return;
+    try {
+      await API.delete(`/admin/bookings/${bookingId}`);
+      toast.success('Booking deleted.');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not delete booking');
+    }
+  };
+
   // Refund modal state
   const [refundBooking,    setRefundBooking]    = useState(null);
   const [refundDetails,    setRefundDetails]    = useState(null);
@@ -780,6 +814,26 @@ function BookingsTab() {
                       {b.paymentStatus === 'FULLY_PAID' && b.paymentMode === 'PARTIAL' && (
                         <p className="text-[10px] text-green-600 font-medium mt-1">Fully Paid ✓</p>
                       )}
+                      {b.status === 'pending_payment' && (() => {
+                        const attempts = b.paymentAttempts || [];
+                        const last = attempts.length > 0 ? attempts[attempts.length - 1] : null;
+                        return (
+                          <div className="mt-1 space-y-0.5">
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${b.paymentStatus === 'FAILED' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {b.paymentStatus === 'FAILED' ? 'PAYMENT FAILED' : 'AWAITING PAYMENT'}
+                            </span>
+                            {attempts.length > 0 && (
+                              <p className="text-[10px] text-gray-400">
+                                {attempts.length} attempt{attempts.length !== 1 ? 's' : ''}
+                                {last?.initiatedAt ? ` · ${new Date(last.initiatedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}` : ''}
+                              </p>
+                            )}
+                            {last?.failureReason && (
+                              <p className="text-[10px] text-red-500 italic truncate max-w-[140px]" title={last.failureReason}>{last.failureReason}</p>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       <span className={statusColor[b.status] || 'badge-pending'}>{statusLabel[b.status]}</span>
@@ -821,6 +875,24 @@ function BookingsTab() {
                         >
                           <Eye size={13} /> View Details
                         </button>
+                        {b.status === 'pending_payment' && (
+                          <>
+                            <button onClick={() => handleApprovePayLater(b._id)} className="bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-indigo-600 transition-colors whitespace-nowrap">
+                              Pay Later
+                            </button>
+                            <button onClick={() => handleApproveCOD(b._id)} className="bg-teal-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-teal-700 transition-colors whitespace-nowrap">
+                              COD
+                            </button>
+                            {(b.userDetails?.phone || b.userId?.phone) && (
+                              <a href={`tel:${b.userDetails?.phone || b.userId?.phone}`} className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+                                📞 Contact
+                              </a>
+                            )}
+                            <button onClick={() => handleDeleteFailedBooking(b._id)} className="bg-red-50 text-red-600 border border-red-200 text-xs px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors whitespace-nowrap">
+                              🗑 Delete
+                            </button>
+                          </>
+                        )}
                         {b.status === 'paid' && (
                           <button onClick={() => openAssign(b)} className="bg-saffron-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-saffron-600 transition-colors whitespace-nowrap">
                             Assign Pandit

@@ -1,10 +1,13 @@
 const User         = require('../models/User');
 const Pandit       = require('../models/Pandit');
 const Booking      = require('../models/Booking');
+const PaymentLedger = require('../models/PaymentLedger');
 const Notification = require('../models/Notification');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { NotificationEngine } = require('../../notification-engine');
 const { normalizeBookingPayload, normalizeUserPayload } = require('../../notification-engine/variables/PayloadNormalizer');
+const { checkPhonePeStatus } = require('./phonepe');
+const { recordAttemptResult } = require('./paymentAttempts');
 
 /**
  * Permanently deletes user accounts that have passed their 30-day deletion grace period.
@@ -263,6 +266,61 @@ const startBookingReminderJobs = () => {
   console.log('[Reminders] Booking reminder jobs started (24h/30min, 1h/10min, feedback+invoice/1h)');
 };
 
+// ── Stale Payment Attempt Sweep ───────────────────────────────
+
+/**
+ * Handles the "browser closed / user never returns" case: a booking whose
+ * PhonePe order was created 30+ minutes ago, has never been confirmed, and
+ * whose webhook never fired. Actively asks PhonePe for the real status
+ * (never blind-marks failure) and applies the same mark-as-failed logic
+ * used by the verify endpoints/webhook. Never deletes or cancels the
+ * booking — it stays pending_payment, retryable, and visible to admin.
+ */
+const sweepStalePaymentAttempts = async () => {
+  try {
+    const staleBefore = new Date(Date.now() - 30 * MS_PER_MINUTE);
+    const bookings = await Booking.find({
+      status:               'pending_payment',
+      paymentStatus:         'PENDING',
+      lastPaymentAttemptAt:  { $lte: staleBefore },
+      phonePeMerchantTransactionId: { $ne: null },
+    }).populate('poojaId', 'name');
+
+    for (const booking of bookings) {
+      try {
+        const merchantTransactionId = booking.phonePeMerchantTransactionId;
+        const result = await checkPhonePeStatus(merchantTransactionId);
+        if (!result.state || result.state === 'PENDING') continue; // still genuinely pending — leave it
+
+        if (result.success) continue; // let the user's own verify/webhook handle success as usual
+
+        const ledger = await PaymentLedger.findOne({ merchantTransactionId });
+        if (ledger && ledger.paymentStatus === 'PENDING') {
+          ledger.paymentStatus = 'FAILED';
+          await ledger.save();
+        }
+
+        await recordAttemptResult(booking, merchantTransactionId, {
+          status: 'FAILED', gatewayCode: result.code, gatewayState: result.state,
+          failureReason: result.code || result.state || 'Payment abandoned',
+        }, booking.poojaId?.name || '');
+        await booking.save();
+
+        console.log(`[PaymentSweep] Marked booking ${booking.bookingNumber} payment as FAILED (stale, gateway state: ${result.state})`);
+      } catch (err) {
+        console.error(`[PaymentSweep] Failed to sweep booking ${booking._id}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('[PaymentSweep] Stale payment sweep error:', err.message);
+  }
+};
+
+const startPaymentSweepJob = () => {
+  setInterval(sweepStalePaymentAttempts, 10 * MS_PER_MINUTE);
+  console.log('[PaymentSweep] Stale payment attempt sweep job started (runs every 10 min)');
+};
+
 // ── Translation Lock Sweep ────────────────────────────────────
 
 /**
@@ -303,4 +361,6 @@ module.exports = {
   runInvoiceJob,
   startTranslationLockSweep,
   sweepStaleTranslationLocks,
+  startPaymentSweepJob,
+  sweepStalePaymentAttempts,
 };

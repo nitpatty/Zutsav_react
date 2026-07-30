@@ -1986,6 +1986,97 @@ exports.markPayoutPaid = async (req, res, next) => {
   }
 };
 
+// ─── Failed Payments management ──────────────────────────────
+// Admin remediation for bookings stuck in pending_payment. Never automatic —
+// only reachable via explicit admin action from the Failed Payments view.
+
+// PATCH /api/admin/bookings/:id/pay-later
+exports.approvePayLater = async (req, res, next) => {
+  try {
+    const { note } = req.body;
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (booking.status !== 'pending_payment') {
+      return res.status(400).json({ success: false, message: 'Pay Later can only be approved for bookings awaiting payment' });
+    }
+
+    booking.paymentWorkflow = 'PAY_LATER';
+    booking.status          = 'paid';
+    booking.auditLog.push({
+      action:          'pay_later_approved',
+      performedBy:     req.user._id,
+      performedByName: req.user.name || 'Admin',
+      note:            note || 'Admin approved Pay Later',
+      at:              new Date(),
+    });
+    await booking.save();
+
+    audit(req, {
+      module: 'booking', action: 'approve_pay_later',
+      targetType: 'booking', targetId: booking._id, targetName: booking.bookingNumber,
+      oldValues: { paymentWorkflow: 'ONLINE' }, newValues: { paymentWorkflow: 'PAY_LATER' },
+      note,
+    }).catch(() => {});
+
+    res.json({ success: true, booking });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/admin/bookings/:id/cod
+exports.approveCOD = async (req, res, next) => {
+  try {
+    const { note } = req.body;
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (booking.status !== 'pending_payment') {
+      return res.status(400).json({ success: false, message: 'COD can only be approved for bookings awaiting payment' });
+    }
+
+    booking.paymentWorkflow = 'COD';
+    booking.status          = 'paid';
+    booking.auditLog.push({
+      action:          'cod_approved',
+      performedBy:     req.user._id,
+      performedByName: req.user.name || 'Admin',
+      note:            note || 'Admin approved Cash on Delivery',
+      at:              new Date(),
+    });
+    await booking.save();
+
+    audit(req, {
+      module: 'booking', action: 'approve_cod',
+      targetType: 'booking', targetId: booking._id, targetName: booking.bookingNumber,
+      oldValues: { paymentWorkflow: 'ONLINE' }, newValues: { paymentWorkflow: 'COD' },
+      note,
+    }).catch(() => {});
+
+    res.json({ success: true, booking });
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/admin/bookings/:id
+// Guarded to pending_payment only — never for paid/completed/etc.
+exports.deleteFailedBooking = async (req, res, next) => {
+  try {
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    if (booking.status !== 'pending_payment') {
+      return res.status(400).json({ success: false, message: 'Only bookings awaiting payment can be deleted' });
+    }
+
+    audit(req, {
+      module: 'booking', action: 'delete_failed_payment_booking',
+      targetType: 'booking', targetId: booking._id, targetName: booking.bookingNumber,
+      oldValues: { status: booking.status, paymentStatus: booking.paymentStatus },
+      note: `Deleted stuck pending_payment booking (₹${booking.grandTotal || booking.amount || 0})`,
+    }).catch(() => {});
+
+    await Booking.deleteOne({ _id: booking._id });
+
+    res.json({ success: true });
+  } catch (err) { next(err); }
+};
+
 // ─── Marketplace Order Management ────────────────────────────
 
 // GET /api/admin/orders

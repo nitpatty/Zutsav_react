@@ -13,6 +13,7 @@ const { isAdminRole } = require('../utils/roleUtils');
 
 const { createOrder, verifySignature }                                        = require('../utils/razorpay');
 const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum }       = require('../utils/phonepe');
+const { recordAttemptInitiated, recordAttemptResult }                         = require('../utils/paymentAttempts');
 const settings                                                                = require('../utils/settingsService');
 const { urls }                                                                = require('../config');
 const { generateInvoiceForPayment }  = require('../utils/invoiceGenerator');
@@ -286,6 +287,9 @@ exports.createPhonePeBooking = async (req, res, next) => {
       merchantTransactionId,
     });
 
+    recordAttemptInitiated(booking, { merchantTransactionId, amount: chargeAmount, paymentType });
+    await booking.save();
+
     const { redirectUrl } = await createPhonePeOrder({
       merchantTransactionId,
       amount:      chargeAmount,
@@ -328,6 +332,7 @@ exports.verifyPhonePePayment = async (req, res, next) => {
       booking.amountPaid           = chargedAmount;
       booking.remainingAmount      = remaining;
       booking.paymentStatus        = remaining > 0 ? 'PARTIALLY_PAID' : 'FULLY_PAID';
+      await recordAttemptResult(booking, merchantTransactionId, { status: 'SUCCESS' }, booking.poojaId?.name || '');
       await booking.save();
 
       if (ledger) {
@@ -349,16 +354,88 @@ exports.verifyPhonePePayment = async (req, res, next) => {
       return res.json({ success: true, booking });
     }
 
-    // Mark ledger as failed if payment failed (not pending)
+    // Mark ledger + booking as failed if payment failed (not pending)
     if (result.state && result.state !== 'PENDING') {
       const ledger = await PaymentLedger.findOne({ merchantTransactionId });
       if (ledger && ledger.paymentStatus === 'PENDING') {
         ledger.paymentStatus = 'FAILED';
         await ledger.save();
       }
+      await recordAttemptResult(booking, merchantTransactionId, {
+        status: 'FAILED', gatewayCode: result.code, gatewayState: result.state,
+        failureReason: result.code || result.state || 'Payment failed',
+      }, booking.poojaId?.name || '');
+      await booking.save();
     }
 
     res.json({ success: false, code: result.code, state: result.state, booking });
+  } catch (err) { next(err); }
+};
+
+// POST /api/bookings/:id/retry-payment
+// Reuses the existing booking — never creates a new Booking, never re-fires
+// BOOKING_CREATED/PAYMENT_SUCCESS notifications. Booking._id and bookingNumber
+// are unchanged; only a new PhonePe order + PaymentLedger row + attempt entry
+// are created, and phonePeMerchantTransactionId is repointed at the new attempt
+// so the existing verify/webhook lookups keep working unmodified.
+exports.retryPayment = async (req, res, next) => {
+  try {
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    if (String(booking.userId) !== String(req.user._id))
+      return res.status(403).json({ success: false, message: 'Access denied' });
+
+    if (booking.status !== 'pending_payment')
+      return res.status(400).json({ success: false, message: 'This booking is not awaiting payment' });
+
+    // Guard against duplicate in-flight payments (same pattern as pay-remaining)
+    const inflight = await PaymentLedger.findOne({ bookingId: booking._id, paymentStatus: 'PENDING' });
+    if (inflight) {
+      return res.json({
+        success: true,
+        redirectUrl: null,
+        merchantTransactionId: inflight.merchantTransactionId,
+        alreadyInFlight: true,
+        message: 'A payment attempt is already in progress for this booking',
+      });
+    }
+
+    // Reuse the amount/type of the most recent attempt on THIS booking (covers both
+    // FULL and PARTIAL original charges) — never trust a client-supplied amount.
+    // Falls back to the full grand total only if no prior ledger row exists at all,
+    // which should not happen since one is always created at booking creation time.
+    const lastLedger = await PaymentLedger.findOne({ bookingId: booking._id }).sort({ createdAt: -1 });
+    const chargeAmount = lastLedger?.amount || booking.grandTotal || booking.amount;
+    const paymentType  = lastLedger?.paymentType || (booking.paymentMode === 'PARTIAL' ? 'PARTIAL' : 'FULL');
+
+    if (!chargeAmount || chargeAmount <= 0)
+      return res.status(400).json({ success: false, message: 'Nothing left to charge on this booking' });
+
+    const merchantTransactionId = `ZUT_RETRY_${Date.now()}_${req.user._id.toString().slice(-6)}`;
+    const clientUrl             = urls.clientUrl;
+
+    await PaymentLedger.create({
+      bookingId:             booking._id,
+      amount:                chargeAmount,
+      paymentType,
+      paymentStatus:         'PENDING',
+      merchantTransactionId,
+    });
+
+    booking.phonePeMerchantTransactionId = merchantTransactionId;
+    recordAttemptInitiated(booking, { merchantTransactionId, amount: chargeAmount, paymentType });
+    await booking.save();
+
+    const { redirectUrl } = await createPhonePeOrder({
+      merchantTransactionId,
+      amount:      chargeAmount,
+      userId:      req.user._id,
+      redirectUrl: `${clientUrl}/payment-callback/${merchantTransactionId}`,
+      callbackUrl: `${urls.serverUrl}/api/bookings/phonepe-webhook`,
+    });
+
+    res.json({ success: true, redirectUrl, merchantTransactionId, chargeAmount });
   } catch (err) { next(err); }
 };
 
@@ -475,14 +552,19 @@ exports.phonePeWebhook = async (req, res) => {
 
     const decoded               = JSON.parse(Buffer.from(response, 'base64').toString());
     const merchantTransactionId = decoded?.data?.merchantTransactionId;
+    const phonePeTransactionId  = decoded?.data?.transactionId;
+    const isSuccess              = decoded?.code === 'PAYMENT_SUCCESS';
+    const isTerminalFailure      = !isSuccess && decoded?.data?.state && decoded.data.state !== 'PENDING';
 
-    if (decoded?.code === 'PAYMENT_SUCCESS' && merchantTransactionId) {
-      const phonePeTransactionId = decoded?.data?.transactionId;
+    if (!merchantTransactionId || (!isSuccess && !isTerminalFailure)) {
+      return res.json({ success: true });
+    }
 
-      // ── Remaining payment webhook ──────────────────────────────
-      if (merchantTransactionId.startsWith('ZUT_REM_')) {
-        const ledger = await PaymentLedger.findOne({ merchantTransactionId, paymentType: 'REMAINING' });
-        if (ledger && ledger.paymentStatus !== 'SUCCESS') {
+    // ── Remaining payment webhook ──────────────────────────────
+    if (merchantTransactionId.startsWith('ZUT_REM_')) {
+      const ledger = await PaymentLedger.findOne({ merchantTransactionId, paymentType: 'REMAINING' });
+      if (ledger && ledger.paymentStatus === 'PENDING') {
+        if (isSuccess) {
           const booking = await Booking.findById(ledger.bookingId).populate('poojaId', 'name');
           if (booking) {
             booking.amountPaid      = booking.grandTotal;
@@ -498,16 +580,22 @@ exports.phonePeWebhook = async (req, res) => {
 
             await onFinalPaymentSuccess(booking, booking.poojaId?.name || '');
           }
+        } else {
+          ledger.paymentStatus = 'FAILED';
+          await ledger.save();
         }
-        return res.json({ success: true });
       }
+      return res.json({ success: true });
+    }
 
-      // ── Standard single-booking webhook ───────────────────────
-      const booking = await Booking.findOne({ phonePeMerchantTransactionId: merchantTransactionId })
-        .populate('poojaId', 'name');
+    // ── Standard single-booking webhook (also covers ZUT_RETRY_ retries) ──
+    const booking = await Booking.findOne({ phonePeMerchantTransactionId: merchantTransactionId })
+      .populate('poojaId', 'name');
 
-      if (booking && booking.status !== 'paid') {
-        const ledger        = await PaymentLedger.findOne({ merchantTransactionId });
+    if (booking && booking.status !== 'paid') {
+      const ledger = await PaymentLedger.findOne({ merchantTransactionId });
+
+      if (isSuccess) {
         const chargedAmount = ledger?.amount ?? booking.grandTotal;
         const remaining     = booking.grandTotal - chargedAmount;
 
@@ -516,6 +604,7 @@ exports.phonePeWebhook = async (req, res) => {
         booking.amountPaid           = chargedAmount;
         booking.remainingAmount      = remaining;
         booking.paymentStatus        = remaining > 0 ? 'PARTIALLY_PAID' : 'FULLY_PAID';
+        await recordAttemptResult(booking, merchantTransactionId, { status: 'SUCCESS' }, booking.poojaId?.name || '');
         await booking.save();
 
         if (ledger && ledger.paymentStatus !== 'SUCCESS') {
@@ -533,6 +622,14 @@ exports.phonePeWebhook = async (req, res) => {
         } else {
           await onPaymentSuccess(booking, booking.poojaId?.name || '');
         }
+      } else if (ledger && ledger.paymentStatus === 'PENDING') {
+        ledger.paymentStatus = 'FAILED';
+        await ledger.save();
+        await recordAttemptResult(booking, merchantTransactionId, {
+          status: 'FAILED', gatewayCode: decoded?.code, gatewayState: decoded?.data?.state,
+          failureReason: decoded?.code || decoded?.data?.state || 'Payment failed',
+        }, booking.poojaId?.name || '');
+        await booking.save();
       }
     }
 
@@ -558,9 +655,10 @@ exports.getPricingPreview = async (req, res, next) => {
 // GET /api/bookings/my
 exports.getMyBookings = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, status } = req.query;
+    const { page = 1, limit = 10, status, paymentStatus } = req.query;
     const query = { userId: req.user._id };
     if (status) query.status = status;
+    if (paymentStatus) query.paymentStatus = paymentStatus;
 
     const bookings = await Booking.find(query)
       .populate('poojaId',  'name image price')

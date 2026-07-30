@@ -54,6 +54,9 @@ router.patch('/bookings/:id/mark-payout-paid',   ctrl.markPayoutPaid);
 router.patch('/bookings/:id/referral-status',    ctrl.updateReferralStatus);
 router.get('/bookings/:id/refund-details',       ctrl.getRefundDetails);
 router.patch('/bookings/:id/refund/process',     ctrl.processRefund);
+router.patch('/bookings/:id/pay-later',          ctrl.approvePayLater);
+router.patch('/bookings/:id/cod',                ctrl.approveCOD);
+router.delete('/bookings/:id',                   ctrl.deleteFailedBooking);
 
 // Referral Analytics
 router.get('/referrals/analytics',               ctrl.getReferralAnalytics);

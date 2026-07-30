@@ -7,6 +7,9 @@ import ZutsavLoader from '../components/shared/ZutsavLoader';
 const isMarketplaceOrder  = (txId) => txId?.startsWith('ZOM_');
 const isCartOrder         = (txId) => txId?.startsWith('ZUT_CART_');
 const isRemainingPayment  = (txId) => txId?.startsWith('ZUT_REM_');
+// ZUT_RETRY_ transactions (created by Retry Payment) are handled exactly like a
+// standard single booking below — they're intentionally NOT excluded from the
+// `else` branch, just documented here so the prefix scheme stays legible.
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
@@ -69,6 +72,7 @@ export default function PaymentCallback() {
   const [status,  setStatus]  = useState('verifying');
   const [data,    setData]    = useState(null);
   const [retries, setRetries] = useState(0);
+  const [retryingPayment, setRetryingPayment] = useState(false);
 
   const isOrder     = isMarketplaceOrder(merchantTransactionId);
   const isCart      = isCartOrder(merchantTransactionId);
@@ -137,6 +141,25 @@ export default function PaymentCallback() {
     setStatus('verifying');
     setRetries((r) => r + 1);
     verify();
+  };
+
+  // Failed single-booking payment — retry against the SAME booking (never creates
+  // a new one). Only applies to the standard flow; cart/marketplace/remaining
+  // failures still send the user back to their bookings list to retry from there.
+  const handleRetryPayment = async () => {
+    const bookingId = data?._id;
+    if (!bookingId) { navigate('/my-bookings'); return; }
+    setRetryingPayment(true);
+    try {
+      const { data: res } = await API.post(`/bookings/${bookingId}/retry-payment`);
+      if (res.alreadyInFlight) {
+        navigate('/my-bookings');
+        return;
+      }
+      window.location.href = res.redirectUrl;
+    } catch {
+      navigate('/my-bookings');
+    }
   };
 
   /* ── Verifying ─────────────────────────────────────────── */
@@ -407,13 +430,19 @@ export default function PaymentCallback() {
         <h1 className="text-xl font-bold text-gray-800">Payment Failed</h1>
         <p className="text-gray-600 text-sm leading-relaxed">
           Your payment could not be processed. No amount has been deducted.
-          Please try again or contact support if the issue persists.
+          Your booking is saved — you can retry the same booking anytime.
         </p>
         <div className="flex gap-3">
-          <button onClick={() => navigate(-1)} className="btn-outline flex-1 text-sm py-2.5">
-            Try Again
-          </button>
-          <Link to="/" className="btn-primary flex-1 text-center text-sm py-2.5">
+          {data?._id ? (
+            <button onClick={handleRetryPayment} disabled={retryingPayment} className="btn-primary flex-1 text-sm py-2.5 disabled:opacity-60">
+              {retryingPayment ? 'Redirecting…' : 'Retry Payment'}
+            </button>
+          ) : (
+            <Link to="/my-bookings" className="btn-primary flex-1 text-center text-sm py-2.5">
+              View My Bookings
+            </Link>
+          )}
+          <Link to="/" className="btn-outline flex-1 text-center text-sm py-2.5">
             Back to Home
           </Link>
         </div>

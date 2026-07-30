@@ -81,6 +81,28 @@ export const kycStatusColor = {
   reupload_required:'#9333EA',
 };
 
+export const paymentStatusColor = {
+  PENDING:        '#D97706',
+  PARTIALLY_PAID: '#EA580C',
+  FULLY_PAID:     '#16A34A',
+  REFUNDED:       '#6B7280',
+  FAILED:         '#DC2626',
+};
+
+// Resolves the ONE status value + color map to render as a booking's badge —
+// never both a booking-status pill and a payment-status pill at once (that was
+// the source of the duplicate-badge issue). While a booking is still awaiting
+// payment, the payment axis is the only informative one ("Pending" / "Failed");
+// once paid, the booking-lifecycle status takes over. Mirrors
+// frontend/src/components/shared/PaymentStatusBadge.jsx's resolveBookingBadge
+// so web and mobile never disagree on label/color for the same booking.
+export const resolveBookingBadge = (booking) => {
+  if (booking?.status === 'pending_payment') {
+    return { value: booking.paymentStatus || 'PENDING', colorMap: paymentStatusColor };
+  }
+  return { value: booking?.status, colorMap: bookingStatusColor };
+};
+
 export const refundStatusColor = {
   none:      '#6B7280',
   pending:   '#D97706',

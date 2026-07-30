@@ -179,6 +179,25 @@ const bookingSchema = new mongoose.Schema({
     referringPanditId: { type: mongoose.Schema.Types.ObjectId, ref: 'Pandit',   default: null },
     referralToken:     { type: String, default: '' },
   },
+
+  // Payment attempt history — one entry per PhonePe order created against this booking
+  // (initial attempt + every Retry Payment). Never cleared; used for support/audit and
+  // to drive the "Retry Attempts / Last Attempt" UI.
+  paymentAttempts: [{
+    merchantTransactionId: { type: String },
+    amount:                { type: Number },
+    paymentType:           { type: String, enum: ['FULL', 'PARTIAL', 'REMAINING'] },
+    status:                { type: String, enum: ['PENDING', 'SUCCESS', 'FAILED'], default: 'PENDING' },
+    gatewayCode:           { type: String, default: '' },
+    gatewayState:          { type: String, default: '' },
+    failureReason:         { type: String, default: '' },
+    initiatedAt:           { type: Date, default: Date.now },
+    completedAt:           { type: Date, default: null },
+  }],
+  lastPaymentAttemptAt: { type: Date, default: null },
+
+  // How this booking's payment is being handled — set to PAY_LATER/COD only by admin action
+  paymentWorkflow: { type: String, enum: ['ONLINE', 'PAY_LATER', 'COD'], default: 'ONLINE' },
 }, { timestamps: true });
 
 // Auto-generate booking number

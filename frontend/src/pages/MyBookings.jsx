@@ -1,20 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, Clock, Hash, User, BookOpen, CheckCircle, Sparkles, Star, X, AlertTriangle, CreditCard, IndianRupee, FileText } from 'lucide-react';
+import { Calendar, Clock, Hash, User, BookOpen, CheckCircle, Sparkles, Star, X, AlertTriangle, CreditCard, IndianRupee, FileText, RefreshCw } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import API from '../api/axios';
 import toast from 'react-hot-toast';
 import { getImageUrl } from '../config';
+import PaymentStatusBadge from '../components/shared/PaymentStatusBadge';
 
 const USER_CANCELLABLE = ['pending_payment', 'paid', 'pandit_assigned', 'pandit_accepted', 'pending_reassignment'];
 
-const PAYMENT_STATUS_META = {
-  PENDING:          { label: 'Payment Pending',  color: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-200'  },
-  PARTIALLY_PAID:   { label: 'Partially Paid',   color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200' },
-  FULLY_PAID:       { label: 'Fully Paid',       color: 'text-green-700',  bg: 'bg-green-50',  border: 'border-green-200'  },
-  REFUNDED:         { label: 'Refunded',         color: 'text-gray-700',   bg: 'bg-gray-50',   border: 'border-gray-200'   },
-  FAILED:           { label: 'Payment Failed',   color: 'text-red-700',    bg: 'bg-red-50',    border: 'border-red-200'    },
-};
-
+// Journey-bar/step metadata only — the actual badge label/color now comes from
+// the single shared <PaymentStatusBadge> so status and payment state never
+// render as two separate badges.
 const STATUS_META = {
   pending_payment:      { label: 'Pending Payment',   color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200',   bar: 'bg-amber-400',   step: 0 },
   paid:                 { label: 'Confirmed',          color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200',    bar: 'bg-blue-500',    step: 1 },
@@ -41,6 +37,7 @@ const FILTERS = [
   { value: 'pandit_accepted',       label: 'Confirmed'     },
   { value: 'completed',             label: 'Completed'     },
   { value: 'cancelled',             label: 'Cancelled'     },
+  { value: 'pending_payment',       label: 'Failed Payments' },
 ];
 
 function JourneyTracker({ status }) {
@@ -173,10 +170,41 @@ function PayRemainingButton({ booking, onDone }) {
   );
 }
 
+function RetryPaymentButton({ booking }) {
+  const [loading, setLoading] = useState(false);
+  const handleRetry = async () => {
+    setLoading(true);
+    try {
+      const { data } = await API.post(`/bookings/${booking._id}/retry-payment`);
+      if (data.alreadyInFlight) {
+        toast('A payment attempt is already in progress for this booking', { icon: '⏳' });
+        setLoading(false);
+        return;
+      }
+      window.location.href = data.redirectUrl;
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not start payment');
+      setLoading(false);
+    }
+  };
+  return (
+    <button
+      onClick={handleRetry}
+      disabled={loading}
+      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60"
+      style={{ background: 'linear-gradient(135deg,#DC2626,#ef4444)' }}
+    >
+      <RefreshCw size={14} />
+      {loading ? 'Redirecting…' : 'Retry Payment'}
+    </button>
+  );
+}
+
 function BookingCard({ b, onReload, onCancel }) {
   const meta = STATUS_META[b.status] || STATUS_META.pending_payment;
   const hasPartialPayment = b.paymentMode === 'PARTIAL' || b.paymentStatus === 'PARTIALLY_PAID';
-  const paymentMeta = PAYMENT_STATUS_META[b.paymentStatus] || null;
+  const attempts = b.paymentAttempts || [];
+  const lastAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
   return (
     <div className="bg-white rounded-2xl overflow-hidden transition-all duration-300 border border-gray-100"
          style={{ boxShadow: '0 2px 20px rgba(0,0,0,0.06)' }}>
@@ -209,16 +237,32 @@ function BookingCard({ b, onReload, onCancel }) {
             <span style={{ fontFamily: '"Cormorant Garamond"' }} className="text-2xl font-bold text-gray-900">
               ₹{(b.grandTotal || b.amount)?.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
             </span>
-            <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${meta.bg} ${meta.color} ${meta.border}`}>
-              {meta.label}
-            </span>
-            {paymentMeta && (
-              <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${paymentMeta.bg} ${paymentMeta.color} ${paymentMeta.border}`}>
-                {paymentMeta.label}
-              </span>
-            )}
+            <PaymentStatusBadge status={b.status} paymentStatus={b.paymentStatus} paymentWorkflow={b.paymentWorkflow} />
           </div>
         </div>
+
+        {/* Failed / pending payment recovery block */}
+        {b.status === 'pending_payment' && (
+          <div className="mt-3 bg-red-50 border border-red-100 rounded-xl p-3 space-y-2">
+            {b.paymentStatus === 'FAILED' ? (
+              <p className="text-xs text-red-700">
+                Your last payment attempt didn't go through
+                {lastAttempt?.failureReason ? ` (${lastAttempt.failureReason})` : ''}. Your booking is saved — retry when ready.
+              </p>
+            ) : (
+              <p className="text-xs text-amber-700">
+                Payment wasn't completed for this booking. Your details are saved — retry anytime.
+              </p>
+            )}
+            {attempts.length > 0 && (
+              <p className="text-[11px] text-gray-400">
+                Attempts: {attempts.length}
+                {lastAttempt?.initiatedAt ? ` · Last attempt: ${new Date(lastAttempt.initiatedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
+              </p>
+            )}
+            <RetryPaymentButton booking={b} />
+          </div>
+        )}
 
         {/* Pandit confirmation notice */}
         {b.status === 'pandit_accepted' && b.panditId && (

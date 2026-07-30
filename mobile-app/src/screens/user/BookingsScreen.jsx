@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  RefreshControl, Animated, ActivityIndicator
+  RefreshControl, Animated, ActivityIndicator, Linking
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -9,14 +9,15 @@ import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDate, formatCurrency, bookingStatusColor } from '../../utils/helpers';
+import { formatDate, formatCurrency, resolveBookingBadge } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import { SkeletonCard } from '../../components/shared/Skeleton';
 
-const STATUSES = ['all', 'paid', 'pandit_assigned', 'pandit_accepted', 'completed', 'cancelled'];
+const STATUSES = ['all', 'paid', 'pandit_assigned', 'pandit_accepted', 'completed', 'cancelled', 'pending_payment'];
+const STATUS_TAB_LABEL = { pending_payment: 'Failed Payments' };
 
 const STATUS_META = {
   pending_payment:      { label: 'Pending',       bar: '#F59E0B', step: 0 },
@@ -107,6 +108,46 @@ function PayRemainingBtn({ booking, C }) {
   );
 }
 
+// Retries payment against the SAME booking — never creates a new booking.
+function RetryPaymentBtn({ booking }) {
+  const navigation = useNavigation();
+  const [loading, setLoading] = useState(false);
+
+  const handleRetry = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.post(`/bookings/${booking._id}/retry-payment`);
+      if (data.alreadyInFlight) {
+        Toast.show({ type: 'info', text1: 'Payment already in progress for this booking' });
+        setLoading(false);
+        return;
+      }
+      await Linking.openURL(data.redirectUrl);
+      navigation.navigate('PaymentVerify', {
+        merchantTransactionId: data.merchantTransactionId,
+        bookingId: booking._id,
+        type: 'booking',
+      });
+    } catch (err) {
+      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not start payment' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <TouchableOpacity
+      style={[styles.payRemainBtn, { backgroundColor: '#DC2626' }]}
+      onPress={handleRetry}
+      disabled={loading}
+      activeOpacity={0.85}
+    >
+      <Ionicons name="refresh" size={14} color="#fff" />
+      <Text style={styles.payRemainText}>{loading ? 'Redirecting…' : 'Retry Payment'}</Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function BookingsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -151,10 +192,13 @@ export default function BookingsScreen() {
 
   const renderItem = ({ item }) => {
     const meta = STATUS_META[item.status] || STATUS_META.pending_payment;
-    const hasPartial = item.paymentMode === 'PARTIAL' || item.paymentStatus === 'PARTIALLY_PAID';
+    const hasPartial = item.status !== 'pending_payment' && (item.paymentMode === 'PARTIAL' || item.paymentStatus === 'PARTIALLY_PAID');
     const canCancel = CANCELLABLE.includes(item.status);
     const hasKitDelivery = item.withKit && item.kitDelivery;
     const needsPay = item.paymentStatus === 'PARTIALLY_PAID' && item.remainingAmount > 0 && item.status !== 'cancelled';
+    const badge = resolveBookingBadge(item);
+    const attempts = item.paymentAttempts || [];
+    const lastAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
 
     return (
       <TouchableOpacity
@@ -194,12 +238,22 @@ export default function BookingsScreen() {
             </View>
             <View style={{ alignItems: 'flex-end', gap: 4 }}>
               <Text style={[styles.amount, { color: C.primary }]}>{formatCurrency(item.grandTotal || item.totalAmount || item.amount)}</Text>
-              <StatusBadge status={item.status} colorMap={bookingStatusColor} small />
-              {hasPartial && (
-                <StatusBadge status="PARTIALLY_PAID" colorMap={{ PARTIALLY_PAID: '#F97316' }} small />
-              )}
+              <StatusBadge status={badge.value} colorMap={badge.colorMap} small />
             </View>
           </View>
+
+          {/* Failed / pending payment recovery */}
+          {item.status === 'pending_payment' && (
+            <View style={[styles.notice, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
+              <Ionicons name="alert-circle" size={12} color="#DC2626" />
+              <Text style={{ fontSize: 11, color: '#B91C1C', flex: 1 }}>
+                {item.paymentStatus === 'FAILED'
+                  ? `Payment didn't go through${lastAttempt?.failureReason ? ` (${lastAttempt.failureReason})` : ''}. Your booking is saved.`
+                  : 'Payment wasn\'t completed. Your booking is saved — retry anytime.'}
+              </Text>
+            </View>
+          )}
+          {item.status === 'pending_payment' && <RetryPaymentBtn booking={item} />}
 
           {/* Pandit confirmation */}
           {item.status === 'pandit_accepted' && item.panditId && (
@@ -319,7 +373,7 @@ export default function BookingsScreen() {
               activeOpacity={0.85}
             >
               <Text style={[styles.chipText, { color: filter === s ? '#fff' : C.primaryDark }]}>
-                {s === 'all' ? 'All' : s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                {s === 'all' ? 'All' : STATUS_TAB_LABEL[s] || s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
               </Text>
             </TouchableOpacity>
           )}

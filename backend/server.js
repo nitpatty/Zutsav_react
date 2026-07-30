@@ -15,7 +15,8 @@ const { setIO } = require('./src/utils/notificationService');
 const {
   startDeletionCleanupJob,
   startBookingReminderJobs,
-  startTranslationLockSweep
+  startTranslationLockSweep,
+  startPaymentSweepJob
 } = require('./src/utils/cleanupJobs');
 const NotificationWorker = require('./notification-engine/queue/Worker');
 const NotificationEngineBootstrap = require('./notification-engine/bootstrap');
@@ -77,6 +78,7 @@ connectDB().then(async () => {
   startDeletionCleanupJob();
   startBookingReminderJobs();
   startTranslationLockSweep();
+  startPaymentSweepJob();
   // Registers v2 channel plugins, gives the Worker its job processor, and
   // runs a startup audit of every enabled WhatsApp mapping against its
   // synced Meta template (see bootstrap.js's validateWhatsAppMappings) so a

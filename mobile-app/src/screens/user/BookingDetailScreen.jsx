@@ -7,7 +7,7 @@ import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDateTime, formatCurrency, formatStatus, formatAuditAction, bookingStatusColor, refundStatusColor } from '../../utils/helpers';
+import { formatDateTime, formatCurrency, formatStatus, formatAuditAction, refundStatusColor, resolveBookingBadge } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
@@ -54,6 +54,28 @@ export default function BookingDetailScreen({ navigation, route }) {
   };
 
   useEffect(() => { fetch(); }, [bookingId]);
+
+  const handleRetryPayment = async () => {
+    try {
+      setActing(true);
+      const { data } = await api.post(`/bookings/${bookingId}/retry-payment`);
+      if (data.alreadyInFlight) {
+        Toast.show({ type: 'info', text1: 'A payment attempt is already in progress' });
+        return;
+      }
+      if (data.redirectUrl) {
+        const { Linking } = require('react-native');
+        await Linking.openURL(data.redirectUrl);
+        navigation.navigate('PaymentVerify', {
+          merchantTransactionId: data.merchantTransactionId,
+          bookingId,
+          type: 'booking',
+        });
+      }
+    } catch (err) {
+      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not start payment' });
+    } finally { setActing(false); }
+  };
 
   const handlePayRemaining = async () => {
     Alert.alert(
@@ -160,6 +182,10 @@ export default function BookingDetailScreen({ navigation, route }) {
   const canRate = booking.status === 'completed' && !booking.userRated;
   const canCancel = CANCELLABLE_STATUSES.includes(booking.status);
   const hasRefund = booking.refund && booking.refund.status && booking.refund.status !== 'none';
+  const canRetryPayment = booking.status === 'pending_payment';
+  const badge = resolveBookingBadge(booking);
+  const attempts = booking.paymentAttempts || [];
+  const lastAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
 
   const timelineEvents = (booking.auditLog || []).map((a) => ({
     label: formatAuditAction(a.action),
@@ -178,7 +204,7 @@ export default function BookingDetailScreen({ navigation, route }) {
         <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
           <View style={styles.statusRow}>
             <Text style={[styles.poojaName, { color: C.text }]}>{booking.poojaId?.name || 'Pooja'}</Text>
-            <StatusBadge status={booking.status} colorMap={bookingStatusColor} />
+            <StatusBadge status={badge.value} colorMap={badge.colorMap} />
           </View>
           <Text style={[styles.bookingId, { color: C.textSecondary }]}>ID: {booking._id?.slice(-8).toUpperCase()}</Text>
         </View>
@@ -217,6 +243,15 @@ export default function BookingDetailScreen({ navigation, route }) {
           {hasRemaining && <Row label="Pending Amount" value={formatCurrency(booking.remainingAmount || 0)} C={C} highlight />}
           <Row label="Payment Mode"   value={formatStatus(booking.paymentMode)   || '—'} C={C} />
           <Row label="Payment Status" value={formatStatus(booking.paymentStatus) || '—'} C={C} />
+          {attempts.length > 0 && (
+            <Row label="Retry Attempts" value={String(attempts.length)} C={C} />
+          )}
+          {lastAttempt?.initiatedAt && (
+            <Row label="Last Attempt" value={formatDateTime(lastAttempt.initiatedAt)} C={C} />
+          )}
+          {lastAttempt?.failureReason && (
+            <Row label="Failure Reason" value={lastAttempt.failureReason} C={C} highlight />
+          )}
         </InfoCard>
 
         {/* Refund status */}
@@ -237,6 +272,20 @@ export default function BookingDetailScreen({ navigation, route }) {
         </InfoCard>
 
         {/* Actions */}
+        {canRetryPayment && (
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: '#DC2626' }]}
+            onPress={handleRetryPayment}
+            disabled={acting}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="refresh" size={20} color="#fff" />
+            <Text style={styles.actionBtnText}>
+              {acting ? 'Please wait…' : 'Retry Payment'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {hasRemaining && (
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: C.primary }]}

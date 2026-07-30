@@ -6,6 +6,7 @@ const Order    = require('../models/Order');
 const settings = require('../utils/settingsService');
 const { deductStock } = require('../utils/inventoryUtils');
 const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum } = require('../utils/phonepe');
+const { recordAttemptInitiated, recordAttemptResult } = require('../utils/paymentAttempts');
 const { NotificationEngine } = require('../../notification-engine');
 const { urls } = require('../config');
 const { calculatePricing, calculateItemTax } = require('../utils/financeUtils');
@@ -67,7 +68,7 @@ exports.cartCheckout = async (req, res, next) => {
 
       const pricing = await computePricing(pooja, kitPrice);
 
-      const booking = await Booking.create({
+      let booking = new Booking({
         userId:        req.user._id,
         poojaId,
         scheduledDate: new Date(scheduledDate),
@@ -100,6 +101,9 @@ exports.cartCheckout = async (req, res, next) => {
         withKit:     !!resolvedKitId,
         kitId:       resolvedKitId,
       });
+
+      recordAttemptInitiated(booking, { merchantTransactionId, amount: pricing.grandTotal, paymentType: 'FULL' });
+      await booking.save();
 
       createdBookings.push({ booking, poojaName: pooja.name });
       bookingTotal += pricing.grandTotal;
@@ -209,6 +213,7 @@ exports.verifyCartPayment = async (req, res, next) => {
           booking.paymentStatus        = 'FULLY_PAID';
           booking.amountPaid           = booking.grandTotal || booking.amount || 0;
           booking.remainingAmount      = 0;
+          await recordAttemptResult(booking, merchantTransactionId, { status: 'SUCCESS' }, booking.poojaId?.name || '');
           await booking.save();
           await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
           NotificationEngine.emit(
@@ -226,6 +231,18 @@ exports.verifyCartPayment = async (req, res, next) => {
       return res.json({ success: true, bookings, order });
     }
 
+    if (result.state && result.state !== 'PENDING') {
+      for (const booking of bookings) {
+        if (booking.status !== 'paid') {
+          await recordAttemptResult(booking, merchantTransactionId, {
+            status: 'FAILED', gatewayCode: result.code, gatewayState: result.state,
+            failureReason: result.code || result.state || 'Payment failed',
+          }, booking.poojaId?.name || '');
+          await booking.save();
+        }
+      }
+    }
+
     res.json({ success: false, code: result.code, state: result.state, bookings, order });
   } catch (err) { next(err); }
 };
@@ -240,28 +257,39 @@ exports.cartWebhook = async (req, res) => {
 
     const decoded               = JSON.parse(Buffer.from(response, 'base64').toString());
     const merchantTransactionId = decoded?.data?.merchantTransactionId;
+    const isSuccess              = decoded?.code === 'PAYMENT_SUCCESS';
+    const isTerminalFailure      = !isSuccess && decoded?.data?.state && decoded.data.state !== 'PENDING';
 
-    if (decoded?.code === 'PAYMENT_SUCCESS' && merchantTransactionId?.startsWith('ZUT_CART_')) {
+    if (merchantTransactionId?.startsWith('ZUT_CART_') && (isSuccess || isTerminalFailure)) {
       const bookings = await Booking.find({ phonePeMerchantTransactionId: merchantTransactionId })
         .populate('poojaId', 'name');
       const order = await Order.findOne({ phonePeMerchantTransactionId: merchantTransactionId });
 
       for (const booking of bookings) {
         if (booking.status !== 'paid') {
-          booking.status               = 'paid';
-          booking.phonePeTransactionId = decoded?.data?.transactionId;
-          booking.paymentStatus        = 'FULLY_PAID';
-          booking.amountPaid           = booking.grandTotal || booking.amount || 0;
-          booking.remainingAmount      = 0;
-          await booking.save();
-          await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
-          NotificationEngine.emit(
-            'BOOKING_CONFIRMED',
-            normalizeBookingPayload({ booking, poojaName: booking.poojaId?.name || '' })
-          ).catch(() => {});
+          if (isSuccess) {
+            booking.status               = 'paid';
+            booking.phonePeTransactionId = decoded?.data?.transactionId;
+            booking.paymentStatus        = 'FULLY_PAID';
+            booking.amountPaid           = booking.grandTotal || booking.amount || 0;
+            booking.remainingAmount      = 0;
+            await recordAttemptResult(booking, merchantTransactionId, { status: 'SUCCESS' }, booking.poojaId?.name || '');
+            await booking.save();
+            await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
+            NotificationEngine.emit(
+              'BOOKING_CONFIRMED',
+              normalizeBookingPayload({ booking, poojaName: booking.poojaId?.name || '' })
+            ).catch(() => {});
+          } else {
+            await recordAttemptResult(booking, merchantTransactionId, {
+              status: 'FAILED', gatewayCode: decoded?.code, gatewayState: decoded?.data?.state,
+              failureReason: decoded?.code || decoded?.data?.state || 'Payment failed',
+            }, booking.poojaId?.name || '');
+            await booking.save();
+          }
         }
       }
-      if (order && order.status === 'pending_payment') {
+      if (isSuccess && order && order.status === 'pending_payment') {
         order.status               = 'paid';
         order.phonePeTransactionId = decoded?.data?.transactionId;
         await order.save();
