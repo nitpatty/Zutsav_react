@@ -781,9 +781,9 @@ function BookingsTab() {
                               </span>
                             )}
                           </div>
-                          {b.kitId?.name && (
-                            <p className="text-[10px] text-amber-700 font-medium">{b.kitId.name}</p>
-                          )}
+                          {(b.kitIds?.length > 0 ? b.kitIds : (b.kitId ? [b.kitId] : [])).map((k) => (
+                            <p key={k._id || k} className="text-[10px] text-amber-700 font-medium">{k.name || k}</p>
+                          ))}
                         </div>
                       )}
                       {b.linkedOrder?.items?.length > 0 && (
@@ -1543,7 +1543,9 @@ function BookingsTab() {
 
             {/* Current kit info */}
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm">
-              <p className="font-semibold text-amber-800 mb-1">📦 Kit: {kitBooking.kitId?.name || 'Samagri Kit'}</p>
+              <p className="font-semibold text-amber-800 mb-1">
+                📦 Kit: {(kitBooking.kitIds?.length > 0 ? kitBooking.kitIds : (kitBooking.kitId ? [kitBooking.kitId] : [])).map((k) => k.name || 'Samagri Kit').join(', ')}
+              </p>
               <p className="text-amber-700 text-xs">Delivery to: {kitBooking.userDetails?.address}, {kitBooking.userDetails?.city} - {kitBooking.userDetails?.pincode}</p>
               <p className="text-amber-700 text-xs">Pooja date: {kitBooking.scheduledDate?.split('T')[0]}</p>
               {kitBooking.kitDelivery?.trackingId && (
@@ -1949,24 +1951,24 @@ function OrderDetailsModal({ booking: b, onClose }) {
             <ReferralDetailSection booking={b} />
           )}
 
-          {/* Section 3 — Kit (conditional) */}
+          {/* Section 3 — Kit (conditional, multi-select) */}
           {hasKit && (
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">📦 Kit Details</p>
               <div className="bg-amber-50 rounded-2xl p-4">
                 <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                  <OdItem label="Kit Name"        value={b.kitId?.name || '—'} />
+                  <OdItem label="Kits"            value={(b.kitIds?.length > 0 ? b.kitIds : (b.kitId ? [b.kitId] : [])).map((k) => k.name || 'Samagri Kit').join(' + ') || '—'} />
                   <OdItem label="Kit Price"       value={b.kitAmount > 0 ? `₹${Number(b.kitAmount).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` : '—'} />
                   <OdItem label="Delivery Status" value={b.kitDelivery?.status || 'pending'} />
                   {b.kitDelivery?.courier    && <OdItem label="Courier"     value={b.kitDelivery.courier} />}
                   {b.kitDelivery?.trackingId && <OdItem label="Tracking ID" value={b.kitDelivery.trackingId} mono />}
                   {b.kitDelivery?.remarks    && <OdItem label="Remarks"     value={b.kitDelivery.remarks} />}
                 </div>
-                {b.kitId?.items?.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-amber-200">
-                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-2">Kit Contents</p>
+                {(b.kitIds?.length > 0 ? b.kitIds : (b.kitId ? [b.kitId] : [])).filter((k) => k?.items?.length > 0).map((k) => (
+                  <div key={k._id} className="mt-3 pt-3 border-t border-amber-200 first:mt-0 first:pt-0 first:border-t-0">
+                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-2">{k.name} — Kit Contents</p>
                     <div className="space-y-1.5">
-                      {b.kitId.items.map((ki, idx) => (
+                      {k.items.map((ki, idx) => (
                         <div key={idx} className="flex items-center gap-2 text-xs text-gray-700">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
                           <span className="font-medium">{ki.productId?.name || 'Item'}</span>
@@ -1976,7 +1978,7 @@ function OrderDetailsModal({ booking: b, onClose }) {
                       ))}
                     </div>
                   </div>
-                )}
+                ))}
               </div>
             </div>
           )}
@@ -6285,6 +6287,18 @@ function KitFormFields({
             </label>
           </div>
         </div>
+
+        <div>
+          <label className="label">
+            Display Order <span className="text-gray-400 font-normal text-xs">(optional — lower shows first during booking; Pooja Kit → Havan Kit → Vishesh Havan Kit)</span>
+          </label>
+          <input
+            type="number" min="0" step="1" className="input" placeholder="e.g. 1, 2, 3"
+            value={kitForm.sortOrder ?? ''}
+            onChange={(e) => setKitForm({ ...kitForm, sortOrder: e.target.value })}
+          />
+          <p className="text-[11px] text-gray-400 mt-1">Leave blank to fall back to the default tier order (Pooja → Havan → Vishesh Havan).</p>
+        </div>
       </div>
     </section>
   );
@@ -6319,7 +6333,7 @@ function MarketplaceTab() {
   const [catForm,       setCatForm]       = useState({ name:'', slug:'', description:'', icon:'🛍️', featured:false, displayOrder:0, isActive:true, seoTitle:'', seoDescription:'' });
   const [catImage,      setCatImage]      = useState(null);
 
-  const [kitForm,         setKitForm]         = useState({ name:'', description:'', discountType:'percentage', discountValue:'0', isFeatured:false, taxRate:'' });
+  const [kitForm,         setKitForm]         = useState({ name:'', description:'', discountType:'percentage', discountValue:'0', isFeatured:false, taxRate:'', sortOrder:'' });
   const [kitItems,        setKitItems]        = useState([{ productId:'', quantity:1 }]);
   const [kitLinkedPoojas, setKitLinkedPoojas] = useState([]);
   const [kitImage,        setKitImage]        = useState(null);
@@ -6603,6 +6617,7 @@ function MarketplaceTab() {
     fd.append('discountPrice', kitSellingPrice);
     fd.append('isFeatured', String(kitForm.isFeatured));
     fd.append('taxRate', kitForm.taxRate || '0');
+    fd.append('sortOrder', kitForm.sortOrder ?? '');
     fd.append('items', JSON.stringify(valid));
     fd.append('linkedPoojas', JSON.stringify(kitLinkedPoojas));
     if (kitImage) fd.append('image', kitImage);
@@ -6610,7 +6625,7 @@ function MarketplaceTab() {
     try {
       await API.post('/marketplace/kits', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Kit created');
-      setKitForm({ name:'', description:'', discountType:'percentage', discountValue:'0', isFeatured:false, taxRate:'' });
+      setKitForm({ name:'', description:'', discountType:'percentage', discountValue:'0', isFeatured:false, taxRate:'', sortOrder:'' });
       setKitItems([{ productId:'', quantity:1 }]);
       setKitLinkedPoojas([]);
       setKitImage(null); setKitTotalCost(0); setKitSellingPrice(''); setKitPriceOverride(false);
@@ -6630,7 +6645,7 @@ function MarketplaceTab() {
 
   const startEditKit = (k) => {
     setEditingKit(k);
-    setKitForm({ name: k.name, description: k.description || '', discountType: k.discountType || 'percentage', discountValue: String(k.discountValue || 0), isFeatured: k.isFeatured || false, taxRate: k.taxRate !== undefined ? String(k.taxRate) : '' });
+    setKitForm({ name: k.name, description: k.description || '', discountType: k.discountType || 'percentage', discountValue: String(k.discountValue || 0), isFeatured: k.isFeatured || false, taxRate: k.taxRate !== undefined ? String(k.taxRate) : '', sortOrder: k.sortOrder !== undefined && k.sortOrder !== null ? String(k.sortOrder) : '' });
     setKitItems(k.items?.map((item) => ({ productId: item.productId?._id || item.productId, variantId: item.variantId || null, variantLabel: item.variantLabel || null, quantity: item.quantity })) || [{ productId: '', quantity: 1 }]);
     setKitLinkedPoojas((k.linkedPoojas || []).map((p) => p._id || p));
     setKitSellingPrice(String(k.discountPrice || 0));
@@ -6652,6 +6667,7 @@ function MarketplaceTab() {
     fd.append('discountPrice', kitSellingPrice);
     fd.append('isFeatured', String(kitForm.isFeatured));
     fd.append('taxRate', kitForm.taxRate || '0');
+    fd.append('sortOrder', kitForm.sortOrder ?? '');
     fd.append('items', JSON.stringify(valid));
     fd.append('linkedPoojas', JSON.stringify(kitLinkedPoojas));
     if (kitImage) fd.append('image', kitImage);

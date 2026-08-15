@@ -107,7 +107,18 @@ const parseApiLocalTime = (dateStr, timeStr, timezone) => {
   return new Date(naiveUTC - offset * 60000);
 };
 
-const fmtTime = (d) => (d ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'N/A');
+/**
+ * Format a UTC Date instant as a wall-clock time in the *requested* timezone.
+ *
+ * `toLocaleTimeString` without a `timeZone` option formats in the Node
+ * server's runtime timezone — which on a UTC-hosted box (plain `node:18`
+ * Docker, no TZ env) renders IST times shifted by −5:30 (e.g. 06:02 AM
+ * shows as 12:32 AM). Every Panchang time must be formatted in the same
+ * timezone the panchang was computed for, never the host's.
+ */
+const fmtTime = (d, timezone) => (d
+  ? d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: timezone })
+  : 'N/A');
 
 const buildLocationKey = (lat, lon, timezone, dateStr) => {
   const r4 = (n) => Math.round(n * 10000) / 10000;
@@ -140,8 +151,8 @@ const buildTimedEntries = (items, { dateStr, timezone, sunriseDate }) => {
     const crossesToNextDay = endValid && dateStrInTimezone(endDate, timezone) !== dateStr;
     entries.push({
       name: item.name,
-      start: cursor ? fmtTime(cursor) : 'N/A',
-      end: !endValid ? 'N/A' : crossesToNextDay ? 'Next Day' : fmtTime(endDate),
+      start: cursor ? fmtTime(cursor, timezone) : 'N/A',
+      end: !endValid ? 'N/A' : crossesToNextDay ? 'Next Day' : fmtTime(endDate, timezone),
     });
     if (endValid) cursor = endDate;
   }
@@ -252,15 +263,15 @@ const normalize = (raw, { lat, lon, timezone, dateStr }) => {
   const rahuEndDate = parseApiLocalTime(dateStr, raw.rahu_kalam.end, timezone);
 
   const brahmaMuhurat = sunriseDate
-    ? { start: fmtTime(new Date(sunriseDate.getTime() - 96 * 60000)), end: fmtTime(sunriseDate) }
+    ? { start: fmtTime(new Date(sunriseDate.getTime() - 96 * 60000), timezone), end: fmtTime(sunriseDate, timezone) }
     : null;
 
   const abhijitMuhurat = (sunriseDate && sunsetDate)
     ? (() => {
         const mid = new Date((sunriseDate.getTime() + sunsetDate.getTime()) / 2);
         return {
-          start: fmtTime(new Date(mid.getTime() - 24 * 60000)),
-          end: fmtTime(new Date(mid.getTime() + 24 * 60000)),
+          start: fmtTime(new Date(mid.getTime() - 24 * 60000), timezone),
+          end: fmtTime(new Date(mid.getTime() + 24 * 60000), timezone),
         };
       })()
     : null;
@@ -289,7 +300,7 @@ const normalize = (raw, { lat, lon, timezone, dateStr }) => {
     { name: 'Vijay Muhurat', value: null }, // not returned by the API; no verified formula added yet
   ];
   const inauspiciousCandidates = [
-    { name: 'Rahu Kaal', value: { start: rahuStartDate ? fmtTime(rahuStartDate) : raw.rahu_kalam.start, end: rahuEndDate ? fmtTime(rahuEndDate) : raw.rahu_kalam.end } },
+    { name: 'Rahu Kaal', value: { start: rahuStartDate ? fmtTime(rahuStartDate, timezone) : raw.rahu_kalam.start, end: rahuEndDate ? fmtTime(rahuEndDate, timezone) : raw.rahu_kalam.end } },
     { name: 'Yamaganda', value: null },   // not derived — see module doc comment
     { name: 'Gulika Kaal', value: null }, // not derived — see module doc comment
     { name: 'Dur Muhurat', value: null }, // not derived — see module doc comment
@@ -308,11 +319,11 @@ const normalize = (raw, { lat, lon, timezone, dateStr }) => {
     karana: karanaEntries[0].name,
     moonPhase: deriveMoonPhase(tithiRaw[0].number, tithiRaw[0].paksha),
     muhurta: brahmaMuhurat ? `${brahmaMuhurat.start} – ${brahmaMuhurat.end}` : 'Data Not Available',
-    sunrise: sunriseDate ? fmtTime(sunriseDate) : raw.sunrise,
-    sunset: sunsetDate ? fmtTime(sunsetDate) : raw.sunset,
+    sunrise: sunriseDate ? fmtTime(sunriseDate, timezone) : raw.sunrise,
+    sunset: sunsetDate ? fmtTime(sunsetDate, timezone) : raw.sunset,
     rahuKaal: {
-      start: rahuStartDate ? fmtTime(rahuStartDate) : raw.rahu_kalam.start,
-      end: rahuEndDate ? fmtTime(rahuEndDate) : raw.rahu_kalam.end,
+      start: rahuStartDate ? fmtTime(rahuStartDate, timezone) : raw.rahu_kalam.start,
+      end: rahuEndDate ? fmtTime(rahuEndDate, timezone) : raw.rahu_kalam.end,
     },
 
     // Additive fields — safe for existing UI to ignore, available for future use

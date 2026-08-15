@@ -85,6 +85,10 @@ const bookingSchema = new mongoose.Schema({
   // Urgent booking + kit selection
   isUrgent:   { type: Boolean, default: false },
   withKit:    { type: Boolean, default: false },
+  // Every selected kit for the pooja (multi-select). `kitId` below is kept as
+  // the legacy alias for the FIRST selected kit so existing readers (invoice
+  // line items, admin panels, notifications) keep working unchanged.
+  kitIds:     [{ type: mongoose.Schema.Types.ObjectId, ref: 'Kit' }],
   kitId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Kit', default: null },
 
   // Kit delivery (created by admin after booking)

@@ -14,15 +14,23 @@ function renderEmail(mapping, payload) {
   };
 }
 
-function renderWhatsApp(mapping, payload) {
+function renderWhatsApp(mapping, payload, opts = {}) {
   const buttonConfig = mapping.whatsappButtonType === 'copy_code'
     ? { type: 'copy_code', payloadPath: mapping.whatsappButtonPayloadPath }
     : null;
-  const components = buildWhatsAppComponents(mapping.whatsappVariables, payload, buttonConfig);
+  // opts.declaredUrlButtons comes from the synced Meta template (computed by
+  // WhatsAppChannel.buildVariableChecklist / WhatsAppProvider.getDeclaredUrlButtons).
+  // Without it, URL buttons are safely omitted — the template is authoritative.
+  const warnings = [];
+  const components = buildWhatsAppComponents(
+    mapping.whatsappVariables, payload, buttonConfig,
+    mapping.whatsappUrlButtons || [], opts.declaredUrlButtons, warnings
+  );
   return {
     templateName: mapping.whatsappTemplateName || '',
     languageCode: mapping.whatsappLanguage || 'en',
     components,
+    buttonWarnings: warnings,
   };
 }
 
@@ -34,10 +42,10 @@ function renderInApp(mapping, payload) {
   };
 }
 
-function render(channel, mapping, payload) {
+function render(channel, mapping, payload, opts = {}) {
   switch (channel) {
     case 'email':   return renderEmail(mapping, payload);
-    case 'whatsapp':return renderWhatsApp(mapping, payload);
+    case 'whatsapp':return renderWhatsApp(mapping, payload, opts);
     case 'inapp':   return renderInApp(mapping, payload);
     default: throw new Error(`No renderer for channel "${channel}"`);
   }
@@ -54,6 +62,12 @@ function rawTemplateText(channel, mapping) {
       const varPaths = (mapping.whatsappVariables || []).map((v) => `{{${v.payloadPath}}}`);
       if (mapping.whatsappButtonType === 'copy_code' && mapping.whatsappButtonPayloadPath) {
         varPaths.push(`{{${mapping.whatsappButtonPayloadPath}}}`);
+      }
+      // URL-button parameters are resolved against the payload too — including
+      // them here lets TemplateValidator catch a typo'd/missing button path
+      // before the message is ever rendered.
+      for (const b of mapping.whatsappUrlButtons || []) {
+        if (b.parameterPath) varPaths.push(`{{${b.parameterPath}}}`);
       }
       return varPaths.join(' ');
     }

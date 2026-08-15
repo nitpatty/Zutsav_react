@@ -54,6 +54,30 @@ function countExpectedBodyParams(tmpl) {
 }
 
 /**
+ * Which URL buttons a Meta-synced template actually declares, keyed by
+ * button index (0-based, across the whole BUTTONS component). The approved
+ * template is the single source of truth for what the Cloud API will
+ * accept — WhatsAppChannel only ever sends parameters for buttons declared
+ * here, so a mapping with a button the template doesn't (yet) declare is
+ * omitted (with a diagnostic) instead of rejected by Meta (#132018).
+ *
+ * @returns {Object<number, { type: string, url: string, hasPlaceholders: boolean }>}
+ */
+function getDeclaredUrlButtons(tmpl) {
+  const comps = Array.isArray(tmpl?.components) ? tmpl.components : [];
+  const buttonsComp = comps.find((c) => String(c.type || '').toUpperCase() === 'BUTTONS');
+  const buttons = Array.isArray(buttonsComp?.buttons) ? buttonsComp.buttons : [];
+  const declared = {};
+  buttons.forEach((b, i) => {
+    if (String(b.type || '').toUpperCase() === 'URL') {
+      const url = String(b.url || '');
+      declared[i] = { type: 'URL', url, hasPlaceholders: /\{\{\s*\d+\s*\}\}/.test(url) };
+    }
+  });
+  return declared;
+}
+
+/**
  * @param {object} opts
  * @param {string} opts.to
  * @param {string} opts.templateName
@@ -108,4 +132,4 @@ async function send({ to, templateName, components = [], languageCode = 'en' }) 
   return res.data;
 }
 
-module.exports = { send, normalizePhone, countExpectedBodyParams };
+module.exports = { send, normalizePhone, countExpectedBodyParams, getDeclaredUrlButtons };

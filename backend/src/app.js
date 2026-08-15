@@ -85,13 +85,23 @@ const apiLimiter = rateLimit({
     success: false,
     message: 'Too many requests. Please slow down.'
   },
+  // Meta webhooks must not be throttled — Meta retries deliveries and a 429
+  // here would fight the consent pipeline. Idempotency (wamid) makes retries
+  // safe, so the webhook is exempt from the per-IP limiter.
+  skip: (req) => (req.originalUrl || req.url || '').startsWith('/api/webhooks/whatsapp'),
 });
 
 app.use('/api/auth', authLimiter);
 app.use('/api/', apiLimiter);
 
 // ✅ Body parsing
-app.use(express.json({ limit: '10mb' }));
+// The `verify` callback preserves the exact raw bytes so signature-verified
+// webhooks (Meta WhatsApp Cloud API) can validate X-Hub-Signature-256 against
+// what was actually received — never a re-serialized req.body.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(morgan('dev'));
 
@@ -145,6 +155,7 @@ app.use('/api/panchang',         require('./routes/panchang.routes'));
 app.use('/api/referral',         require('./routes/referral.routes'));
 app.use('/api/notifications',    require('./routes/notification.routes'));
 app.use('/api/comm',             require('./routes/comm.routes'));
+app.use('/api/webhooks/whatsapp', require('./routes/whatsappWebhook.routes'));
 app.use('/api/settings',         require('./routes/settings.routes'));
 app.use('/api/blogs',            require('./routes/blog.routes'));
 app.use('/api/invoices',         require('./routes/invoice.routes'));

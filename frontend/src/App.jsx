@@ -34,6 +34,7 @@ import ProductDetail    from './pages/ProductDetail';
 import BookingSuccess   from './pages/BookingSuccess';
 import MyBookings       from './pages/MyBookings';
 import TempleDirectory  from './pages/TempleDirectory';
+import TempleDetailPage from './pages/TempleDetailPage';
 import LivestreamsPage  from './pages/LivestreamsPage';
 import AIAssistant      from './pages/AIAssistant';
 import ZutsavAIWidget   from './components/ai/ZutsavAIWidget';
@@ -111,9 +112,12 @@ const AppRoutes = () => {
           <Route path="/marketplace/product/:slug" element={<PublicLayout><ProductDetail /></PublicLayout>} />
           <Route path="/temples"     element={<PublicLayout><TempleDirectory /></PublicLayout>} />
           <Route path="/temples/livestreams" element={<PublicLayout><ComingSoon title="Temple Livestreams" /></PublicLayout>} />
-          <Route path="/temples/details"     element={<PublicLayout><ComingSoon title="Temple Details" /></PublicLayout>} />
+          {/* Legacy nav link — temple details now live on /temples/:id, reached from the directory */}
+          <Route path="/temples/details" element={<Navigate to="/temples" replace />} />
           <Route path="/temples/location"    element={<PublicLayout><ComingSoon title="Temple Location" /></PublicLayout>} />
           <Route path="/temples/info"        element={<PublicLayout><ComingSoon title="Temple Information" /></PublicLayout>} />
+          {/* Temple detail — placed AFTER the static /temples/* paths so :id never swallows them */}
+          <Route path="/temples/:id" element={<PublicLayout><TempleDetailPage /></PublicLayout>} />
           <Route path="/panchang" element={<PublicLayout><PanchangPage /></PublicLayout>} />
 
           {/* Booking flow (uses public layout) — guest-accessible; login is only

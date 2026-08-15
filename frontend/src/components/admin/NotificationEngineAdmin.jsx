@@ -342,6 +342,14 @@ function NotifEventRow({ event, mappings, selected, onSelect, onAdd, onEdit, onT
               <span className="text-xs px-2 py-0.5 rounded-full border" style={{ borderColor: 'var(--t-border)', color: 'var(--t-muted)' }}>
                 {RECIPIENT_LABELS[m.recipientType] || m.recipientType}
               </span>
+              {m.purpose && m.purpose !== 'UNKNOWN' && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                  style={m.purpose === 'MARKETING'
+                    ? { background: '#fee2e215', color: '#f59e0b', border: '1px solid #f59e0b55' }
+                    : { background: 'var(--t-bg)', color: 'var(--t-muted)', border: '1px solid var(--t-border)' }}>
+                  {m.purpose}
+                </span>
+              )}
               {(m.whatsappTemplateName || m.emailTemplateName) && (
                 <span className="text-xs font-mono" style={{ color: 'var(--t-muted)' }}>{m.whatsappTemplateName || m.emailTemplateName}</span>
               )}
@@ -382,11 +390,13 @@ function MappingModal({ mode, initial, waTemplates, onSave, onClose, saving }) {
     eventName:            initial.eventName            || '',
     recipientType:        initial.recipientType        || 'user',
     channel:              initial.channel              || 'whatsapp',
+    purpose:              initial.purpose              || 'UNKNOWN',
     whatsappTemplateName: initial.whatsappTemplateName || '',
     whatsappLanguage:     initial.whatsappLanguage     || 'en',
     whatsappVariables:    initial.whatsappVariables    || [],
     whatsappButtonType:        initial.whatsappButtonType        || 'none',
     whatsappButtonPayloadPath: initial.whatsappButtonPayloadPath || '',
+    whatsappUrlButtons:    initial.whatsappUrlButtons    || [],
     emailTemplateName:    initial.emailTemplateName    || '',
     emailSubject:         initial.emailSubject         || '',
     emailHtml:            initial.emailHtml            || '',
@@ -406,6 +416,18 @@ function MappingModal({ mode, initial, waTemplates, onSave, onClose, saving }) {
     setVarInput({ position: '', payloadPath: '', label: '' });
   };
   const removeVar = (i) => set('whatsappVariables', form.whatsappVariables.filter((_, idx) => idx !== i));
+
+  // ── URL buttons (Phase 5.1 — optional actions on transactional templates) ──
+  // Array order = Meta button index. `urlTemplate` is reference/dry-run only
+  // (the real URL lives in the Meta template); `parameterPath` fills the
+  // dynamic suffix. Buttons the synced Meta template doesn't declare are
+  // omitted at send time with a warning — never sent.
+  const setUrlButton = (i, patch) => set(
+    'whatsappUrlButtons',
+    form.whatsappUrlButtons.map((b, idx) => (idx === i ? { ...b, ...patch } : b))
+  );
+  const addUrlButton = () => set('whatsappUrlButtons', [...form.whatsappUrlButtons, { text: '', urlTemplate: '', parameterPath: '' }]);
+  const removeUrlButton = (i) => set('whatsappUrlButtons', form.whatsappUrlButtons.filter((_, idx) => idx !== i));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -448,6 +470,20 @@ function MappingModal({ mode, initial, waTemplates, onSave, onClose, saving }) {
               <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Priority</label>
               <input type="number" value={form.priority} onChange={(e) => set('priority', Number(e.target.value))} className="w-full px-3 py-2 rounded-xl border text-sm" style={inputStyle} />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--t-muted)' }}>Purpose</label>
+            <select value={form.purpose} onChange={(e) => set('purpose', e.target.value)} className="w-full px-3 py-2 rounded-xl border text-sm" style={inputStyle}>
+              <option value="ACCOUNT">ACCOUNT — auth / security / account</option>
+              <option value="BOOKING">BOOKING — booking lifecycle</option>
+              <option value="ORDER">ORDER — marketplace / order lifecycle</option>
+              <option value="SERVICE">SERVICE — transactional / service operational</option>
+              <option value="MARKETING">MARKETING — promotional (consent-gated on WhatsApp)</option>
+              <option value="UNKNOWN">UNKNOWN — unclassified (blocks nothing)</option>
+            </select>
+            <p className="text-xs mt-1" style={{ color: 'var(--t-muted)' }}>
+              MARKETING WhatsApp messages require the recipient's explicit marketing consent — opted-out / not-set users are skipped. Other purposes always send.
+            </p>
           </div>
 
           {form.channel === 'whatsapp' && (
@@ -504,6 +540,37 @@ function MappingModal({ mode, initial, waTemplates, onSave, onClose, saving }) {
                       className="w-full px-3 py-2 rounded-xl border text-sm font-mono" style={inputStyle} />
                   </div>
                 )}
+              </div>
+
+              <div className="pt-2 border-t" style={{ borderColor: '#bbf7d0' }}>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium" style={{ color: 'var(--t-muted)' }}>URL Buttons (optional actions — e.g. View Receipt / Rate Your Experience)</label>
+                  <button onClick={addUrlButton} className="px-2 py-1 rounded-lg text-xs font-semibold text-white" style={{ background: '#166534' }}><Plus className="w-3 h-3 inline mr-1" />Add</button>
+                </div>
+                {form.whatsappUrlButtons.length === 0 && (
+                  <p className="text-xs" style={{ color: 'var(--t-muted)' }}>
+                    None configured. Buttons are sent ONLY if the Meta-synced template declares matching URL buttons (array order = button index); mismatches are omitted with a warning, never sent.
+                  </p>
+                )}
+                {form.whatsappUrlButtons.map((b, i) => (
+                  <div key={i} className="space-y-1.5 mb-2 p-2 rounded-lg" style={{ background: 'var(--t-bg)' }}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono px-1.5 py-0.5 rounded" style={{ background: '#bbf7d0', color: '#166534' }}>#{i}</span>
+                      <input value={b.text} onChange={(e) => setUrlButton(i, { text: e.target.value })} placeholder="Button text (must match Meta template)"
+                        className="flex-1 px-2 py-1.5 rounded-lg border text-xs" style={inputStyle} />
+                      <button onClick={() => removeUrlButton(i)} className="p-1 hover:text-red-500"><X className="w-3 h-3" /></button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input value={b.urlTemplate} onChange={(e) => setUrlButton(i, { urlTemplate: e.target.value })} placeholder="Destination (reference) e.g. /invoice/{{1}}"
+                        className="flex-1 px-2 py-1.5 rounded-lg border text-xs font-mono" style={inputStyle} />
+                      <input value={b.parameterPath} onChange={(e) => setUrlButton(i, { parameterPath: e.target.value })} placeholder="param path (dynamic URL) e.g. booking.id"
+                        className="flex-1 px-2 py-1.5 rounded-lg border text-xs font-mono" style={inputStyle} />
+                    </div>
+                    <p className="text-[11px]" style={{ color: 'var(--t-muted)' }}>
+                      Dynamic URL → parameterPath fills the {'{{n}}'}; static URL → leave parameterPath empty. The real URL lives in the Meta template.
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
           )}

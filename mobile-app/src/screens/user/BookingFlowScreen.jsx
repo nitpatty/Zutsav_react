@@ -159,7 +159,8 @@ export default function BookingFlowScreen({ navigation, route }) {
   // Booking choices
   const [isUrgent,  setIsUrgent]  = useState(false);
   const [withKit,   setWithKit]   = useState(false);
-  const [kitId,     setKitId]     = useState('');
+  // Multi-select: any number of kits can be added to the same pooja booking.
+  const [kitIds,    setKitIds]    = useState([]);
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
   const [language,      setLanguage]      = useState('');
@@ -222,14 +223,16 @@ export default function BookingFlowScreen({ navigation, route }) {
   if (!pooja) return null;
 
   const hasKits = kits.length > 0;
-  const selectedKit = kits.find(k => k._id === kitId) || null;
+  const selectedKits = kits.filter(k => kitIds.includes(k._id));
   const activeSteps = buildSteps(isUrgent, withKit, hasKits);
   const currentIdx = activeSteps.indexOf(stepId);
   const barSteps = activeSteps.filter(s => s !== STEP.OVERVIEW);
   const barIdx = barSteps.indexOf(stepId);
 
   const poojaPrice = pooja.salePrice || pooja.price || 0;
-  const kitPrice = withKit && !isUrgent && selectedKit ? (selectedKit.discountPrice || 0) : 0;
+  const kitPrice = withKit && !isUrgent
+    ? selectedKits.reduce((sum, k) => sum + (k.discountPrice || 0), 0)
+    : 0;
   const pricing = calculatePrice({
     poojaPrice,
     kitPrice,
@@ -251,7 +254,7 @@ export default function BookingFlowScreen({ navigation, route }) {
 
   const handleSetUrgent = (urgent) => {
     setIsUrgent(urgent);
-    if (urgent) { setWithKit(false); setKitId(''); }
+    if (urgent) { setWithKit(false); setKitIds([]); }
   };
 
   const handleSubmit = async () => {
@@ -280,7 +283,7 @@ export default function BookingFlowScreen({ navigation, route }) {
         language:     language || (pooja.languages?.[0] || 'Hindi'),
         specialNote:  specialNote.trim() || undefined,
         withKit:      withKit && !isUrgent,
-        kitId:        withKit && !isUrgent && kitId ? kitId : undefined,
+        kitIds:       withKit && !isUrgent && kitIds.length > 0 ? kitIds : undefined,
         isUrgent,
         paymentMode,
         partialAmount: paymentMode === 'PARTIAL' ? partialAmount : undefined,
@@ -452,12 +455,14 @@ export default function BookingFlowScreen({ navigation, route }) {
         {/* ── KIT SELECT ───────────────────────────────────────── */}
         {stepId === STEP.KIT_SELECT && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="🛍️" title="Select a Samagri Kit" sub="Choose the right kit for your ceremony" C={C} />
-            {kitsLoading ? <ActivityIndicator color={C.primary} style={{ marginTop: 20 }} /> : kits.map(kit => (
+            <StepHeader icon="🛍️" title="Select Samagri Kits" sub="Choose one or more kits for your ceremony" C={C} />
+            {kitsLoading ? <ActivityIndicator color={C.primary} style={{ marginTop: 20 }} /> : kits.map(kit => {
+              const selected = kitIds.includes(kit._id);
+              return (
               <TouchableOpacity
                 key={kit._id}
-                style={[styles.kitCard, { backgroundColor: C.surface, borderColor: kitId === kit._id ? C.primary : C.border, borderWidth: kitId === kit._id ? 2 : 1 }]}
-                onPress={() => setKitId(kit._id)}
+                style={[styles.kitCard, { backgroundColor: C.surface, borderColor: selected ? C.primary : C.border, borderWidth: selected ? 2 : 1 }]}
+                onPress={() => setKitIds(prev => prev.includes(kit._id) ? prev.filter(x => x !== kit._id) : [...prev, kit._id])}
                 activeOpacity={0.85}
               >
                 <View style={styles.kitCardRow}>
@@ -472,7 +477,7 @@ export default function BookingFlowScreen({ navigation, route }) {
                     {kit.description && <Text style={[styles.kitDesc, { color: C.textSecondary }]} numberOfLines={2}>{kit.description}</Text>}
                     <Text style={[styles.kitPrice, { color: C.primary }]}>{formatCurrency(kit.discountPrice || 0)}</Text>
                   </View>
-                  {kitId === kit._id && <Ionicons name="checkmark-circle" size={22} color={C.primary} />}
+                  {selected && <Ionicons name="checkmark-circle" size={22} color={C.primary} />}
                 </View>
                 <View style={[styles.kitCardFooter, { borderTopColor: C.border }]}>
                   <TouchableOpacity
@@ -485,10 +490,11 @@ export default function BookingFlowScreen({ navigation, route }) {
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
-            ))}
-            {!kitId && <Text style={{ color: '#DC2626', fontSize: 12 }}>Please select a kit to continue</Text>}
+              );
+            })}
+            {kitIds.length === 0 && <Text style={{ color: '#DC2626', fontSize: 12 }}>Select at least one kit to continue</Text>}
             <KitItemsSheet visible={!!viewItemsKit} kit={viewItemsKit} onClose={() => setViewItemsKit(null)} />
-            <NavRow onBack={goBack} onNext={() => { if (!kitId) { Toast.show({ type: 'error', text1: 'Please select a kit' }); return; } goNext(); }} C={C} />
+            <NavRow onBack={goBack} onNext={() => { if (kitIds.length === 0) { Toast.show({ type: 'error', text1: 'Select at least one kit' }); return; } goNext(); }} C={C} />
           </View>
         )}
 
@@ -637,7 +643,12 @@ export default function BookingFlowScreen({ navigation, route }) {
                   />
                 )}
                 {pricing.platformGST > 0 && <PriceRow label={`GST on Platform Fee (${rates.gstPercent}%)`} amount={pricing.platformGST} C={C} muted />}
-                {pricing.kitAmount > 0 && <PriceRow label={`Samagri Kit — ${selectedKit?.name}`} amount={pricing.kitAmount} C={C} muted sub="Delivered to ceremony address" />}
+                {pricing.kitAmount > 0 && (selectedKits.length > 1
+                  ? selectedKits.map((k) => (
+                      <PriceRow key={k._id} label={`Samagri Kit — ${k.name}`} amount={k.discountPrice || 0} C={C} muted />
+                    ))
+                  : <PriceRow label={`Samagri Kit — ${selectedKits[0]?.name}`} amount={pricing.kitAmount} C={C} muted sub="Delivered to ceremony address" />
+                )}
                 {pricing.kitGST > 0 && <PriceRow label={`GST on Kit (${rates.gstPercent}%)`} amount={pricing.kitGST} C={C} muted />}
               </View>
 

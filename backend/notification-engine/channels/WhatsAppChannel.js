@@ -13,6 +13,7 @@ const TemplateValidator = require('../templates/TemplateValidator');
 const { resolve, existsPath } = require('../variables/VariableResolver');
 const WhatsAppProvider = require('../providers/WhatsAppProvider');
 const WhatsAppTemplate = require('../../src/models/WhatsAppTemplate');
+const consentService = require('../../src/services/consentService');
 
 /**
  * Builds a per-position expected-vs-resolved breakdown for a WhatsApp
@@ -65,6 +66,26 @@ async function buildVariableChecklist(mapping, payload) {
   const allResolved = rows.every((r) => r.ok);
   const unresolved = rows.filter((r) => !r.ok).map((r) => r.payloadPath || `position ${r.position}`);
 
+  // ── URL-button analysis (Phase 5.1) ────────────────────────────────────
+  // The synced Meta template is authoritative: a mapped URL button whose
+  // index the template doesn't declare is reported (and later omitted, never
+  // sent). This is INFORMATIONAL — it never flips `ok`, because a missing
+  // button must not block a transactional service message; the body is
+  // still perfectly valid without the optional action buttons.
+  const declaredUrlButtons = tmpl ? WhatsAppProvider.getDeclaredUrlButtons(tmpl) : null;
+  const buttonRows = (mapping.whatsappUrlButtons || []).map((b, i) => {
+    const declared = declaredUrlButtons ? declaredUrlButtons[i] : null;
+    const value = b.parameterPath ? resolve(b.parameterPath, payload) : null;
+    const ok = !!declared && (!declared.hasPlaceholders || (b.parameterPath && value !== ''));
+    const reason = !declared
+      ? `Meta template "${templateName}" does not declare a URL button at index ${i} — button omitted (re-create/sync the template with it first)`
+      : declared.hasPlaceholders && (!b.parameterPath || value === '')
+        ? `Button parameter "${b.parameterPath || '(none)'}" resolved empty — button omitted`
+        : null;
+    return { index: i, text: b.text, urlTemplate: b.urlTemplate, declared: !!declared, parameterPath: b.parameterPath, value, ok, reason };
+  });
+  const buttonWarnings = buttonRows.filter((r) => !r.ok).map((r) => r.reason);
+
   return {
     templateName,
     templateFound: !!tmpl,
@@ -73,6 +94,9 @@ async function buildVariableChecklist(mapping, payload) {
     countMatches,
     rows,
     allResolved,
+    declaredUrlButtons,
+    buttonRows,
+    buttonWarnings,
     ok: !!tmpl && countMatches && allResolved,
     reason: !tmpl
       ? `Template "${templateName}" not found in synced WhatsAppTemplate collection`
@@ -95,6 +119,29 @@ async function send(mapping, payload, recipient) {
 
   if (!mapping.whatsappTemplateName) {
     return { skip: true, reason: 'Mapping has no WhatsApp template configured' };
+  }
+
+  // ── Outbound consent gate (Phase 5) ───────────────────────────────────
+  // Single enforcement point for WhatsApp consent: every NotificationEngine-
+  // driven WhatsApp send funnels through send(), so a MARKETING-purpose
+  // message is checked here — once, against the ACTUAL recipient's current
+  // consent (fresh DB read via consentService, so worker retries re-evaluate
+  // and a STOP received after enqueue still blocks the retry). Non-marketing
+  // purposes and mappings with no purpose are never gated, so transactional
+  // communication (ACCOUNT/BOOKING/ORDER/SERVICE) is never blocked by a
+  // marketing opt-out. A mapping with no purpose is never silently treated
+  // as marketing — the boot-time validateWhatsAppMappings audit flags
+  // unclassified WhatsApp mappings instead.
+  if (mapping.purpose === 'MARKETING') {
+    const consented = await consentService.hasMarketingConsent(recipient?.userId);
+    if (!consented) {
+      return {
+        skip: true,
+        reason: 'marketing_consent_missing',
+        purpose: mapping.purpose,
+        eventName: mapping.eventName,
+      };
+    }
   }
 
   // Structural guard: the exact number of variables the approved Meta
@@ -121,10 +168,15 @@ async function send(mapping, payload, recipient) {
     };
   }
 
-  const { templateName, languageCode, components } = TemplateEngine.render('whatsapp', mapping, payload);
+  const { templateName, languageCode, components, buttonWarnings } =
+    TemplateEngine.render('whatsapp', mapping, payload, { declaredUrlButtons: checklist.declaredUrlButtons });
   const response = await WhatsAppProvider.send({ to: phone, templateName, components, languageCode });
 
-  return { response, renderedContent: { templateName, languageCode, components }, checklist };
+  return {
+    response,
+    renderedContent: { templateName, languageCode, components, buttonWarnings },
+    checklist,
+  };
 }
 
 module.exports = { send, buildVariableChecklist };

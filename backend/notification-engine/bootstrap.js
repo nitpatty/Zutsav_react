@@ -55,6 +55,18 @@ async function validateWhatsAppMappings() {
   for (const m of mappings) {
     const label = m.label || `${m.eventName} / ${m.recipientType}`;
 
+    // Phase 5 consent classification visibility: a WhatsApp mapping with no
+    // purpose at all (pre-v1.2.0 doc) is never silently treated as
+    // marketing, but it is unclassified — re-running bootstrap v1.2.0 fills
+    // the verified purpose, or an admin sets it in Admin > Notifications.
+    // Explicit 'UNKNOWN' (the default for admin-created mappings) is an
+    // intentional safe state and is NOT flagged. This is advisory only — it
+    // never blocks the send path (non-marketing continues normally) and
+    // does not decrement `ok` (the mapping may still be fully configured).
+    if (!m.purpose) {
+      problems.push(`[${label}] no communication purpose set (Phase 5 consent classification) — re-run bootstrap v1.2.0 or set it in Admin > Notifications`);
+    }
+
     if (!m.whatsappTemplateName) {
       problems.push(`[${label}] no whatsappTemplateName set`);
       continue;

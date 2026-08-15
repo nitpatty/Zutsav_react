@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapPin, Search, Tv, X, ChevronRight, Play } from 'lucide-react';
+import { MapPin, Search, Tv, X, Play, ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 import toast from 'react-hot-toast';
 import { getImageUrl } from '../config';
@@ -8,7 +9,12 @@ import { useLanguage } from '../context/LanguageContext';
 
 function TempleCard({ temple, onWatch }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [hovered, setHovered] = useState(false);
+
+  // The whole card opens the temple's detail page; the livestream overlay/button
+  // stays a separate action (modal) and must not trigger navigation.
+  const openDetails = () => navigate(`/temples/${temple._id}`);
 
   return (
     <div
@@ -24,7 +30,7 @@ function TempleCard({ temple, onWatch }) {
         transform: hovered ? 'translateY(-4px)' : 'translateY(0)',
       }}>
       {/* Image */}
-      <div className="relative overflow-hidden h-44">
+      <div className="relative overflow-hidden h-44 cursor-pointer" onClick={openDetails}>
         {temple.images?.length > 0 ? (
           <img
             src={getImageUrl(temple.images[0])}
@@ -47,7 +53,7 @@ function TempleCard({ temple, onWatch }) {
                pointerEvents: hovered ? 'auto' : 'none',
              }}>
           <button
-            onClick={() => onWatch(temple)}
+            onClick={(e) => { e.stopPropagation(); onWatch(temple); }}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-transform duration-200 hover:scale-105"
             style={{ background: 'var(--t-secondary)', color: 'var(--t-text-inv, #1B1F3B)' }}>
             <Play size={14} /> {t('temples.watchLivestream', 'Watch Livestream')}
@@ -62,7 +68,7 @@ function TempleCard({ temple, onWatch }) {
         </div>
       </div>
 
-      <div className="p-4">
+      <div className="p-4 cursor-pointer" onClick={openDetails}>
         <h3 className="font-bold leading-tight mb-1.5"
             style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: '1.15rem', color: 'var(--t-text)' }}>
           {temple.name}
@@ -75,12 +81,12 @@ function TempleCard({ temple, onWatch }) {
           <p className="text-sm line-clamp-2 mb-3" style={{ color: 'var(--t-muted)' }}>{temple.description}</p>
         )}
         <button
-          onClick={() => onWatch(temple)}
+          onClick={(e) => { e.stopPropagation(); openDetails(); }}
           className="flex items-center gap-1.5 text-sm font-semibold transition-colors"
           style={{ color: 'var(--t-primary)' }}
           onMouseOver={(e) => e.currentTarget.style.color = 'var(--t-secondary)'}
           onMouseOut={(e) => e.currentTarget.style.color = 'var(--t-primary)'}>
-          <Tv size={13} /> {t('temples.liveDarshan', 'Live Darshan')} <ChevronRight size={13} />
+          {t('temples.viewDetails', 'View Details')} <ArrowRight size={13} />
         </button>
       </div>
     </div>

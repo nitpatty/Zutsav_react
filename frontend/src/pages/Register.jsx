@@ -8,6 +8,17 @@ import PincodeInput from '../components/shared/PincodeInput';
 import API from '../api/axios';
 import { getStoredLanguage } from '../utils/languageStorage';
 
+// ─── Communication consent (WhatsApp opt-in) ───────────────────────────────
+// Wording taken VERBATIM from the client's WhatsApp consent reference
+// document (signup consent statements). Business/legal artifact — do not edit
+// without approval. `consentVersion` is sent to the backend and stored on
+// each consent event, so the exact copy a user saw is preserved.
+const SERVICE_CONSENT_TEXT =
+  'I agree to receive WhatsApp messages from the company regarding my account, bookings, orders and services.';
+const MARKETING_CONSENT_TEXT =
+  'I would also like to receive offers, discounts and promotional updates from the company on WhatsApp.';
+const CONSENT_VERSION = 'v1.0';
+
 // ─── Step 1: Role selection ────────────────────────────────────
 function RoleStep({ onSelect }) {
   return (
@@ -185,12 +196,36 @@ function OTPVerifyStep({ form, channel, onVerify, onResend, loading, onBack }) {
   );
 }
 
+// ─── Consent checkbox row (service / marketing, WhatsApp) ──────
+// Service consent is pre-checked (transactional messaging is the platform's
+// core function). Marketing consent is UNCHECKED by default — WhatsApp OTP
+// verification must never be interpreted as marketing opt-in.
+function ConsentRow({ checked, onChange, label, hint }) {
+  return (
+    <button type="button" onClick={() => onChange(!checked)}
+      className="w-full flex items-start gap-3 text-left p-3 rounded-xl border transition-colors"
+      style={checked
+        ? { borderColor: '#f59e0b', backgroundColor: '#fffbeb' }
+        : { borderColor: '#e5e7eb', backgroundColor: '#f9fafb' }}>
+      <span className={`mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 flex items-center justify-center text-white ${checked ? 'bg-saffron-500 border-saffron-500' : 'border-gray-300 bg-white'}`}>
+        {checked && '✓'}
+      </span>
+      <span className="text-sm text-gray-600">
+        {label}
+        {hint && <span className="block text-xs text-gray-400 mt-0.5">{hint}</span>}
+      </span>
+    </button>
+  );
+}
+
 // ─── Devotee: password step ────────────────────────────────────
 function DevoteePasswordStep({ form, setForm, onSubmit, loading, onBack, initialReferralCode }) {
   const [password, setPassword]       = useState('');
   const [confirm, setConfirm]         = useState('');
   const [referralCode, setReferralCode] = useState(initialReferralCode || '');
   const [show, setShow]               = useState(false);
+  const [serviceConsent, setServiceConsent]   = useState(true);
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [errors, setErrors]           = useState({});
 
   const validate = () => {
@@ -204,7 +239,7 @@ function DevoteePasswordStep({ form, setForm, onSubmit, loading, onBack, initial
   const handleSubmit = () => {
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
-    onSubmit(password, referralCode);
+    onSubmit(password, referralCode, { serviceConsent, marketingConsent });
   };
 
   return (
@@ -236,6 +271,24 @@ function DevoteePasswordStep({ form, setForm, onSubmit, loading, onBack, initial
         <input className="input uppercase" placeholder="e.g. AMIT3C4D" maxLength={10}
           value={referralCode} onChange={(e) => setReferralCode(e.target.value.toUpperCase())} />
       </div>
+
+      {/* WhatsApp communication consent — separate from OTP verification */}
+      <div className="space-y-2 pt-1">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">WhatsApp Communication Preferences</p>
+        <ConsentRow
+          checked={serviceConsent}
+          onChange={setServiceConsent}
+          label={SERVICE_CONSENT_TEXT}
+          hint="Required for booking, order and account updates."
+        />
+        <ConsentRow
+          checked={marketingConsent}
+          onChange={setMarketingConsent}
+          label={MARKETING_CONSENT_TEXT}
+          hint="Optional. You can change this anytime in Settings."
+        />
+      </div>
+
       <button onClick={handleSubmit} disabled={loading} className="btn-primary w-full py-3">
         {loading ? 'Creating account...' : 'Create Account 🙏'}
       </button>
@@ -528,7 +581,7 @@ export default function Register() {
     }
   };
 
-  const completeDevoteeRegistration = async (password, referralCode) => {
+  const completeDevoteeRegistration = async (password, referralCode, consent = {}) => {
     setLoading(true);
     try {
       const { data } = await API.post('/auth/complete-registration', {
@@ -540,6 +593,13 @@ export default function Register() {
         // account (only applied server-side if the account has no DB value
         // yet — see auth.controller.js's completeRegistration).
         preferredLanguage: getStoredLanguage(),
+        // WhatsApp communication consent (separate from OTP verification)
+        serviceConsent:      consent.serviceConsent,
+        marketingConsent:    consent.marketingConsent,
+        serviceConsentText:      consent.serviceConsent      ? SERVICE_CONSENT_TEXT      : '',
+        serviceConsentVersion:   consent.serviceConsent      ? CONSENT_VERSION           : '',
+        marketingConsentText:    consent.marketingConsent    ? MARKETING_CONSENT_TEXT    : '',
+        marketingConsentVersion: consent.marketingConsent    ? CONSENT_VERSION           : '',
       });
       // Auto-login
       localStorage.setItem('zutsav_token', data.token);
@@ -555,7 +615,7 @@ export default function Register() {
     }
   };
 
-  const completePanditRegistration = async (password) => {
+  const completePanditRegistration = async (password, referralCode, consent = {}) => {
     setLoading(true);
     try {
       const { data } = await API.post('/auth/complete-registration', {
@@ -564,6 +624,13 @@ export default function Register() {
         channel,
         role: 'pandit',
         preferredLanguage: getStoredLanguage(),
+        // WhatsApp communication consent (separate from OTP verification)
+        serviceConsent:      consent.serviceConsent,
+        marketingConsent:    consent.marketingConsent,
+        serviceConsentText:      consent.serviceConsent      ? SERVICE_CONSENT_TEXT      : '',
+        serviceConsentVersion:   consent.serviceConsent      ? CONSENT_VERSION           : '',
+        marketingConsentText:    consent.marketingConsent    ? MARKETING_CONSENT_TEXT    : '',
+        marketingConsentVersion: consent.marketingConsent    ? CONSENT_VERSION           : '',
       });
       localStorage.setItem('zutsav_token', data.token);
       localStorage.setItem('zutsav_user',  JSON.stringify(data.user));
@@ -648,7 +715,7 @@ export default function Register() {
           {step === 'password' && role === 'pandit' && (
             <DevoteePasswordStep
               form={basicForm} setForm={setBasicForm}
-              onSubmit={(password) => completePanditRegistration(password)}
+              onSubmit={completePanditRegistration}
               loading={loading}
               onBack={() => setStep('otp')}
               initialReferralCode=""

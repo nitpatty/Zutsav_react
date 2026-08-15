@@ -12,6 +12,7 @@ const LoginHistory  = require('../models/LoginHistory');
 const { isAdminRole } = require('../utils/roleUtils');
 const { isSupportedLanguage } = require('../config/languages.config');
 const { audit, extractRequestMeta } = require('../services/auditService');
+const consentService                 = require('../services/consentService');
 const { NotificationEngine }         = require('../../notification-engine');
 const OtpService                     = require('../../notification-engine/otp/OtpService');
 const { normalizeUserPayload }       = require('../../notification-engine/variables/PayloadNormalizer');
@@ -120,10 +121,20 @@ exports.verifyOTP = async (req, res, next) => {
 };
 
 // ── POST /api/auth/complete-registration ─────────────────────────────────────
-// OTP-verified registration: name, email, phone, password, channel, referralCode, role
+// OTP-verified registration: name, email, phone, password, channel,
+// referralCode, role. Also captures signup-time communication consent
+// (serviceConsent / marketingConsent) — separate from OTP verification:
+// verifying a WhatsApp OTP proves control of the number (whatsappVerified)
+// but never implies marketing consent (see consentService.js).
 exports.completeRegistration = async (req, res, next) => {
   try {
-    const { name, email, phone, password, channel, referralCode, role, preferredLanguage } = req.body;
+    const {
+      name, email, phone, password, channel, referralCode, role, preferredLanguage,
+      // ── Consent (optional, additive) ──────────────────────────────────
+      serviceConsent, marketingConsent,
+      serviceConsentText, serviceConsentVersion,
+      marketingConsentText, marketingConsentVersion,
+    } = req.body;
 
     if (!name || !email || !phone || !password) {
       return res.status(400).json({ success: false, message: 'All fields are required' });
@@ -146,6 +157,10 @@ exports.completeRegistration = async (req, res, next) => {
 
     const isPandit = role === 'pandit';
 
+    // WhatsApp number verification — the verified OTP record's channel is
+    // authoritative. This is proof of control over the number, never consent.
+    const whatsappVerified = otpRecord.channel === 'whatsapp';
+
     let referredBy = null;
     if (referralCode && !isPandit) {
       const referrer = await User.findOne({ referralCode: referralCode.toUpperCase() });
@@ -156,6 +171,7 @@ exports.completeRegistration = async (req, res, next) => {
       name, email: email.toLowerCase(), phone, password,
       role: isPandit ? 'pandit' : 'user',
       referredBy,
+      ...(whatsappVerified ? { whatsappVerified: true, whatsappVerifiedAt: new Date() } : {}),
       // Migrate the guest's locally-stored language preference (if any) into
       // the new account — a brand-new user has no DB value yet, so this is
       // the one place we adopt the guest's choice instead of the schema
@@ -193,6 +209,18 @@ exports.completeRegistration = async (req, res, next) => {
       });
     }
 
+    // Capture signup-time consent. Runs only AFTER the User (and Pandit, if
+    // any) are fully created and every rejection path has passed, so a failed
+    // registration never leaves orphaned consent records. Best-effort by
+    // design: a consent-write failure must not fail an otherwise-successful
+    // account creation (consent can still be captured later via the
+    // preference center).
+    await captureSignupConsent(req, user, {
+      serviceConsent, marketingConsent,
+      serviceConsentText, serviceConsentVersion,
+      marketingConsentText, marketingConsentVersion,
+    });
+
     // Clean up OTP record
     await OTP.deleteOne({ _id: otpRecord._id });
 
@@ -203,6 +231,78 @@ exports.completeRegistration = async (req, res, next) => {
     next(err);
   }
 };
+
+/**
+ * Record signup-time consent (Phase 1-3 of the WhatsApp consent system).
+ *
+ * Semantics:
+ *  - serviceConsent === true   → whatsapp.service opted_in + OPT_IN event
+ *    (source 'signup').
+ *  - serviceConsent === false  → whatsapp.service opted_out, state-only,
+ *    NO event (a decline at signup is an explicit state, not fabricated
+ *    history — the user never opted in).
+ *  - serviceConsent undefined  → preference keeps its default service
+ *    permission (opted_in, source '') so transactional communication keeps
+ *    working; no event (RULE 3 — defaults never generate events).
+ *  - marketingConsent === true → whatsapp.marketing opted_in + OPT_IN event
+ *    (source 'signup_checkbox').
+ *  - marketingConsent !== true → marketing stays not_set; no event. Marketing
+ *    is strictly opt-in (RULE 2); absence of consent is not an action.
+ *
+ * consentText/consentVersion are stored verbatim on events — they are the
+ * exact client-approved copy shown to the user (business/legal artifact).
+ */
+async function captureSignupConsent(req, user, {
+  serviceConsent, marketingConsent,
+  serviceConsentText, serviceConsentVersion,
+  marketingConsentText, marketingConsentVersion,
+}) {
+  try {
+    const { ipAddress, userAgent } = extractRequestMeta(req);
+    const base = { userId: user._id, phone: user.phone, ipAddress, userAgent };
+
+    try {
+      await consentService.getOrCreatePreference({
+        userId: user._id,
+        phone: user.phone,
+        whatsappVerified: !!user.whatsappVerified,
+      });
+    } catch (err) {
+      console.error('[Consent] Failed to create preference for user', user._id, err.message);
+    }
+
+    if (serviceConsent === true) {
+      await consentService.recordOptIn({
+        ...base,
+        purpose: 'service',
+        source: 'signup',
+        consentText: serviceConsentText || '',
+        consentVersion: serviceConsentVersion || '',
+      });
+    } else if (serviceConsent === false) {
+      await consentService.setWhatsAppState({
+        userId: user._id,
+        phone: user.phone,
+        whatsappVerified: !!user.whatsappVerified,
+        purpose: 'service',
+        status: 'opted_out',
+        source: 'signup',
+      });
+    }
+
+    if (marketingConsent === true) {
+      await consentService.recordOptIn({
+        ...base,
+        purpose: 'marketing',
+        source: 'signup_checkbox',
+        consentText: marketingConsentText || '',
+        consentVersion: marketingConsentVersion || '',
+      });
+    }
+  } catch (err) {
+    console.error('[Consent] Failed to capture signup consent for user', user?._id, err.message);
+  }
+}
 
 // ── POST /api/auth/register (legacy — kept for backward compat / seeding) ────
 exports.register = async (req, res, next) => {

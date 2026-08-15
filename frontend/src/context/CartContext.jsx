@@ -20,7 +20,11 @@ export function CartProvider({ children }) {
 
   // ── Pooja booking item ─────────────────────────────────────
   // pricing: { poojaAmount, kitAmount, platformFee, taxAmount, grandTotal, commissionPercent, gstPercent }
-  const addPooja = useCallback(({ pooja, kit, bookingDetails, pricing }) => {
+  // kits: array of selected Kit docs (multi-select); the legacy single `kit`
+  // param is still accepted so old callers keep working, and both shapes are
+  // persisted so cart items saved before multi-select remain readable.
+  const addPooja = useCallback(({ pooja, kit, kits, bookingDetails, pricing }) => {
+    const selectedKits = Array.isArray(kits) && kits.length > 0 ? kits : (kit ? [kit] : []);
     setItems((prev) => [
       ...prev,
       {
@@ -30,10 +34,11 @@ export function CartProvider({ children }) {
         poojaName: pooja.name,
         poojaSlug: pooja.slug,
         poojaImage: pooja.image || null,
-        kitId:    kit?._id   || null,
-        kitName:  kit?.name  || null,
-        kitImage: kit?.image || null,
-        bookingDetails,   // { scheduledDate, scheduledTime, language, specialNote, userDetails, isUrgent, withKit }
+        kits:     selectedKits,          // array of { _id, name, image, discountPrice, items }
+        kitId:    selectedKits[0]?._id || null,  // legacy single-kit alias
+        kitName:  selectedKits[0]?.name  || null, // legacy single-kit alias
+        kitImage: selectedKits[0]?.image || null,
+        bookingDetails,   // { scheduledDate, scheduledTime, language, specialNote, userDetails, isUrgent, withKit, kitIds }
         pricing,          // full price breakdown
       },
     ]);

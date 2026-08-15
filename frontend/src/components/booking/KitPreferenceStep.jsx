@@ -3,14 +3,14 @@ import { Package, HeartHandshake } from 'lucide-react';
 import StepHeader from './StepHeader';
 import NavButtons from './NavButtons';
 
-export default function KitPreferenceStep({ withKit, setWithKit, setKitId, onBack, onNext }) {
+export default function KitPreferenceStep({ withKit, setWithKit, setKitIds, onBack, onNext }) {
   return (
     <div className="card-premium rounded-3xl p-6">
       <StepHeader icon={Package} title="Samagri Kit" desc="Would you like to add a kit for this ceremony?" />
 
       <div className="grid grid-cols-2 gap-4">
         <div
-          onClick={() => { setWithKit(false); setKitId(''); }}
+          onClick={() => { setWithKit(false); setKitIds([]); }}
           className={`rounded-2xl border-2 p-5 cursor-pointer transition-all text-center ${
             !withKit ? 'border-orange-400 bg-orange-50' : 'border-gray-200 hover:border-orange-200'
           }`}

@@ -67,6 +67,14 @@ function StatusPill({ status }) {
   );
 }
 
+// Every selected kit becomes its own line item (multi-select). `kitIds` is the
+// current field; `kitId` is the legacy single-kit alias on older bookings.
+function selectedKitsOf(b) {
+  if (b.kitIds?.length > 0) return b.kitIds;
+  if (b.kitId) return [b.kitId];
+  return [];
+}
+
 function buildLineItems(b, pricing) {
   const items = [];
   if (pricing.poojaAmount > 0) {
@@ -76,12 +84,21 @@ function buildLineItems(b, pricing) {
       qty: 1, rate: pricing.poojaAmount, amt: pricing.poojaAmount,
     });
   }
-  if (b.withKit && b.kitId && pricing.kitAmount > 0) {
-    items.push({
-      desc: b.kitId.name || 'Samagri Kit',
-      sub: 'Pooja samagri kit',
-      qty: 1, rate: pricing.kitAmount, amt: pricing.kitAmount,
-    });
+  if (b.withKit && pricing.kitAmount > 0) {
+    const kits = selectedKitsOf(b);
+    if (kits.length === 0) {
+      items.push({
+        desc: 'Samagri Kit',
+        sub: 'Pooja samagri kit',
+        qty: 1, rate: pricing.kitAmount, amt: pricing.kitAmount,
+      });
+    } else {
+      kits.forEach((k) => items.push({
+        desc: k.name || 'Samagri Kit',
+        sub: 'Pooja samagri kit',
+        qty: 1, rate: k.discountPrice || 0, amt: k.discountPrice || 0,
+      }));
+    }
   }
   if (pricing.platformFee > 0) {
     items.push({
@@ -257,7 +274,7 @@ function BookingDetailsGrid({ b, C }) {
           { i: '⚡', l: 'Booking Type',  v: (b.bookingType === 'urgent' || b.isUrgent) ? 'URGENT' : 'Normal' },
           { i: '📍', l: 'Location',      v: [b.userDetails?.address, b.userDetails?.city].filter(Boolean).join(', ') || '—' },
           { i: '👤', l: 'Pandit',        v: b.panditId?.name || (['paid','pandit_assigned'].includes(b.status) ? 'Being Assigned' : '—') },
-          { i: '📦', l: 'Samagri Kit',   v: b.withKit && b.kitId ? b.kitId.name : 'Without Samagri' },
+          { i: '📦', l: 'Samagri Kit',   v: b.withKit && selectedKitsOf(b).length > 0 ? selectedKitsOf(b).map((k) => k.name || 'Samagri Kit').join(', ') : 'Without Samagri' },
           { i: '🆔', l: 'Booking ID',    v: b.bookingNumber },
         ].map(({ i, l, v }) => (
           <View key={l} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
@@ -396,7 +413,7 @@ function TaxSummaryTable({ pricing, isInterState, b, C }) {
           <TaxRow label="Platform Fee GST" taxable={pricing.platformFee} tax={pricing.platformGST} isInterState={isInterState} C={C} />
         )}
         {pricing.kitGST > 0 && (
-          <TaxRow label={`${b.kitId?.name || 'Kit'} GST`} taxable={pricing.kitAmount} tax={pricing.kitGST} isInterState={isInterState} C={C} />
+          <TaxRow label={`${selectedKitsOf(b).map((k) => k.name || 'Kit').join(', ')} GST`} taxable={pricing.kitAmount} tax={pricing.kitGST} isInterState={isInterState} C={C} />
         )}
         <View style={{ flexDirection: 'row', backgroundColor: '#4c1d95', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 10, marginTop: 4 }}>
           <Text style={{ flex: 2.5, color: 'white', fontWeight: '800', fontSize: 11 }}>Total Tax Collected</Text>

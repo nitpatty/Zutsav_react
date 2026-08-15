@@ -66,6 +66,15 @@ const userSchema = new mongoose.Schema({
   // invalidates every previously-issued token for this user on every
   // device — used by password reset to force a fresh login everywhere.
   tokenVersion: { type: Number, default: 0 },
+
+  // ── WhatsApp number verification ──────────────────────────────────────
+  // Set only when the user's phone was verified via a WhatsApp OTP (see
+  // auth.controller.js completeRegistration — the verified OTP record's
+  // channel is the source of truth). Proof of control over the number only:
+  // it is NOT consent and never implies service or marketing communication
+  // consent (see services/consentService.js + models/WhatsAppPreference.js).
+  whatsappVerified:   { type: Boolean, default: false },
+  whatsappVerifiedAt: { type: Date,    default: null },
 }, { timestamps: true });
 
 userSchema.pre('save', async function (next) {

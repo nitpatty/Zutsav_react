@@ -38,7 +38,7 @@ export default function TempleExplorerSection({ temples, loading }) {
                 const [gFrom, gTo] = FALLBACK_GRADIENTS[i % FALLBACK_GRADIENTS.length];
                 const image = temple.images?.[0];
                 return (
-                  <div key={temple._id}
+                  <Link key={temple._id} to={`/temples/${temple._id}`}
                     className={`group rounded-3xl overflow-hidden border border-gray-100 hover:border-saffron-200 hover:shadow-premium transition-all duration-500 hover:-translate-y-2 ${templeInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
                     style={{ transitionDelay: `${i * 80}ms` }}>
                     <div className={`h-40 bg-gradient-to-br ${gFrom} ${gTo} flex items-center justify-center relative overflow-hidden`}>
@@ -60,12 +60,12 @@ export default function TempleExplorerSection({ temples, loading }) {
                         <p className="text-xs text-gray-400 font-sans">{temple.city}, {temple.state}</p>
                       </div>
                       <p className="text-sm text-gray-500 font-sans leading-relaxed mb-5 line-clamp-3">{temple.description}</p>
-                      <Link to="/temples"
+                      <span
                         className="inline-flex items-center gap-2 text-saffron-600 font-semibold text-sm hover:gap-3 transition-all font-sans group-hover:text-saffron-700">
                         {t('home.explore', 'Explore')} <ArrowRight size={14} />
-                      </Link>
+                      </span>
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
         </div>

@@ -20,6 +20,11 @@ const kitSchema = new mongoose.Schema({
   isActive:      { type: Boolean, default: true },
   taxRate:       { type: Number, default: 0, min: 0, max: 100 }, // GST % on the kit
   isFeatured:    { type: Boolean, default: false },
+  // Stable display order for kits offered during a pooja booking (Pooja Kit →
+  // Havan Kit → Vishesh Havan Kit). Admin-controlled so kit names can change
+  // without the order drifting. null = unset: the booking query falls back to
+  // the legacy tier inference (see getKitsByPooja) until an admin sets this.
+  sortOrder:     { type: Number, default: null, min: 0 },
   // Poojas this kit is recommended for (admin-managed mapping)
   linkedPoojas:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'Pooja' }],
 

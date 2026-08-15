@@ -6,6 +6,28 @@ const translationService = require('../services/translationService');
 
 const makeSlug = (name) => name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
+// ── Kit display ordering ────────────────────────────────────────────────────
+// The client's booking flow presents kits in a fixed logical tier order:
+// Pooja Kit → Havan Kit → Vishesh Havan Kit. The stable source of truth is
+// the admin-set `sortOrder` field on the Kit — kit names may change, the
+// order must not. Kits created before that field existed have `sortOrder`
+// null, so this inference maps their names to the same tier numbers purely
+// as a backward-compatible fallback (never a substitute for sortOrder).
+const KIT_TIER_INFERENCE = [
+  { re: /vishesh/i, order: 3 },
+  { re: /havan/i,   order: 2 },
+  { re: /pooja|puja/i, order: 1 },
+];
+const LEGACY_KIT_TIER_ORDER = 4; // any legacy kit outside the known tiers
+
+const inferKitOrder = (name = '') => {
+  const match = KIT_TIER_INFERENCE.find(({ re }) => re.test(name));
+  return match ? match.order : LEGACY_KIT_TIER_ORDER;
+};
+
+const effectiveKitOrder = (kit) =>
+  (kit.sortOrder !== undefined && kit.sortOrder !== null) ? kit.sortOrder : inferKitOrder(kit.name);
+
 const computeKitPricing = async (items, discountType, discountValue) => {
   let totalCost = 0;
   for (const item of items) {
@@ -84,8 +106,17 @@ exports.getKitsByPooja = async (req, res, next) => {
   try {
     let kits = await Kit.find({ isActive: true, linkedPoojas: req.params.poojaId })
       .populate({ path: 'items.productId', select: 'name price salePrice images stock isActive' })
-      .sort({ isFeatured: -1, discountPrice: 1 })
       .lean();
+
+    // Deterministic booking order — never price/name/creation-order based:
+    //  1. explicit admin `sortOrder` (ascending)
+    //  2. legacy fallback: tier inferred from the kit name (Pooja→1, Havan→2,
+    //     Vishesh Havan→3, anything else→4)
+    //  3. price as a stable tiebreak only
+    kits.sort((a, b) =>
+      (effectiveKitOrder(a) - effectiveKitOrder(b))
+      || ((a.discountPrice || 0) - (b.discountPrice || 0))
+    );
 
     kits = await withKitTranslations(kits, req.query.lang);
 
@@ -106,7 +137,7 @@ exports.createKit = async (req, res, next) => {
     const {
       name, description,
       discountType = 'percentage', discountValue = 0, discountPrice,
-      items: rawItems, isFeatured, taxRate,
+      items: rawItems, isFeatured, taxRate, sortOrder,
       linkedPoojas: rawLinkedPoojas,
     } = req.body;
     const items        = typeof rawItems        === 'string' ? JSON.parse(rawItems)        : rawItems;
@@ -149,6 +180,7 @@ exports.createKit = async (req, res, next) => {
       image,
       isFeatured:    isFeatured === 'true' || isFeatured === true,
       taxRate:       taxRate !== undefined ? +taxRate : 0,
+      sortOrder:     sortOrder !== undefined && sortOrder !== '' ? +sortOrder : null,
       linkedPoojas,
     });
     res.status(201).json({ success: true, kit });
@@ -186,6 +218,8 @@ exports.updateKit = async (req, res, next) => {
 
     if (updates.discountValue !== undefined) updates.discountValue = +updates.discountValue;
     if (updates.discountPrice !== undefined) updates.discountPrice = +updates.discountPrice;
+    if (updates.sortOrder !== undefined && updates.sortOrder !== '') updates.sortOrder = +updates.sortOrder;
+    else if (updates.sortOrder !== undefined) updates.sortOrder = null;
 
     // Bump the translation version only when a translatable field actually
     // changed (see translationService.js) — pricing/item edits must not

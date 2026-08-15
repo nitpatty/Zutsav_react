@@ -63,17 +63,24 @@ export default function CartPage() {
     }
     setPaying(true);
     try {
-      const bookingPayload = poojaItems.map(item => ({
-        poojaId:       item.poojaId,
-        scheduledDate: item.bookingDetails.scheduledDate,
-        scheduledTime: item.bookingDetails.scheduledTime,
-        language:      item.bookingDetails.language,
-        specialNote:   item.bookingDetails.specialNote,
-        withKit:       item.bookingDetails.withKit,
-        kitId:         item.bookingDetails.kitId || undefined,
-        isUrgent:      item.bookingDetails.isUrgent,
-        userDetails:   item.bookingDetails.userDetails,
-      }));
+      const bookingPayload = poojaItems.map(item => {
+        // kitIds is the current shape; kitId is the legacy single-selection
+        // alias from cart items saved before multi-select existed.
+        const kitIds = item.bookingDetails?.kitIds?.length
+          ? item.bookingDetails.kitIds
+          : (item.bookingDetails?.kitId ? [item.bookingDetails.kitId] : []);
+        return {
+          poojaId:       item.poojaId,
+          scheduledDate: item.bookingDetails.scheduledDate,
+          scheduledTime: item.bookingDetails.scheduledTime,
+          language:      item.bookingDetails.language,
+          specialNote:   item.bookingDetails.specialNote,
+          withKit:       item.bookingDetails.withKit,
+          kitIds:        kitIds.length ? kitIds : undefined,
+          isUrgent:      item.bookingDetails.isUrgent,
+          userDetails:   item.bookingDetails.userDetails,
+        };
+      });
 
       const productPayload = productItems.map(item => ({
         productId: item.productId,
@@ -144,9 +151,9 @@ export default function CartPage() {
                               <Zap size={9}/> Urgent
                             </span>
                           )}
-                          {item.kitName && (
+                          {(item.kits?.length > 0 || item.kitName) && (
                             <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold flex items-center gap-0.5">
-                              <Package size={9}/> {item.kitName}
+                              <Package size={9}/> {item.kits?.length > 1 ? `${item.kits.length} Kits` : (item.kits?.[0]?.name || item.kitName)}
                             </span>
                           )}
                         </div>
@@ -291,11 +298,17 @@ export default function CartPage() {
                       <span>GST on platform fee ({item.pricing?.gstPercent}%)</span><span>{formatINR(item.pricing?.platformGST)}</span>
                     </div>
                   )}
-                  {(item.pricing?.kitAmount || 0) > 0 && (
+                  {(item.pricing?.kitAmount || 0) > 0 && (item.kits?.length > 1 ? (
+                    item.kits.map((k) => (
+                      <div key={k._id} className="flex justify-between text-xs text-gray-400">
+                        <span>Kit — {k.name}</span><span>{formatINR(k.discountPrice || 0)}</span>
+                      </div>
+                    ))
+                  ) : (
                     <div className="flex justify-between text-xs text-gray-400">
-                      <span>Kit — {item.kitName}</span><span>{formatINR(item.pricing?.kitAmount)}</span>
+                      <span>Kit — {item.kits?.[0]?.name || item.kitName}</span><span>{formatINR(item.pricing?.kitAmount)}</span>
                     </div>
-                  )}
+                  ))}
                   {(item.pricing?.kitGST || 0) > 0 && (
                     <div className="flex justify-between text-xs text-gray-400">
                       <span>GST on kit ({item.pricing?.gstPercent}%)</span><span>{formatINR(item.pricing?.kitGST)}</span>

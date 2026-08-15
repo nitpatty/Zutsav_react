@@ -53,17 +53,23 @@ exports.cartCheckout = async (req, res, next) => {
     let bookingTotal = 0;
 
     for (const item of bookingItems) {
-      const { poojaId, scheduledDate, scheduledTime, language, specialNote, userDetails, isUrgent, withKit, kitId } = item;
+      const { poojaId, scheduledDate, scheduledTime, language, specialNote, userDetails, isUrgent, withKit, kitId, kitIds } = item;
       const urgent = isUrgent === true || isUrgent === 'true';
 
       const pooja = await Pooja.findById(poojaId).select('name price salePrice taxEnabled taxRate isActive');
       if (!pooja || !pooja.isActive) continue;
 
+      // Multi-kit: `kitIds` (array) is the new shape; a bare `kitId` is kept as
+      // the single-selection alias for older clients. Only ACTIVE kits are
+      // charged — the backend is the source of truth for kit pricing.
+      const requestedKitIds = kitIds ?? (kitId ? [kitId] : []);
+      const ids = [...new Set((requestedKitIds || []).filter(Boolean))];
       let kitPrice = 0;
-      let resolvedKitId = null;
-      if (!urgent && withKit && kitId) {
-        const kit = await Kit.findById(kitId).select('discountPrice isActive');
-        if (kit && kit.isActive) { kitPrice = kit.discountPrice || 0; resolvedKitId = kitId; }
+      let resolvedKitIds = [];
+      if (!urgent && ids.length > 0) {
+        const kits = await Kit.find({ _id: { $in: ids }, isActive: true }).select('discountPrice').lean();
+        kitPrice = kits.reduce((sum, k) => sum + (k.discountPrice || 0), 0);
+        resolvedKitIds = kits.map((k) => k._id);
       }
 
       const pricing = await computePricing(pooja, kitPrice);
@@ -98,8 +104,9 @@ exports.cartCheckout = async (req, res, next) => {
         status:                       'pending_payment',
         bookingType: urgent ? 'urgent' : 'normal',
         isUrgent:    urgent,
-        withKit:     !!resolvedKitId,
-        kitId:       resolvedKitId,
+        withKit:     resolvedKitIds.length > 0,
+        kitIds:      resolvedKitIds,
+        kitId:       resolvedKitIds[0] || null,
       });
 
       recordAttemptInitiated(booking, { merchantTransactionId, amount: pricing.grandTotal, paymentType: 'FULL' });

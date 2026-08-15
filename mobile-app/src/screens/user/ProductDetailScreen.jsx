@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, FlatList, Dimensions } from 'react-native';
+import RenderHtml from 'react-native-render-html';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { useNavigation } from '@react-navigation/native';
@@ -141,9 +142,31 @@ export default function ProductDetailScreen({ route }) {
           )}
 
           {product.description && (
+            /* Rich-text (TipTap) descriptions are sanitized server-side at write
+               time and rendered as formatted HTML — same mechanism the blog
+               detail screen uses, never raw text. */
             <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
               <Text style={[styles.cardTitle, { color: C.text }]}>Description</Text>
-              <Text style={[styles.desc, { color: C.textSecondary }]}>{product.description}</Text>
+              <RenderHtml
+                contentWidth={Dimensions.get('window').width - 60}
+                source={{ html: product.description }}
+                baseStyle={{ color: C.textSecondary, fontSize: 14, lineHeight: 22 }}
+                tagsStyles={{
+                  p:      { marginTop: 0, marginBottom: 12 },
+                  h1:     { color: C.text, fontSize: 22, fontWeight: '800', marginTop: 18, marginBottom: 10 },
+                  h2:     { color: C.text, fontSize: 19, fontWeight: '800', marginTop: 16, marginBottom: 8 },
+                  h3:     { color: C.text, fontSize: 17, fontWeight: '700', marginTop: 14, marginBottom: 6 },
+                  strong: { fontWeight: '800' },
+                  b:      { fontWeight: '800' },
+                  em:     { fontStyle: 'italic' },
+                  i:      { fontStyle: 'italic' },
+                  a:      { color: C.primary, textDecorationLine: 'underline' },
+                  ul:     { marginVertical: 6 },
+                  ol:     { marginVertical: 6 },
+                  li:     { marginBottom: 5 },
+                  img:    { borderRadius: 10, marginVertical: 10 },
+                }}
+              />
             </View>
           )}
 

@@ -971,6 +971,7 @@ exports.getBookingById = async (req, res, next) => {
       .populate('poojaId',  'name price image')
       .populate('panditId', 'name phone profilePhoto bankDetails upiDetails')
       .populate({ path: 'kitId', select: 'name totalCost discountPrice description items', populate: { path: 'items.productId', select: 'name' } })
+      .populate({ path: 'kitIds', select: 'name totalCost discountPrice description items', populate: { path: 'items.productId', select: 'name' } })
       .populate({ path: 'referral.referralId', select: 'status remark remarkSubmittedAt expiresAt createdAt statusHistory userMobile userEmail' })
       .populate({ path: 'referral.referringPanditId', select: 'name phone email profilePhoto city experience status' });
 
@@ -997,6 +998,7 @@ exports.getBookings = async (req, res, next) => {
       .populate('poojaId',  'name price image')
       .populate('panditId', 'name phone profilePhoto bankDetails upiDetails')
       .populate({ path: 'kitId', select: 'name totalCost discountPrice description items', populate: { path: 'items.productId', select: 'name' } })
+      .populate({ path: 'kitIds', select: 'name totalCost discountPrice description items', populate: { path: 'items.productId', select: 'name' } })
       .populate({ path: 'referral.referralId', select: 'status remark remarkSubmittedAt expiresAt createdAt statusHistory userMobile userEmail' })
       .populate({ path: 'referral.referringPanditId', select: 'name phone email profilePhoto city experience status' })
       .sort({ createdAt: -1 })
@@ -1224,6 +1226,7 @@ exports.exportBookings = async (req, res, next) => {
       .populate('poojaId',  'name price')
       .populate('panditId', 'name phone')
       .populate({ path: 'kitId', select: 'name totalCost discountPrice description items', populate: { path: 'items.productId', select: 'name' } })
+      .populate({ path: 'kitIds', select: 'name totalCost discountPrice description items', populate: { path: 'items.productId', select: 'name' } })
       .populate({ path: 'referral.referralId', select: 'status remark remarkSubmittedAt token createdAt expiresAt' })
       .populate({ path: 'referral.referringPanditId', select: 'name phone email' })
       .sort({ createdAt: -1 })
@@ -1857,8 +1860,9 @@ exports.updateBookingStatus = async (req, res, next) => {
 
     if (status === 'completed') {
       const completedPayload = normalizeBookingPayload({ booking, poojaName });
+      // Phase 5.1 (client clarification): feedback is an OPTIONAL ACTION on the
+      // transactional SERVICE_COMPLETED message, not a standalone FEEDBACK_REQUEST.
       NotificationEngine.emit('INVOICE_GENERATED', completedPayload).catch(() => {});
-      NotificationEngine.emit('FEEDBACK_REQUEST',  completedPayload).catch(() => {});
       NotificationEngine.emit('SERVICE_COMPLETED', completedPayload).catch(() => {});
       Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
     }
@@ -1907,8 +1911,9 @@ exports.approveCompletion = async (req, res, next) => {
 
     const completedPoojaName = booking.poojaId?.name || 'Pooja';
     const completionPayload = normalizeBookingPayload({ booking, poojaName: completedPoojaName });
+    // Phase 5.1 (client clarification): feedback is an OPTIONAL ACTION on the
+    // transactional SERVICE_COMPLETED message, not a standalone FEEDBACK_REQUEST.
     NotificationEngine.emit('INVOICE_GENERATED', completionPayload).catch(() => {});
-    NotificationEngine.emit('FEEDBACK_REQUEST',  completionPayload).catch(() => {});
     NotificationEngine.emit('SERVICE_COMPLETED', completionPayload).catch(() => {});
     Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
 
@@ -3020,7 +3025,9 @@ const { createShipment: tekipostCreateShipment } = require('../services/tackipos
 exports.createTackipostShipment = async (req, res, next) => {
   try {
     const createShipment = tekipostCreateShipment;
-    const booking = await Booking.findById(req.params.id).populate('kitId', 'name totalCost items');
+    const booking = await Booking.findById(req.params.id)
+      .populate('kitId',  'name totalCost items')
+      .populate('kitIds', 'name totalCost items');
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
     if (!booking.withKit) return res.status(400).json({ success: false, message: 'Not a kit booking' });
 
@@ -3539,15 +3546,16 @@ const WhatsAppChannel      = require('../../notification-engine/channels/WhatsAp
 const { resolveRecipients } = require('../../notification-engine/core/EventDispatcher');
 
 const MAPPING_TRACKED_FIELDS = [
-  'eventName', 'recipientType', 'channel',
-  'whatsappTemplateName', 'whatsappLanguage', 'whatsappVariables', 'whatsappButtonType', 'whatsappButtonPayloadPath',
+  'eventName', 'recipientType', 'channel', 'purpose',
+  'whatsappTemplateName', 'whatsappLanguage', 'whatsappVariables', 'whatsappButtonType', 'whatsappButtonPayloadPath', 'whatsappUrlButtons',
   'emailTemplateName', 'emailSubject', 'emailHtml',
   'inAppType', 'inAppTitle', 'inAppMessage',
   'enabled', 'priority', 'label',
 ];
 
 const MAPPING_EDITABLE_FIELDS = [
-  'whatsappTemplateName', 'whatsappLanguage', 'whatsappVariables', 'whatsappButtonType', 'whatsappButtonPayloadPath',
+  'purpose',
+  'whatsappTemplateName', 'whatsappLanguage', 'whatsappVariables', 'whatsappButtonType', 'whatsappButtonPayloadPath', 'whatsappUrlButtons',
   'emailTemplateName', 'emailSubject', 'emailHtml',
   'inAppType', 'inAppTitle', 'inAppMessage',
   'enabled', 'priority', 'label',
@@ -3648,8 +3656,8 @@ exports.getNotificationMappings = async (req, res, next) => {
 exports.createNotificationMapping = async (req, res, next) => {
   try {
     const {
-      eventName, recipientType, channel,
-      whatsappTemplateName, whatsappLanguage, whatsappVariables, whatsappButtonType, whatsappButtonPayloadPath,
+      eventName, recipientType, channel, purpose,
+      whatsappTemplateName, whatsappLanguage, whatsappVariables, whatsappButtonType, whatsappButtonPayloadPath, whatsappUrlButtons,
       emailTemplateName, emailSubject, emailHtml,
       inAppType, inAppTitle, inAppMessage,
       enabled, priority, label,
@@ -3664,11 +3672,13 @@ exports.createNotificationMapping = async (req, res, next) => {
 
     const mapping = await NotificationMapping.create({
       eventName, recipientType, channel,
+      purpose:              purpose || 'UNKNOWN',
       whatsappTemplateName: whatsappTemplateName || '',
       whatsappLanguage:     whatsappLanguage     || 'en',
       whatsappVariables:    whatsappVariables     || [],
       whatsappButtonType:        whatsappButtonType        || 'none',
       whatsappButtonPayloadPath: whatsappButtonPayloadPath || '',
+      whatsappUrlButtons:   whatsappUrlButtons   || [],
       emailTemplateName:    emailTemplateName     || '',
       emailSubject:         emailSubject          || '',
       emailHtml:            emailHtml             || '',
@@ -3742,11 +3752,13 @@ exports.cloneNotificationMapping = async (req, res, next) => {
       eventName:     source.eventName,
       recipientType: source.recipientType,
       channel:       source.channel,
+      purpose:       source.purpose || 'UNKNOWN',
       whatsappTemplateName: source.whatsappTemplateName,
       whatsappLanguage:     source.whatsappLanguage,
       whatsappVariables:    source.whatsappVariables,
       whatsappButtonType:        source.whatsappButtonType,
       whatsappButtonPayloadPath: source.whatsappButtonPayloadPath,
+      whatsappUrlButtons:   source.whatsappUrlButtons || [],
       emailTemplateName:    source.emailTemplateName,
       emailSubject:         source.emailSubject,
       emailHtml:            source.emailHtml,
@@ -3841,11 +3853,13 @@ exports.importNotificationMappings = async (req, res, next) => {
           eventName:     m.eventName,
           recipientType: m.recipientType,
           channel:       m.channel,
+          purpose:       m.purpose || 'UNKNOWN',
           whatsappTemplateName: m.whatsappTemplateName || '',
           whatsappLanguage:     m.whatsappLanguage     || 'en',
           whatsappVariables:    m.whatsappVariables     || [],
           whatsappButtonType:        m.whatsappButtonType        || 'none',
           whatsappButtonPayloadPath: m.whatsappButtonPayloadPath || '',
+          whatsappUrlButtons:   m.whatsappUrlButtons   || [],
           emailTemplateName:    m.emailTemplateName || '',
           emailSubject:         m.emailSubject      || '',
           emailHtml:            m.emailHtml         || '',
@@ -4024,7 +4038,6 @@ exports.testNotificationMapping = async (req, res, next) => {
 
     const rawText = TemplateEngine.rawTemplateText(mapping.channel, mapping);
     const validation = TemplateValidator.validate(mapping.eventName, rawText, payload);
-    const rendered = TemplateEngine.render(mapping.channel, mapping, payload);
 
     // WhatsApp gets a second, structural check on top of TemplateValidator's
     // REQUIRED_VARIABLES check: the exact per-position expected-vs-resolved
@@ -4034,6 +4047,11 @@ exports.testNotificationMapping = async (req, res, next) => {
     const whatsappChecklist = mapping.channel === 'whatsapp'
       ? await WhatsAppChannel.buildVariableChecklist(mapping, payload)
       : null;
+    // Render with the template's actually-declared URL buttons so the preview
+    // mirrors a real send (undeclared buttons are omitted with warnings).
+    const rendered = TemplateEngine.render(mapping.channel, mapping, payload, {
+      declaredUrlButtons: whatsappChecklist?.declaredUrlButtons,
+    });
     const valid = validation.valid && (whatsappChecklist ? whatsappChecklist.ok : true);
     const blockingReasons = [
       ...(validation.valid ? [] : [`Missing required variable(s): ${validation.missing.join(', ')}`]),

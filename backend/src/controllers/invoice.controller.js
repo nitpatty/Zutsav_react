@@ -15,6 +15,11 @@ async function loadBookingForInvoice(bookingId) {
       select:   'name description discountPrice items',
       populate: { path: 'items.productId', select: 'name price' },
     })
+    .populate({
+      path:     'kitIds',
+      select:   'name description discountPrice items',
+      populate: { path: 'items.productId', select: 'name price' },
+    })
     .lean();
 }
 
@@ -29,7 +34,8 @@ exports.getInvoicesByBooking = async (req, res, next) => {
     const booking = await Booking.findById(req.params.bookingId)
       .populate('poojaId', 'name category description duration')
       .populate('panditId', 'name phone profilePhoto')
-      .populate({ path: 'kitId', select: 'name description discountPrice items' });
+      .populate({ path: 'kitId', select: 'name description discountPrice items' })
+      .populate({ path: 'kitIds', select: 'name description discountPrice items' });
 
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
     if (String(booking.userId) !== String(req.user._id) && !isAdminRole(req.user.role)) {

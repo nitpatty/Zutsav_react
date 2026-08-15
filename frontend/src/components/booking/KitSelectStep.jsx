@@ -5,10 +5,19 @@ import { getImageUrl, handleImageError } from '../../config';
 import StepHeader from './StepHeader';
 import NavButtons from './NavButtons';
 
-export default function KitSelectStep({ linkedKits, kitsLoading, kitId, setKitId, errors, setErrors, onViewItems, onBack, onNext }) {
+// Multi-select: every kit shown here can be toggled independently so a single
+// pooja booking can include e.g. Pooja Kit + Havan Kit + Vishesh Havan Kit.
+// Kits are displayed in the API's deterministic order (admin sortOrder first,
+// legacy tier fallback second) — never price-sorted.
+export default function KitSelectStep({ linkedKits, kitsLoading, kitIds, setKitIds, errors, setErrors, onViewItems, onBack, onNext }) {
+  const toggleKit = (id) => {
+    setKitIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setErrors((e) => ({ ...e, kitIds: '' }));
+  };
+
   return (
     <div className="card-premium rounded-3xl p-6">
-      <StepHeader icon={ShoppingBag} title="Select a Samagri Kit" desc="Choose the right kit for your ceremony" />
+      <StepHeader icon={ShoppingBag} title="Select Samagri Kits" desc="Choose one or more kits for your ceremony" />
 
       {kitsLoading ? (
         <div className="space-y-4">
@@ -19,12 +28,12 @@ export default function KitSelectStep({ linkedKits, kitsLoading, kitId, setKitId
           {linkedKits.map((kit) => {
             const items = kit.items?.map(it => it.productId?.name).filter(Boolean) || [];
             const savings = kitSavingsPct(kit.totalCost, kit.discountPrice);
-            const isSelected = kitId === kit._id;
+            const isSelected = kitIds.includes(kit._id);
 
             return (
               <div
                 key={kit._id}
-                onClick={() => { setKitId(kit._id); setErrors(e => ({ ...e, kitId: '' })); }}
+                onClick={() => toggleKit(kit._id)}
                 className={`rounded-2xl border-2 cursor-pointer transition-all duration-200 overflow-hidden ${
                   isSelected ? 'border-orange-400 shadow-md' : 'border-gray-200 hover:border-orange-200 hover:shadow-sm'
                 }`}
@@ -76,19 +85,21 @@ export default function KitSelectStep({ linkedKits, kitsLoading, kitId, setKitId
                     <Eye size={13} /> View Items
                   </button>
 
-                  {isSelected ? (
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-orange-600">
-                      <CheckCircle size={13} /> Kit Selected
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setKitId(kit._id); setErrors(err => ({ ...err, kitId: '' })); }}
-                      className="text-xs font-semibold text-orange-600 border border-orange-300 px-3 py-1 rounded-lg hover:bg-orange-50 transition-colors"
-                    >
-                      Select Kit
-                    </button>
-                  )}
+                  <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none"
+                    style={{ color: isSelected ? 'var(--t-primary, #EA580C)' : '#6B7280' }}
+                    onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleKit(kit._id)}
+                      className="accent-orange-500 w-4 h-4"
+                    />
+                    {isSelected ? (
+                      <span className="flex items-center gap-1 text-orange-600"><CheckCircle size={13} /> Selected</span>
+                    ) : (
+                      <span>Select Kit</span>
+                    )}
+                  </label>
                 </div>
               </div>
             );
@@ -96,7 +107,7 @@ export default function KitSelectStep({ linkedKits, kitsLoading, kitId, setKitId
         </div>
       )}
 
-      {errors.kitId && <p className="text-red-500 text-xs mt-3">{errors.kitId}</p>}
+      {errors.kitIds && <p className="text-red-500 text-xs mt-3">{errors.kitIds}</p>}
       <NavButtons onBack={onBack} onNext={onNext} />
     </div>
   );

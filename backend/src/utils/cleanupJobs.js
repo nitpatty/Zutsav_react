@@ -190,39 +190,6 @@ function parseTimeString(raw) {
 }
 
 /**
- * Feedback + invoice reminder.
- * Fires every hour; sends to completed bookings (no rating yet) from 2–6h ago.
- */
-const runFeedbackReminder = async () => {
-  try {
-    const now       = new Date();
-    const from      = new Date(now.getTime() - 6 * MS_PER_HOUR);
-    const to        = new Date(now.getTime() - 2 * MS_PER_HOUR);
-
-    const bookings = await Booking.find({
-      status:              'completed',
-      completedAt:         { $gte: from, $lte: to },
-      rating:              null,
-      feedbackReminderSent: { $ne: true },
-    }).populate('poojaId', 'name');
-
-    for (const booking of bookings) {
-      try {
-        const poojaName = booking.poojaId?.name || 'Pooja';
-        NotificationEngine.emit('FEEDBACK_REQUEST', normalizeBookingPayload({ booking, poojaName })).catch(() => {});
-
-        await Booking.findByIdAndUpdate(booking._id, { feedbackReminderSent: true });
-        console.log(`[Reminders] Feedback reminder sent for booking ${booking.bookingNumber}`);
-      } catch (err) {
-        console.error(`[Reminders] Feedback reminder failed for ${booking._id}:`, err.message);
-      }
-    }
-  } catch (err) {
-    console.error('[Reminders] Feedback reminder job error:', err.message);
-  }
-};
-
-/**
  * Invoice send-up job.
  * Fires every hour; sends invoice to completed bookings where invoice hasn't been sent yet.
  * Acts as a safety net in case the immediate invoice send on completion failed.
@@ -255,15 +222,20 @@ const runInvoiceJob = async () => {
 const startBookingReminderJobs = () => {
   // Run immediately on start to catch any missed reminders
   run24hReminder();
-  runFeedbackReminder();
+  run1hReminder();
   runInvoiceJob();
 
   setInterval(run24hReminder,      30 * MS_PER_MINUTE); // every 30 min
   setInterval(run1hReminder,       10 * MS_PER_MINUTE); // every 10 min
-  setInterval(runFeedbackReminder, MS_PER_HOUR);        // every hour
   setInterval(runInvoiceJob,       MS_PER_HOUR);        // every hour
 
-  console.log('[Reminders] Booking reminder jobs started (24h/30min, 1h/10min, feedback+invoice/1h)');
+  // NOTE (Phase 5.1): the standalone hourly FEEDBACK_REQUEST reminder was
+  // REMOVED per the client clarification — feedback is now an OPTIONAL ACTION
+  // (URL button) on the transactional SERVICE_COMPLETED message sent at
+  // completion, never a standalone feedback-asking WhatsApp message. The
+  // `feedbackReminderSent` flag on Booking is retained for backward
+  // compatibility but is no longer set by any job.
+  console.log('[Reminders] Booking reminder jobs started (24h/30min, 1h/10min, invoice/1h)');
 };
 
 // ── Stale Payment Attempt Sweep ───────────────────────────────
@@ -357,7 +329,6 @@ module.exports = {
   startBookingReminderJobs,
   run24hReminder,
   run1hReminder,
-  runFeedbackReminder,
   runInvoiceJob,
   startTranslationLockSweep,
   sweepStaleTranslationLocks,

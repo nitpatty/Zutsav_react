@@ -190,6 +190,14 @@ function TH({ children, right }) {
 /* ─────────────────────────────────────────────────────────
    Line-items builder
 ──────────────────────────────────────────────────────────── */
+// Every selected kit becomes its own line item (multi-select). `kitIds` is the
+// current field; `kitId` is the legacy single-kit alias on older bookings.
+function selectedKitsOf(b) {
+  if (b.kitIds?.length > 0) return b.kitIds;
+  if (b.kitId) return [b.kitId];
+  return [];
+}
+
 function buildLineItems(b, pricing) {
   const items = [];
   if (pricing.poojaAmount > 0) {
@@ -199,21 +207,32 @@ function buildLineItems(b, pricing) {
         'Spiritual ceremony service',
         b.language && `Language: ${b.language}`,
         (b.bookingType === 'urgent' || b.isUrgent) && '⚡ Urgent Booking',
-        (!b.withKit || !b.kitId) && 'Kit: Without Samagri',
+        (!b.withKit || selectedKitsOf(b).length === 0) && 'Kit: Without Samagri',
       ].filter(Boolean).join(' · '),
       qty: 1,
       rate: pricing.poojaAmount,
       amt:  pricing.poojaAmount,
     });
   }
-  if (b.withKit && b.kitId && pricing.kitAmount > 0) {
-    items.push({
-      desc: b.kitId.name || 'Samagri Kit',
-      sub:  'Pooja samagri kit',
-      qty:  1,
-      rate: pricing.kitAmount,
-      amt:  pricing.kitAmount,
-    });
+  if (b.withKit && pricing.kitAmount > 0) {
+    const kits = selectedKitsOf(b);
+    if (kits.length === 0) {
+      items.push({
+        desc: 'Samagri Kit',
+        sub:  'Pooja samagri kit',
+        qty:  1,
+        rate: pricing.kitAmount,
+        amt:  pricing.kitAmount,
+      });
+    } else {
+      kits.forEach((k) => items.push({
+        desc: k.name || 'Samagri Kit',
+        sub:  'Pooja samagri kit',
+        qty:  1,
+        rate: k.discountPrice || 0,
+        amt:  k.discountPrice || 0,
+      }));
+    }
   }
   if (pricing.platformFee > 0) {
     items.push({
@@ -480,7 +499,9 @@ export default function InvoicePage() {
               { i:'⚡', l:'Booking Type', v: (b.bookingType === 'urgent' || b.isUrgent) ? 'URGENT' : 'Normal' },
               { i:'📍', l:'Location',   v: [ud.address, ud.city].filter(Boolean).join(', ') || '—' },
               { i:'👤', l:'Pandit',     v: b.panditId?.name || (b.status === 'paid' || b.status === 'pandit_assigned' ? 'Being Assigned' : '—') },
-              (b.withKit && b.kitId) ? { i:'🎁', l:'Samagri Kit', v: b.kitId.name } : { i:'📦', l:'Samagri Kit', v: 'Without Samagri' },
+              (b.withKit && selectedKitsOf(b).length > 0)
+                ? { i:'🎁', l:'Samagri Kit', v: selectedKitsOf(b).map((k) => k.name || 'Samagri Kit').join(', ') }
+                : { i:'📦', l:'Samagri Kit', v: 'Without Samagri' },
               { i:'🆔', l:'Booking ID', v: b.bookingNumber },
             ].map(({ i, l, v }) => (
               <div key={l}>
@@ -719,7 +740,7 @@ export default function InvoicePage() {
                 )}
                 {pricing.kitGST > 0 && (
                   <tr style={{ borderBottom:'1px solid #f3f4f6' }}>
-                    <td style={{ padding:'11px 14px' }}>{b.kitId?.name || 'Samagri Kit'} — GST</td>
+                    <td style={{ padding:'11px 14px' }}>{selectedKitsOf(b).map((k) => k.name || 'Samagri Kit').join(', ')} — GST</td>
                     <td style={{ padding:'11px 14px', textAlign:'right' }}>{INR(pricing.kitAmount)}</td>
                     <td style={{ padding:'11px 14px', textAlign:'right' }}>18%</td>
                     {isInterState ? (

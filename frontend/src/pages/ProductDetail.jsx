@@ -120,7 +120,14 @@ export default function ProductDetail() {
                 {product.name}
               </h1>
               {product.description && (
-                <p className="text-sm leading-relaxed font-sans" style={{ color: 'var(--t-muted)' }}>{product.description}</p>
+                /* Rich-text (TipTap) descriptions are sanitized server-side at
+                   write time and rendered as formatted HTML — same mechanism
+                   the pooja Vidhi/Samagri rich fields use, never raw text. */
+                <div
+                  className="rte-content product-editor-content text-sm leading-relaxed font-sans"
+                  style={{ color: 'var(--t-muted)' }}
+                  dangerouslySetInnerHTML={{ __html: product.description }}
+                />
               )}
             </div>
 

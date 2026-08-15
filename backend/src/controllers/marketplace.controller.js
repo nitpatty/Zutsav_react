@@ -8,6 +8,7 @@ const { normalizeOrderPayload } = require('../../notification-engine/variables/P
 const { deductStock } = require('../utils/inventoryUtils');
 const { urls } = require('../config');
 const translationService = require('../services/translationService');
+const { sanitizeHtml } = require('../utils/sanitizeHtml');
 
 // ── SKU helpers ──────────────────────────────────────────────
 function generateSku(name) {
@@ -173,8 +174,11 @@ exports.createProduct = async (req, res, next) => {
         }));
     }
 
+    // Rich-text (TipTap) descriptions are stored as HTML and rendered as such
+    // on the website/mobile — sanitize at write time exactly like pooja/blog
+    // content so no raw <script>/event-handler markup ever reaches readers.
     const product = await Product.create({
-      name, slug, sku, category, description,
+      name, slug, sku, category, description: sanitizeHtml(description || ''),
       price:          variants.length ? 0 : (+price || 0),
       salePrice:      variants.length ? null : (salePrice ? +salePrice : null),
       stock:          variants.length ? 0 : (+stock || 0),
@@ -232,6 +236,8 @@ exports.updateProduct = async (req, res, next) => {
 
     const before = await Product.findById(req.params.id).select('name price salePrice stock isActive description tags translationVersion').lean();
     if (!before) return res.status(404).json({ success: false, message: 'Product not found' });
+
+    if (updates.description !== undefined) updates.description = sanitizeHtml(updates.description || '');
 
     // Bump the translation version only when a translatable field actually
     // changed (see translationService.js) — price/stock-only edits must not

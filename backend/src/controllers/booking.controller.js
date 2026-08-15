@@ -43,11 +43,17 @@ async function calculatePricing(pooja, kitPrice = 0) {
   });
 }
 
-async function resolveKitPrice(kitId, isUrgent) {
-  if (isUrgent || !kitId) return { kitPrice: 0, resolvedKitId: null };
-  const kit = await Kit.findById(kitId).select('discountPrice isActive');
-  if (!kit || !kit.isActive) return { kitPrice: 0, resolvedKitId: null };
-  return { kitPrice: kit.discountPrice || 0, resolvedKitId: kitId };
+// Resolve one or more selected kits to their combined selling price.
+// The backend is the source of truth for kit pricing: the total is the sum
+// of the DB `discountPrice` values of the ACTIVE kits actually found, and the
+// returned ids are only the ones that resolved (inactive/deleted kits are
+// silently dropped rather than charged).
+async function resolveKitsPrice(kitIds, isUrgent) {
+  const ids = Array.isArray(kitIds) ? [...new Set(kitIds.filter(Boolean))] : (kitIds ? [kitIds] : []);
+  if (isUrgent || ids.length === 0) return { kitPrice: 0, resolvedKitIds: [] };
+  const kits = await Kit.find({ _id: { $in: ids }, isActive: true }).select('discountPrice').lean();
+  const kitPrice = kits.reduce((sum, k) => sum + (k.discountPrice || 0), 0);
+  return { kitPrice: roundToPaise(kitPrice), resolvedKitIds: kits.map((k) => k._id) };
 }
 
 // ── Partial payment config ─────────────────────────────────────────────────────
@@ -203,7 +209,7 @@ exports.createPhonePeBooking = async (req, res, next) => {
   try {
     const {
       poojaId, scheduledDate, scheduledTime, language, specialNote,
-      userDetails, isUrgent, withKit, kitId,
+      userDetails, isUrgent, withKit, kitId, kitIds,
       paymentMode = 'FULL', partialAmount,
       referralToken,
     } = req.body;
@@ -213,7 +219,10 @@ exports.createPhonePeBooking = async (req, res, next) => {
     const pooja = await Pooja.findById(poojaId);
     if (!pooja || !pooja.isActive) return res.status(404).json({ success: false, message: 'Pooja not found' });
 
-    const { kitPrice, resolvedKitId } = await resolveKitPrice(kitId, urgent);
+    // Multi-kit: `kitIds` (array) is the new shape; a bare `kitId` is kept as
+    // the single-selection alias for older clients.
+    const requestedKitIds = kitIds ?? (kitId ? [kitId] : []);
+    const { kitPrice, resolvedKitIds } = await resolveKitsPrice(requestedKitIds, urgent);
     const pricing               = await calculatePricing(pooja, kitPrice);
     const merchantTransactionId = `ZUT_${Date.now()}_${req.user._id.toString().slice(-6)}`;
     const clientUrl             = urls.clientUrl;
@@ -273,8 +282,9 @@ exports.createPhonePeBooking = async (req, res, next) => {
       status:                       'pending_payment',
       bookingType:     urgent ? 'urgent' : 'normal',
       isUrgent:        urgent,
-      withKit:         !!resolvedKitId,
-      kitId:           resolvedKitId,
+      withKit:         resolvedKitIds.length > 0,
+      kitIds:          resolvedKitIds,
+      kitId:           resolvedKitIds[0] || null,
       referral:        resolvedReferral,
     });
 
@@ -637,14 +647,15 @@ exports.phonePeWebhook = async (req, res) => {
   } catch { res.json({ success: true }); }
 };
 
-// GET /api/bookings/pricing-preview?poojaId=xxx[&kitId=yyy]
+// GET /api/bookings/pricing-preview?poojaId=xxx[&kitId=yyy | &kitIds=a,b,c]
 exports.getPricingPreview = async (req, res, next) => {
   try {
-    const { poojaId, kitId } = req.query;
+    const { poojaId, kitId, kitIds } = req.query;
     const pooja = await Pooja.findById(poojaId).select('name price salePrice mrp taxEnabled taxRate');
     if (!pooja) return res.status(404).json({ success: false, message: 'Pooja not found' });
 
-    const { kitPrice } = await resolveKitPrice(kitId, false);
+    const requestedKitIds = kitIds ? String(kitIds).split(',').filter(Boolean) : (kitId ? [kitId] : []);
+    const { kitPrice } = await resolveKitsPrice(requestedKitIds, false);
     const pricing      = await calculatePricing(pooja, kitPrice);
     const ppConfig     = await getPartialPaymentConfig();
 
@@ -664,6 +675,7 @@ exports.getMyBookings = async (req, res, next) => {
       .populate('poojaId',  'name image price')
       .populate('panditId', 'name phone profilePhoto')
       .populate('kitId',    'name image discountPrice')
+      .populate('kitIds',   'name image discountPrice')
       .sort({ createdAt: -1 })
       .limit(+limit)
       .skip((+page - 1) * +limit);
@@ -689,6 +701,7 @@ exports.getBookingById = async (req, res, next) => {
       .populate('poojaId',  'name image price duration description')
       .populate('panditId', 'name phone profilePhoto specializations languages experience')
       .populate('kitId',    'name image discountPrice')
+      .populate('kitIds',   'name image discountPrice')
       .populate('referral.referringPanditId', 'name phone profilePhoto');
 
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
@@ -951,8 +964,11 @@ exports.verifyCompletionOtp = async (req, res, next) => {
 
     const completedPoojaName = booking.poojaId?.name || 'Pooja';
     const completionPayload = normalizeBookingPayload({ booking, poojaName: completedPoojaName });
+    // Phase 5.1 (client clarification): NO standalone feedback-asking WhatsApp
+    // message. Feedback is now an OPTIONAL ACTION (URL button) on the purely
+    // transactional SERVICE_COMPLETED message — see
+    // docs/whatsapp-consent-phase-5-1-feedback-service-flow.md.
     NotificationEngine.emit('INVOICE_GENERATED', completionPayload).catch(() => {});
-    NotificationEngine.emit('FEEDBACK_REQUEST',  completionPayload).catch(() => {});
     NotificationEngine.emit('SERVICE_COMPLETED', completionPayload).catch(() => {});
     Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
 
@@ -968,6 +984,11 @@ exports.getInvoiceData = async (req, res, next) => {
       .populate('panditId', 'name phone profilePhoto')
       .populate({
         path: 'kitId',
+        select: 'name description discountPrice taxRate items',
+        populate: { path: 'items.productId', select: 'name price' },
+      })
+      .populate({
+        path: 'kitIds',
         select: 'name description discountPrice taxRate items',
         populate: { path: 'items.productId', select: 'name price' },
       });

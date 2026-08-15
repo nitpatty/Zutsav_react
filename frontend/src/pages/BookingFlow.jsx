@@ -54,7 +54,8 @@ export default function BookingFlow() {
   // Booking choices
   const [isUrgent, setIsUrgent] = useState(false);
   const [withKit,  setWithKit]  = useState(false);
-  const [kitId,    setKitId]    = useState('');
+  // Multi-select: any number of kits can be added to the same pooja booking.
+  const [kitIds,   setKitIds]   = useState([]);
 
   // Schedule + details
   const [scheduledDate, setScheduledDate] = useState('');
@@ -194,11 +195,14 @@ export default function BookingFlow() {
       .finally(() => setReviewsLoading(false));
   }, [poojaSlug]);
 
-  const hasKits     = linkedKits.length > 0;
-  const selectedKit = linkedKits.find((k) => k._id === kitId) || null;
+  const hasKits      = linkedKits.length > 0;
+  const selectedKits = linkedKits.filter((k) => kitIds.includes(k._id));
 
-  // Derived pricing
-  const kitPrice = withKit && !isUrgent && selectedKit ? (selectedKit.discountPrice || 0) : 0;
+  // Derived pricing — the backend re-derives the exact same total from the
+  // selected kit ids at booking time; this preview mirrors it for display.
+  const kitPrice = withKit && !isUrgent
+    ? selectedKits.reduce((sum, k) => sum + (k.discountPrice || 0), 0)
+    : 0;
   const pricing  = calculatePrice({
     poojaPrice:        pooja?.salePrice || pooja?.price || 0,
     kitPrice,
@@ -225,7 +229,7 @@ export default function BookingFlow() {
   // ── Validation ───────────────────────────────────────────────
   const validate = useCallback(() => {
     const e = {};
-    if (stepId === STEP_IDS.KIT_SELECT && withKit && !kitId) e.kitId = 'Please select a kit';
+    if (stepId === STEP_IDS.KIT_SELECT && withKit && kitIds.length === 0) e.kitIds = 'Please select at least one kit';
     if (stepId === STEP_IDS.DATE && !scheduledDate)           e.scheduledDate = 'Please select a date';
     if (stepId === STEP_IDS.TIME && !scheduledTime)           e.scheduledTime = 'Please select a time slot';
     if (stepId === STEP_IDS.LANGUAGE && pooja?.languages?.length > 0 && !language) e.language = 'Please select a language';
@@ -237,7 +241,7 @@ export default function BookingFlow() {
       if (!userDetails.pincode) e.pincode = 'Required';
     }
     return e;
-  }, [stepId, withKit, kitId, scheduledDate, scheduledTime, language, pooja, userDetails]);
+  }, [stepId, withKit, kitIds, scheduledDate, scheduledTime, language, pooja, userDetails]);
 
   const handleNext = () => {
     const errs = validate();
@@ -251,7 +255,7 @@ export default function BookingFlow() {
     setIsUrgent(urgent);
     if (urgent) {
       setWithKit(false);
-      setKitId('');
+      setKitIds([]);
     } else if (scheduledDate) {
       // If switching back to Normal, clear date if it falls within the 3-day block
       const t = new Date(); t.setHours(0,0,0,0);
@@ -265,7 +269,7 @@ export default function BookingFlow() {
   // checkpoint can restore this exact booking afterward, instead of
   // starting over. See useCheckoutAuthGuard / pendingCheckout.
   const buildBookingSnapshot = () => ({
-    poojaSlug, isUrgent, withKit, kitId,
+    poojaSlug, isUrgent, withKit, kitIds,
     scheduledDate, scheduledTime, language,
     userDetails, paymentMode, partialAmount, referralToken,
   });
@@ -297,7 +301,7 @@ export default function BookingFlow() {
         language:      language || (pooja?.languages?.[0] || 'Hindi'),
         specialNote:   userDetails.specialNote,
         withKit:       withKit && !isUrgent,
-        kitId:         withKit && !isUrgent && kitId ? kitId : undefined,
+        kitIds:        withKit && !isUrgent && kitIds.length > 0 ? kitIds : undefined,
         isUrgent,
         paymentMode,
         partialAmount: paymentMode === 'PARTIAL' ? partialAmount : undefined,
@@ -334,7 +338,9 @@ export default function BookingFlow() {
     const p = pending.payload;
     setIsUrgent(p.isUrgent);
     setWithKit(p.withKit);
-    setKitId(p.kitId || '');
+    // kitIds is the current shape; kitId is the legacy single-select alias from
+    // snapshots saved before multi-select existed.
+    setKitIds(p.kitIds || (p.kitId ? [p.kitId] : []));
     setScheduledDate(p.scheduledDate);
     setScheduledTime(p.scheduledTime);
     setLanguage(p.language);
@@ -362,14 +368,14 @@ export default function BookingFlow() {
   const handleAddToCart = () => {
     addPooja({
       pooja,
-      kit: selectedKit,
+      kits: selectedKits,
       bookingDetails: {
         scheduledDate,
         scheduledTime: scheduledTime || '10:00',
         language: language || (pooja?.languages?.[0] || 'Hindi'),
         specialNote: userDetails.specialNote,
         withKit: withKit && !isUrgent,
-        kitId:   withKit && !isUrgent ? kitId : null,
+        kitIds:  withKit && !isUrgent ? kitIds : [],
         isUrgent,
         userDetails: { ...userDetails },
       },
@@ -438,11 +444,11 @@ export default function BookingFlow() {
                 <BookingTypeStep isUrgent={isUrgent} onSetUrgent={handleSetUrgent} onBack={goBack} onNext={handleNext} />
               )}
               {stepId === STEP_IDS.KIT_PREF && (
-                <KitPreferenceStep withKit={withKit} setWithKit={setWithKit} setKitId={setKitId} onBack={goBack} onNext={handleNext} />
+                <KitPreferenceStep withKit={withKit} setWithKit={setWithKit} setKitIds={setKitIds} onBack={goBack} onNext={handleNext} />
               )}
               {stepId === STEP_IDS.KIT_SELECT && (
                 <KitSelectStep
-                  linkedKits={linkedKits} kitsLoading={kitsLoading} kitId={kitId} setKitId={setKitId}
+                  linkedKits={linkedKits} kitsLoading={kitsLoading} kitIds={kitIds} setKitIds={setKitIds}
                   errors={errors} setErrors={setErrors} onViewItems={setViewItemsKit}
                   onBack={goBack} onNext={handleNext}
                 />
@@ -478,7 +484,7 @@ export default function BookingFlow() {
               )}
               {stepId === STEP_IDS.REVIEW && (
                 <ReviewStep
-                  pooja={pooja} pricing={pricing} rates={rates} isUrgent={isUrgent} withKit={withKit} selectedKit={selectedKit}
+                  pooja={pooja} pricing={pricing} rates={rates} isUrgent={isUrgent} withKit={withKit} selectedKits={selectedKits}
                   scheduledDate={scheduledDate} scheduledTime={scheduledTime} language={language} userDetails={userDetails}
                   referralToken={referralToken} referralInfo={referralInfo}
                   partialConfig={partialConfig} paymentMode={paymentMode} setPaymentMode={setPaymentMode}

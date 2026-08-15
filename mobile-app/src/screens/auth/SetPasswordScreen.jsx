@@ -9,6 +9,17 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
 import { useAuthStore } from '../../store/authStore';
 
+// ─── WhatsApp communication consent ────────────────────────────────────────
+// Wording taken VERBATIM from the client's WhatsApp consent reference
+// document. Business/legal artifact — do not edit without approval. Consent
+// is separate from OTP verification: verifying a WhatsApp OTP proves control
+// of the number, never marketing opt-in.
+const SERVICE_CONSENT_TEXT =
+  'I agree to receive WhatsApp messages from the company regarding my account, bookings, orders and services.';
+const MARKETING_CONSENT_TEXT =
+  'I would also like to receive offers, discounts and promotional updates from the company on WhatsApp.';
+const CONSENT_VERSION = 'v1.0';
+
 export default function SetPasswordScreen({ navigation, route }) {
   // Params passed from OTPScreen after successful verification
   const { phone, email, name, role, channel = 'whatsapp' } = route.params || {};
@@ -20,6 +31,10 @@ export default function SetPasswordScreen({ navigation, route }) {
   const [showPwd,  setShowPwd]  = useState(false);
   const [showConf, setShowConf] = useState(false);
   const [loading,  setLoading]  = useState(false);
+  // Service consent pre-checked (transactional messaging is the platform's
+  // core function); marketing consent UNCHECKED by default.
+  const [serviceConsent,   setServiceConsent]   = useState(true);
+  const [marketingConsent, setMarketingConsent] = useState(false);
 
   const handleSetPassword = async () => {
     if (password.length < 6) {
@@ -40,6 +55,13 @@ export default function SetPasswordScreen({ navigation, route }) {
         password,
         role: role || 'user',
         channel,
+        // WhatsApp communication consent (separate from OTP verification)
+        serviceConsent,
+        marketingConsent,
+        serviceConsentText:      serviceConsent   ? SERVICE_CONSENT_TEXT   : '',
+        serviceConsentVersion:   serviceConsent   ? CONSENT_VERSION        : '',
+        marketingConsentText:    marketingConsent ? MARKETING_CONSENT_TEXT : '',
+        marketingConsentVersion: marketingConsent ? CONSENT_VERSION        : '',
       });
       // Session already exists on the server response — persist it directly
       // instead of calling login() (which expects credentials, not a token).
@@ -111,6 +133,39 @@ export default function SetPasswordScreen({ navigation, route }) {
             <Text style={styles.mismatch}>Passwords do not match</Text>
           )}
 
+          {/* WhatsApp communication consent — separate from OTP verification */}
+          <View style={styles.consentBlock}>
+            <Text style={styles.consentHeading}>WhatsApp Communication Preferences</Text>
+
+            <TouchableOpacity
+              style={[styles.consentRow, serviceConsent && styles.consentRowChecked]}
+              onPress={() => setServiceConsent((v) => !v)}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.checkbox, serviceConsent && styles.checkboxChecked]}>
+                {serviceConsent && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.consentLabel}>{SERVICE_CONSENT_TEXT}</Text>
+                <Text style={styles.consentHint}>Required for booking, order and account updates.</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.consentRow, marketingConsent && styles.consentRowChecked]}
+              onPress={() => setMarketingConsent((v) => !v)}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.checkbox, marketingConsent && styles.checkboxChecked]}>
+                {marketingConsent && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.consentLabel}>{MARKETING_CONSENT_TEXT}</Text>
+                <Text style={styles.consentHint}>Optional. You can change this anytime in Settings.</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
             style={[styles.submitBtn, (!password || !confirm) && styles.submitBtnDisabled]}
             onPress={handleSetPassword}
@@ -143,6 +198,22 @@ const styles = StyleSheet.create({
   pwdRow:            { flexDirection: 'row', alignItems: 'center', gap: 8 },
   eyeBtn:            { padding: 10 },
   mismatch:          { fontSize: 12, color: '#DC2626' },
+  consentBlock:      { gap: 10, marginTop: 4 },
+  consentHeading:    { fontSize: 12, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.5 },
+  consentRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    borderWidth: 1.3, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB',
+    borderRadius: 12, padding: 12,
+  },
+  consentRowChecked: { borderColor: '#D4AF37', backgroundColor: '#FFFBEB' },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 6,
+    borderWidth: 2, borderColor: '#D1D5DB', backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center', marginTop: 1,
+  },
+  checkboxChecked:   { borderColor: '#D4AF37', backgroundColor: '#D4AF37' },
+  consentLabel:      { fontSize: 13, lineHeight: 19, color: '#374151' },
+  consentHint:       { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
   submitBtn: {
     backgroundColor: '#1B1F3B',
     borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 8,

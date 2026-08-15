@@ -8,7 +8,7 @@ import StepHeader from './StepHeader';
 import PriceLine from './PriceLine';
 
 export default function ReviewStep({
-  pooja, pricing, rates, isUrgent, withKit, selectedKit,
+  pooja, pricing, rates, isUrgent, withKit, selectedKits,
   scheduledDate, scheduledTime, language, userDetails,
   referralToken, referralInfo,
   partialConfig, paymentMode, setPaymentMode, partialAmount, setPartialAmount,
@@ -64,14 +64,26 @@ export default function ReviewStep({
         </div>
       )}
 
-      {withKit && selectedKit && !isUrgent && (
-        <div className="mb-4 rounded-2xl p-3 border border-amber-200 bg-amber-50 flex items-center gap-3">
-          <Package size={16} className="text-amber-600 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-amber-800">{selectedKit.name}</p>
-            <p className="text-xs text-amber-600">Includes {selectedKit.items?.length || 0} items</p>
+      {withKit && selectedKits?.length > 0 && !isUrgent && (
+        <div className="mb-4 rounded-2xl p-3 border border-amber-200 bg-amber-50 flex items-start gap-3">
+          <Package size={16} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 space-y-1.5">
+            {selectedKits.map((kit) => (
+              <div key={kit._id} className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-amber-800 truncate">{kit.name}</p>
+                  <p className="text-xs text-amber-600">Includes {kit.items?.length || 0} items</p>
+                </div>
+                <span className="font-bold text-amber-700 text-sm shrink-0">{formatINR(kit.discountPrice || 0)}</span>
+              </div>
+            ))}
+            {selectedKits.length > 1 && (
+              <div className="border-t border-amber-200 pt-1.5 flex items-center justify-between">
+                <span className="text-xs font-semibold text-amber-700">Kits Total</span>
+                <span className="font-bold text-amber-800 text-sm">{formatINR(pricing.kitAmount)}</span>
+              </div>
+            )}
           </div>
-          <span className="font-bold text-amber-700 text-sm shrink-0">{formatINR(selectedKit.discountPrice || 0)}</span>
         </div>
       )}
 
@@ -92,7 +104,11 @@ export default function ReviewStep({
             <PriceLine label={`GST on Platform Fee (${rates.gstPercent}%)`} amount={pricing.platformGST} muted />
           )}
           {pricing.kitAmount > 0 && (
-            <PriceLine label={`Samagri Kit — ${selectedKit?.name}`} amount={pricing.kitAmount} muted sub="Delivered to ceremony address" />
+            selectedKits.length > 1
+              ? selectedKits.map((kit) => (
+                  <PriceLine key={kit._id} label={`Samagri Kit — ${kit.name}`} amount={kit.discountPrice || 0} muted />
+                ))
+              : <PriceLine label={`Samagri Kit — ${selectedKits[0]?.name}`} amount={pricing.kitAmount} muted sub="Delivered to ceremony address" />
           )}
           {pricing.kitGST > 0 && (
             <PriceLine label={`GST on Kit (${rates.gstPercent}%)`} amount={pricing.kitGST} muted />
