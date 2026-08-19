@@ -56,6 +56,14 @@ const userSchema = new mongoose.Schema({
     isDefault:{ type: Boolean, default: false },
   }],
 
+  // Family members — embedded array owned by the authenticated user.
+  // No separate userId per member; ownership is the parent User document.
+  familyMembers: [{
+    name:        { type: String, required: true, trim: true },
+    relationship:{ type: String, required: true, trim: true },
+    dateOfBirth: { type: Date, default: null },
+  }],
+
   // 30-day safe deletion
   accountStatus:         { type: String, enum: ['active', 'deletion_pending'], default: 'active' },
   deletionRequestedAt:   { type: Date, default: null },

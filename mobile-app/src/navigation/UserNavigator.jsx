@@ -36,6 +36,8 @@ import PaymentVerifyScreen  from '../screens/user/PaymentVerifyScreen';
 import BlogsScreen          from '../screens/user/BlogsScreen';
 import BlogDetailScreen     from '../screens/user/BlogDetailScreen';
 import InvoiceScreen        from '../screens/user/InvoiceScreen';
+import FamilyMembersScreen  from '../screens/user/FamilyMembersScreen';
+import FamilyMemberFormScreen from '../screens/user/FamilyMemberFormScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -93,13 +95,15 @@ function ShopStack() {
 function ProfileStack() {
   return (
     <Stack.Navigator screenOptions={NO_HEADER}>
-      <Stack.Screen name="ProfileMain"     component={ProfileScreen} />
-      <Stack.Screen name="PersonalInfo"    component={PersonalInfoScreen} />
-      <Stack.Screen name="AddressBook"     component={AddressBookScreen} />
-      <Stack.Screen name="ChangePassword"  component={ChangePasswordScreen} />
-      <Stack.Screen name="Settings"       component={SettingsScreen} />
-      <Stack.Screen name="DeleteAccount"  component={DeleteAccountScreen} />
-      <Stack.Screen name="Notifications"  component={NotificationsScreen} />
+      <Stack.Screen name="ProfileMain"       component={ProfileScreen} />
+      <Stack.Screen name="PersonalInfo"      component={PersonalInfoScreen} />
+      <Stack.Screen name="AddressBook"       component={AddressBookScreen} />
+      <Stack.Screen name="FamilyMembers"     component={FamilyMembersScreen} />
+      <Stack.Screen name="FamilyMemberForm"  component={FamilyMemberFormScreen} />
+      <Stack.Screen name="ChangePassword"    component={ChangePasswordScreen} />
+      <Stack.Screen name="Settings"         component={SettingsScreen} />
+      <Stack.Screen name="DeleteAccount"    component={DeleteAccountScreen} />
+      <Stack.Screen name="Notifications"    component={NotificationsScreen} />
     </Stack.Navigator>
   );
 }

@@ -56,6 +56,7 @@ export default function ProfileScreen() {
       items: [
         { icon: 'person-outline',    label: 'Personal Information', onPress: () => navigation.navigate('PersonalInfo') },
         { icon: 'location-outline',  label: 'Saved Addresses',      onPress: () => navigation.navigate('AddressBook') },
+        { icon: 'people-outline',    label: 'Family Members',       onPress: () => navigation.navigate('FamilyMembers') },
         { icon: 'lock-closed-outline', label: 'Change Password',    onPress: () => navigation.navigate('ChangePassword') },
       ],
     },

@@ -140,3 +140,97 @@ exports.changePassword = async (req, res, next) => {
     next(err);
   }
 };
+
+// ── Family Members ────────────────────────────────────────────────────────
+// Ownership lives entirely in the parent User document — no per-member userId.
+// CRUD mirrors the savedAddresses embedded-array pattern.
+
+const RELATIONSHIP_ENUM = [
+  'Father', 'Mother', 'Son', 'Daughter', 'Spouse',
+  'Brother', 'Sister', 'Grandfather', 'Grandmother', 'Other',
+];
+
+// GET /api/users/family-members
+exports.getFamilyMembers = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id).select('familyMembers');
+    res.json({ success: true, familyMembers: user.familyMembers || [] });
+  } catch (err) { next(err); }
+};
+
+// POST /api/users/family-members
+exports.addFamilyMember = async (req, res, next) => {
+  try {
+    const { name, relationship, dateOfBirth } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Name is required' });
+    }
+    if (!relationship || !relationship.trim()) {
+      return res.status(400).json({ success: false, message: 'Relationship is required' });
+    }
+    if (!RELATIONSHIP_ENUM.includes(relationship.trim())) {
+      return res.status(400).json({ success: false, message: `Invalid relationship. Must be one of: ${RELATIONSHIP_ENUM.join(', ')}` });
+    }
+
+    const user = await User.findById(req.user._id);
+    user.familyMembers.push({
+      name: name.trim(),
+      relationship: relationship.trim(),
+      dateOfBirth: dateOfBirth || null,
+    });
+    await user.save();
+    res.status(201).json({ success: true, familyMembers: user.familyMembers });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/users/family-members/:memberId
+exports.updateFamilyMember = async (req, res, next) => {
+  try {
+    const { name, relationship, dateOfBirth } = req.body;
+    const user = await User.findById(req.user._id);
+    const member = user.familyMembers.id(req.params.memberId);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Family member not found' });
+    }
+
+    if (name !== undefined) {
+      if (!name || !name.trim()) {
+        return res.status(400).json({ success: false, message: 'Name cannot be empty' });
+      }
+      member.name = name.trim();
+    }
+    if (relationship !== undefined) {
+      if (!relationship || !relationship.trim()) {
+        return res.status(400).json({ success: false, message: 'Relationship cannot be empty' });
+      }
+      if (!RELATIONSHIP_ENUM.includes(relationship.trim())) {
+        return res.status(400).json({ success: false, message: `Invalid relationship. Must be one of: ${RELATIONSHIP_ENUM.join(', ')}` });
+      }
+      member.relationship = relationship.trim();
+    }
+    if (dateOfBirth !== undefined) {
+      member.dateOfBirth = dateOfBirth || null;
+    }
+
+    await user.save();
+    res.json({ success: true, familyMembers: user.familyMembers });
+  } catch (err) { next(err); }
+};
+
+// DELETE /api/users/family-members/:memberId
+exports.deleteFamilyMember = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+    const member = user.familyMembers.id(req.params.memberId);
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Family member not found' });
+    }
+
+    user.familyMembers = user.familyMembers.filter(
+      (m) => String(m._id) !== req.params.memberId
+    );
+    await user.save();
+    res.json({ success: true, familyMembers: user.familyMembers });
+  } catch (err) { next(err); }
+};

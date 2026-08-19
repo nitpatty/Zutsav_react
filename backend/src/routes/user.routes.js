@@ -1,5 +1,9 @@
 const router = require('express').Router();
-const { getProfile, updateProfile, uploadPhoto, removePhoto, changePassword, getAddresses, addAddress, updateAddress, deleteAddress } = require('../controllers/user.controller');
+const {
+  getProfile, updateProfile, uploadPhoto, removePhoto, changePassword,
+  getAddresses, addAddress, updateAddress, deleteAddress,
+  getFamilyMembers, addFamilyMember, updateFamilyMember, deleteFamilyMember,
+} = require('../controllers/user.controller');
 const { protect } = require('../middleware/auth');
 const { uploadProfile } = require('../middleware/upload');
 
@@ -14,5 +18,11 @@ router.get('/addresses',           getAddresses);
 router.post('/addresses',          addAddress);
 router.patch('/addresses/:addrId', updateAddress);
 router.delete('/addresses/:addrId', deleteAddress);
+
+// Family members
+router.get('/family-members',              getFamilyMembers);
+router.post('/family-members',             addFamilyMember);
+router.patch('/family-members/:memberId',  updateFamilyMember);
+router.delete('/family-members/:memberId', deleteFamilyMember);
 
 module.exports = router;
