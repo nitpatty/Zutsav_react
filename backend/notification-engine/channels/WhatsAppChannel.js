@@ -67,11 +67,20 @@ async function buildVariableChecklist(mapping, payload) {
   const unresolved = rows.filter((r) => !r.ok).map((r) => r.payloadPath || `position ${r.position}`);
 
   // ── URL-button analysis (Phase 5.1) ────────────────────────────────────
-  // The synced Meta template is authoritative: a mapped URL button whose
-  // index the template doesn't declare is reported (and later omitted, never
-  // sent). This is INFORMATIONAL — it never flips `ok`, because a missing
-  // button must not block a transactional service message; the body is
-  // still perfectly valid without the optional action buttons.
+  // The synced Meta template is authoritative. Two directions are checked:
+  //   (a) a MAPPED URL button whose index the template does not declare is
+  //       reported and later omitted (never sent) — INFORMATIONAL only, it
+  //       never flips `ok`: the body of a transactional message is fine
+  //       without an optional action button the template doesn't have; and
+  //   (b) a template-DECLARED DYNAMIC URL button (its URL carries a {{n}}
+  //       placeholder) that the mapping cannot fill — this IS a real
+  //       blocking condition: Meta requires the dynamic button parameter,
+  //       so a send that omits it is rejected with (#131008) Required
+  //       parameter is missing. The dry-run must never report "All required
+  //       variables present" when the send would fail for a missing button
+  //       parameter (a pre-5.1 mapping adopted the buttoned template without
+  //       adopting the buttons). Static URL buttons need no parameter, so
+  //       they stay informational.
   const declaredUrlButtons = tmpl ? WhatsAppProvider.getDeclaredUrlButtons(tmpl) : null;
   const buttonRows = (mapping.whatsappUrlButtons || []).map((b, i) => {
     const declared = declaredUrlButtons ? declaredUrlButtons[i] : null;
@@ -86,6 +95,25 @@ async function buildVariableChecklist(mapping, payload) {
   });
   const buttonWarnings = buttonRows.filter((r) => !r.ok).map((r) => r.reason);
 
+  // Reverse direction — dynamic template URL buttons the mapping can't fill.
+  // Mapped urlButtons live at declared index `baseIndex + i` (mirroring
+  // VariableResolver.buildWhatsAppButtonComponents, where a copy_code button
+  // occupies index 0).
+  const baseIndex = mapping.whatsappButtonType === 'copy_code' ? 1 : 0;
+  const buttonBlockers = [];
+  if (declaredUrlButtons) {
+    for (const [index, declared] of Object.entries(declaredUrlButtons)) {
+      if (!declared.hasPlaceholders) continue; // static URL buttons need no parameter
+      const mapped = (mapping.whatsappUrlButtons || [])[index - baseIndex];
+      const value = mapped?.parameterPath ? resolve(mapped.parameterPath, payload) : '';
+      if (!mapped || !mapped.parameterPath || value === '') {
+        buttonBlockers.push(
+          `Meta template "${templateName}" declares a dynamic URL button at index ${index} ("${declared.url || '#buttons'}") whose parameter ("${mapped?.parameterPath || '(none)'}") the mapping cannot resolve — sending without it is rejected by Meta (#131008). Configure whatsappUrlButtons on this mapping.`
+        );
+      }
+    }
+  }
+
   return {
     templateName,
     templateFound: !!tmpl,
@@ -97,14 +125,17 @@ async function buildVariableChecklist(mapping, payload) {
     declaredUrlButtons,
     buttonRows,
     buttonWarnings,
-    ok: !!tmpl && countMatches && allResolved,
+    buttonBlockers,
+    ok: !!tmpl && countMatches && allResolved && buttonBlockers.length === 0,
     reason: !tmpl
       ? `Template "${templateName}" not found in synced WhatsAppTemplate collection`
       : !countMatches
         ? `Template expects ${expectedCount} variable(s) but this mapping has ${configuredCount} configured`
         : !allResolved
           ? `Variable(s) failed to resolve: ${unresolved.join(', ')}`
-          : null,
+          : buttonBlockers.length
+            ? buttonBlockers.join('; ')
+            : null,
   };
 }
 

@@ -338,6 +338,66 @@ describe('WhatsAppChannel SERVICE_COMPLETED (purpose SERVICE)', () => {
     assert.equal(rendered.components.filter((c) => c.type === 'button').length, 0);
     assert.equal(rendered.buttonWarnings.length, 2);
   });
+
+  test('template declares a dynamic URL button but the mapping has no button config → checklist fails (#131008)', async () => {
+    // Pre-5.1 mapping: body variables present, whatsappUrlButtons empty. The
+    // dry-run must NOT report "All required variables present", because
+    // Meta rejects this send with (#131008) Required parameter is missing.
+    const { mapping, payload } = await createServiceCompletionFixture({
+      user: optedOutUser, templateButtons: true, mappingButtons: false,
+    });
+    const checklist = await WhatsAppChannel.buildVariableChecklist(mapping, payload);
+    assert.equal(checklist.allResolved, true, 'body variables resolve fine');
+    assert.equal(checklist.ok, false, 'missing dynamic button parameter must flip ok');
+    assert.match(checklist.reason, /#131008/);
+    assert.equal(checklist.buttonBlockers.length, 1);
+
+    // And send() pre-flights the same check — it skips instead of calling Meta.
+    providerCalls = [];
+    const result = await WhatsAppChannel.send(mapping, payload, {
+      userId: String(optedOutUser._id), phone: optedOutUser.phone, email: optedOutUser.email,
+    });
+    assert.equal(result.skip, true);
+    assert.match(result.reason, /#131008/);
+    assert.equal(providerCalls.length, 0, 'Meta must never be called for a guaranteed-rejection button config');
+  });
+
+  test('dynamic URL button declared AND configured on the mapping → checklist ok, parameter sent', async () => {
+    providerCalls = [];
+    const { tmpl, mapping, payload } = await createServiceCompletionFixture({ user: optedOutUser });
+    const checklist = await WhatsAppChannel.buildVariableChecklist(mapping, payload);
+    assert.equal(checklist.ok, true);
+    assert.equal(checklist.reason, null);
+    assert.equal(checklist.buttonBlockers.length, 0);
+
+    const result = await WhatsAppChannel.send(mapping, payload, {
+      userId: String(optedOutUser._id), phone: optedOutUser.phone, email: optedOutUser.email,
+    });
+    assert.equal(result.skip, undefined);
+    const btn = providerCalls[0].components.find((c) => c.type === 'button' && c.index === '0');
+    assert.deepEqual(btn.parameters, [{ type: 'text', text: '65f0abc1234567890def0001' }]);
+  });
+
+  test('static-only URL button with no mapping config stays non-blocking (informational)', async () => {
+    const tmpl = await WhatsAppTemplate.create({
+      name: 'test_static_only_button', status: 'APPROVED', language: 'en',
+      components: [
+        { type: 'BODY', text: 'Hi {{1}}, your service is complete.' },
+        { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'My Bookings', url: 'https://zutsav.example/my-bookings' }] },
+      ],
+    });
+    const mapping = await NotificationMapping.create({
+      eventName: 'SERVICE_COMPLETED', recipientType: 'user', channel: 'whatsapp', purpose: 'SERVICE',
+      whatsappTemplateName: tmpl.name,
+      whatsappVariables: [{ position: 1, payloadPath: 'customer.name', label: 'Customer name' }],
+      whatsappUrlButtons: [],
+      enabled: true,
+    });
+    const payload = { _eventName: 'SERVICE_COMPLETED', customer: { name: uniqName() } };
+    const checklist = await WhatsAppChannel.buildVariableChecklist(mapping, payload);
+    assert.equal(checklist.ok, true, 'a static URL button needs no parameter — body-only send is fine');
+    assert.equal(checklist.buttonBlockers.length, 0);
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════
