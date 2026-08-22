@@ -24,6 +24,7 @@ const USER_NAV = [
   { icon: Flame,           label: 'Browse Poojas', path: '/poojas' },
   { icon: Store,           label: 'Marketplace',   path: '/marketplace' },
   { icon: Landmark,        label: 'Temples',       path: '/temples' },
+  { icon: Tv,              label: 'Livestreams',   path: '/livestreams' },
   { icon: Calendar,        label: 'Festivals',     path: '/festivals' },
   { icon: Sun,             label: 'Panchang',      path: '/panchang' },
   { icon: FileText,        label: 'Blog',          path: '/blog' },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapPin, Search, Tv, X, Play, ArrowRight } from 'lucide-react';
+import { MapPin, Search, ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import API from '../api/axios';
@@ -7,20 +7,20 @@ import toast from 'react-hot-toast';
 import { getImageUrl } from '../config';
 import { useLanguage } from '../context/LanguageContext';
 
-function TempleCard({ temple, onWatch }) {
+function TempleCard({ temple }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [hovered, setHovered] = useState(false);
 
-  // The whole card opens the temple's detail page; the livestream overlay/button
-  // stays a separate action (modal) and must not trigger navigation.
+  // The whole card opens the temple's detail page — image, overlay CTA and
+  // footer link all navigate to /temples/:id.
   const openDetails = () => navigate(`/temples/${temple._id}`);
 
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="group rounded-2xl overflow-hidden transition-all duration-500"
+      className="overflow-hidden transition-all duration-500 group rounded-2xl"
       style={{
         background: 'var(--t-card)',
         border: '1px solid var(--t-border)',
@@ -30,16 +30,16 @@ function TempleCard({ temple, onWatch }) {
         transform: hovered ? 'translateY(-4px)' : 'translateY(0)',
       }}>
       {/* Image */}
-      <div className="relative overflow-hidden h-44 cursor-pointer" onClick={openDetails}>
+      <div className="relative overflow-hidden cursor-pointer h-44" onClick={openDetails}>
         {temple.images?.length > 0 ? (
           <img
             src={getImageUrl(temple.images[0])}
             alt={temple.name}
-            className="w-full h-full object-cover transition-transform duration-700"
+            className="object-cover w-full h-full transition-transform duration-700"
             style={{ transform: hovered ? 'scale(1.06)' : 'scale(1)' }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center"
+          <div className="flex items-center justify-center w-full h-full"
                style={{ background: 'linear-gradient(135deg, #1B1F3B 0%, #2d3160 100%)' }}>
             <span className="text-6xl">🛕</span>
           </div>
@@ -53,15 +53,15 @@ function TempleCard({ temple, onWatch }) {
                pointerEvents: hovered ? 'auto' : 'none',
              }}>
           <button
-            onClick={(e) => { e.stopPropagation(); onWatch(temple); }}
+            onClick={(e) => { e.stopPropagation(); openDetails(); }}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-transform duration-200 hover:scale-105"
             style={{ background: 'var(--t-secondary)', color: 'var(--t-text-inv, #1B1F3B)' }}>
-            <Play size={14} /> {t('temples.watchLivestream', 'Watch Livestream')}
+            {t('temples.viewDetails', 'View Details')} <ArrowRight size={14} />
           </button>
         </div>
 
         {/* State chip */}
-        <div className="absolute top-3 right-3 pointer-events-none">
+        <div className="absolute pointer-events-none top-3 right-3">
           <span className="bg-white/90 backdrop-blur-sm text-gray-700 text-[10px] font-bold px-2.5 py-1 rounded-full">
             {temple.state}
           </span>
@@ -73,12 +73,12 @@ function TempleCard({ temple, onWatch }) {
             style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: '1.15rem', color: 'var(--t-text)' }}>
           {temple.name}
         </h3>
-        <div className="flex items-center gap-1 text-sm mb-2" style={{ color: 'var(--t-muted)' }}>
+        <div className="flex items-center gap-1 mb-2 text-sm" style={{ color: 'var(--t-muted)' }}>
           <MapPin size={12} style={{ color: 'var(--t-primary)' }} className="shrink-0" />
           <span>{temple.city}, {temple.state}</span>
         </div>
         {temple.description && (
-          <p className="text-sm line-clamp-2 mb-3" style={{ color: 'var(--t-muted)' }}>{temple.description}</p>
+          <p className="mb-3 text-sm line-clamp-2" style={{ color: 'var(--t-muted)' }}>{temple.description}</p>
         )}
         <button
           onClick={(e) => { e.stopPropagation(); openDetails(); }}
@@ -93,108 +93,6 @@ function TempleCard({ temple, onWatch }) {
   );
 }
 
-function LivestreamModal({ temple, onClose }) {
-  const { t } = useTranslation();
-  const [streams, setStreams] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [active,  setActive]  = useState(null);
-
-  useEffect(() => {
-    API.get(`/livestreams?templeId=${temple._id}`)
-      .then(({ data }) => {
-        setStreams(data.livestreams);
-        if (data.livestreams.length) setActive(data.livestreams[0]);
-      })
-      .catch(() => toast.error(t('temples.couldNotLoadStreams', 'Could not load streams')))
-      .finally(() => setLoading(false));
-  }, [temple._id, t]);
-
-  const getEmbedUrl = (url) => {
-    try {
-      const u = new URL(url);
-      const v = u.searchParams.get('v') || u.pathname.split('/').pop();
-      return `https://www.youtube.com/embed/${v}?autoplay=1`;
-    } catch { return url; }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
-           style={{ background: 'var(--t-card)' }}
-           onClick={(e) => e.stopPropagation()}>
-        {/* Modal header */}
-        <div className="rounded-t-3xl p-5 flex items-center justify-between"
-             style={{ background: 'var(--t-primary)' }}>
-          <div>
-            <h2 className="font-bold text-white"
-                style={{ fontFamily: '"Cormorant Garamond"', fontSize: '1.35rem' }}>
-              {temple.name}
-            </h2>
-            <p className="text-white/40 text-sm mt-0.5">{temple.city}, {temple.state}</p>
-          </div>
-          <button onClick={onClose}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-white/60 hover:text-white transition-colors"
-            style={{ background: 'rgba(255,255,255,0.08)' }}>
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="p-5">
-          {loading ? (
-            <div className="space-y-3">
-              <div className="skeleton h-48 rounded-2xl" />
-              <div className="skeleton h-4 w-32 rounded" />
-            </div>
-          ) : streams.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
-                   style={{ background: 'var(--t-surface)' }}>
-                <Tv size={28} style={{ color: 'var(--t-muted)' }} />
-              </div>
-              <p className="font-semibold mb-1" style={{ color: 'var(--t-text)' }}>{t('temples.noLivestreams', 'No Livestreams Available')}</p>
-              <p className="text-sm" style={{ color: 'var(--t-muted)' }}>{t('temples.checkBackAarti', 'Check back during aarti timings')}</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {active && (
-                <div className="rounded-2xl overflow-hidden bg-black aspect-video">
-                  <iframe
-                    src={getEmbedUrl(active.youtubeUrl)}
-                    title={active.title}
-                    className="w-full h-full"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                </div>
-              )}
-              {streams.length > 1 && (
-                <div className="flex gap-2 flex-wrap">
-                  {streams.map((s) => (
-                    <button
-                      key={s._id}
-                      onClick={() => setActive(s)}
-                      className={`text-xs px-3 py-1.5 rounded-full font-semibold border transition-colors ${
-                        active?._id === s._id
-                          ? 'border-transparent'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                      }`}
-                      style={active?._id === s._id ? { background: 'var(--t-secondary)', color: 'var(--t-text-inv, #1B1F3B)', border: 'none' } : { borderColor: 'var(--t-border)', color: 'var(--t-muted)', background: 'var(--t-card)' }}>
-                      {s.title}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {active?.description && (
-                <p className="text-sm text-gray-600">{active.description}</p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function TempleDirectory() {
   const { t } = useTranslation();
   const { lang } = useLanguage();
@@ -202,7 +100,6 @@ export default function TempleDirectory() {
   const [loading,     setLoading]     = useState(true);
   const [search,      setSearch]      = useState('');
   const [stateFilter, setStateFilter] = useState('');
-  const [selected,    setSelected]    = useState(null);
 
   // `load` is called both reactively (language switch) and imperatively
   // (search button, Enter key) — a per-effect cleanup flag can't cover both
@@ -227,28 +124,28 @@ export default function TempleDirectory() {
       {/* Header */}
       <div className="relative overflow-hidden sacred-pattern" style={{ background: 'var(--t-primary)' }}>
         <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.35)' }} />
-        <div className="relative max-w-7xl mx-auto px-4 py-12 md:py-16">
+        <div className="relative px-4 py-12 mx-auto max-w-7xl md:py-16">
           <div className="inline-flex items-center gap-2 mb-3">
             <span className="w-5 h-px" style={{ background: 'rgba(212,175,55,0.5)' }} />
             <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#D4AF37' }}>{t('home.sacredPlaces', 'Sacred Places')}</span>
             <span className="w-5 h-px" style={{ background: 'rgba(212,175,55,0.5)' }} />
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-2"
+          <h1 className="mb-2 text-4xl font-bold text-white md:text-5xl"
               style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', letterSpacing: '-0.02em' }}>
             {t('temples.directoryTitle', 'Temple Directory')}
           </h1>
-          <p className="text-white/40 text-sm font-sans">{t('temples.directorySubtitle', 'Discover sacred temples and watch live aartis & darshan')}</p>
+          <p className="font-sans text-sm text-white/40">{t('temples.directorySubtitle', 'Discover sacred temples and watch live aartis & darshan')}</p>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="px-4 py-8 mx-auto max-w-7xl">
         {/* Search bar */}
-        <div className="flex gap-3 mb-8 flex-wrap">
-          <div className="flex-1 min-w-56 flex items-center gap-2 rounded-xl px-4 py-3 shadow-sm transition-colors"
+        <div className="flex flex-wrap gap-3 mb-8">
+          <div className="flex items-center flex-1 gap-2 px-4 py-3 transition-colors shadow-sm min-w-56 rounded-xl"
                style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
             <Search size={15} className="text-gray-400 shrink-0" />
             <input
-              className="flex-1 outline-none text-sm placeholder-gray-400 bg-transparent"
+              className="flex-1 text-sm placeholder-gray-400 bg-transparent outline-none"
             style={{ color: 'var(--t-text)' }}
               placeholder={t('temples.searchPlaceholder', 'Search temple by name...')}
               value={search}
@@ -257,7 +154,7 @@ export default function TempleDirectory() {
             />
           </div>
           <input
-            className="input w-44 text-sm"
+            className="text-sm input w-44"
             placeholder={t('temples.filterByState', 'Filter by state...')}
             value={stateFilter}
             onChange={(e) => setStateFilter(e.target.value)}
@@ -271,40 +168,38 @@ export default function TempleDirectory() {
         </div>
 
         {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="rounded-2xl overflow-hidden"
+              <div key={i} className="overflow-hidden rounded-2xl"
                    style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)', boxShadow: '0 2px 20px rgba(0,0,0,0.06)' }}>
-                <div className="skeleton h-44 rounded-none" style={{ borderRadius: 0 }} />
+                <div className="rounded-none skeleton h-44" style={{ borderRadius: 0 }} />
                 <div className="p-4 space-y-2.5">
-                  <div className="skeleton h-5 w-40 rounded" />
-                  <div className="skeleton h-3 w-28 rounded" />
-                  <div className="skeleton h-3 w-full rounded" />
-                  <div className="skeleton h-3 w-3/4 rounded" />
+                  <div className="w-40 h-5 rounded skeleton" />
+                  <div className="h-3 rounded skeleton w-28" />
+                  <div className="w-full h-3 rounded skeleton" />
+                  <div className="w-3/4 h-3 rounded skeleton" />
                 </div>
               </div>
             ))}
           </div>
         ) : temples.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-5"
+          <div className="py-20 text-center">
+            <div className="flex items-center justify-center w-20 h-20 mx-auto mb-5 rounded-3xl"
                  style={{ background: 'var(--t-surface)' }}>
               <span className="text-4xl">🛕</span>
             </div>
-            <h3 className="text-2xl font-bold mb-2"
+            <h3 className="mb-2 text-2xl font-bold"
                 style={{ fontFamily: '"Cormorant Garamond"', color: 'var(--t-text)' }}>
               {t('temples.noTemplesFound', 'No Temples Found')}
             </h3>
             <p className="text-sm" style={{ color: 'var(--t-muted)' }}>{t('temples.tryDifferentSearch', 'Try a different search term or state')}</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {temples.map((t) => <TempleCard key={t._id} temple={t} onWatch={setSelected} />)}
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {temples.map((t) => <TempleCard key={t._id} temple={t} />)}
           </div>
         )}
       </div>
-
-      {selected && <LivestreamModal temple={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }

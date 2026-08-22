@@ -37,11 +37,8 @@ const NAV_LINKS_TAIL = [
 ];
 
 const TEMPLE_SUBMENU = [
-  { to: '/temples',             label: 'Temple Directory',   i18nKey: 'nav.templeDirectory' },
-  { to: '/temples/livestreams', label: 'Temple Livestreams', i18nKey: 'nav.templeLivestreams' },
+  { to: '/livestreams',         label: 'Temple Livestreams', i18nKey: 'nav.templeLivestreams' },
   { to: '/temples/details',     label: 'Temple Details',     i18nKey: 'nav.templeDetails' },
-  { to: '/temples/location',    label: 'Temple Location',    i18nKey: 'nav.templeLocation' },
-  { to: '/temples/info',        label: 'Temple Information', i18nKey: 'nav.templeInfo' },
 ];
 
 function getProfilePath(role) {
@@ -120,7 +117,7 @@ export default function Navbar() {
     <>
       <nav className="sticky top-0 z-50 px-3 pt-3 pb-2 sm:px-4">
         <div
-          className="max-w-7xl mx-auto rounded-full transition-all duration-300"
+          className="mx-auto transition-all duration-300 rounded-full max-w-7xl"
           style={{
             background: scrolled
               ? 'rgba(var(--t-card, 255,255,255), 0.92)'
@@ -131,7 +128,7 @@ export default function Navbar() {
             boxShadow: scrolled ? '0 10px 30px rgba(0,0,0,0.08)' : '0 4px 18px rgba(0,0,0,0.05)',
           }}
         >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="px-4 mx-auto max-w-7xl sm:px-6 lg:px-8">
           <div className={`flex items-center justify-between gap-4 transition-all duration-300 ${scrolled ? 'h-14' : 'h-16'}`}>
 
             {/* ── Logo ─────────────────────────────────────────── */}
@@ -139,7 +136,7 @@ export default function Navbar() {
               <img
                 src={logoUrl || 'https://zutsav.com/storage/settings/admin_logo_1778665731.png'}
                 alt={platformName || 'Zutsav'}
-                className="h-9 w-auto object-contain group-hover:opacity-90 transition-opacity duration-200"
+                className="object-contain w-auto transition-opacity duration-200 h-9 group-hover:opacity-90"
               />
             </Link>
 
@@ -182,7 +179,7 @@ export default function Navbar() {
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95, y: -4 }}
                       transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                      className="absolute top-full left-0 mt-2 w-52 rounded-2xl shadow-float py-2 z-50"
+                      className="absolute left-0 z-50 py-2 mt-2 top-full w-52 rounded-2xl shadow-float"
                       style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}
                     >
                       {TEMPLE_SUBMENU.map((item) => (
@@ -220,7 +217,7 @@ export default function Navbar() {
             </div>
 
             {/* ── Desktop right area ───────────────────────────── */}
-            <div className="hidden lg:flex items-center gap-2 shrink-0">
+            <div className="items-center hidden gap-2 lg:flex shrink-0">
               {/* Theme toggle */}
               <ThemeToggle />
 
@@ -229,7 +226,7 @@ export default function Navbar() {
                   {/* Notification bell */}
                   <Link
                     to="/notifications"
-                    className="relative p-2 rounded-xl transition-all duration-200"
+                    className="relative p-2 transition-all duration-200 rounded-xl"
                     style={{ color: 'var(--t-muted)' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--t-nav-active-bg)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -250,7 +247,7 @@ export default function Navbar() {
                   {/* Cart */}
                   <Link
                     to="/cart"
-                    className="relative p-2 rounded-xl transition-all duration-200"
+                    className="relative p-2 transition-all duration-200 rounded-xl"
                     style={{ color: 'var(--t-muted)' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--t-nav-active-bg)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -283,11 +280,11 @@ export default function Navbar() {
                         <img
                           src={getImageUrl(user.profilePhoto)}
                           alt="avatar"
-                          className="w-7 h-7 rounded-lg object-cover shrink-0"
+                          className="object-cover rounded-lg w-7 h-7 shrink-0"
                         />
                       ) : (
                         <div
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0"
+                          className="flex items-center justify-center text-xs font-bold text-white rounded-lg w-7 h-7 shrink-0"
                           style={{ background: 'var(--t-primary)' }}
                         >
                           {initials}
@@ -308,7 +305,7 @@ export default function Navbar() {
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.96, y: -6 }}
                           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                          className="absolute right-0 mt-2 w-64 rounded-2xl shadow-float py-2 z-50 overflow-hidden"
+                          className="absolute right-0 z-50 w-64 py-2 mt-2 overflow-hidden rounded-2xl shadow-float"
                           style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}
                         >
                           {/* Profile header */}
@@ -324,19 +321,19 @@ export default function Navbar() {
                                 <img
                                   src={getImageUrl(user.profilePhoto)}
                                   alt="avatar"
-                                  className="w-10 h-10 rounded-xl object-cover shrink-0"
+                                  className="object-cover w-10 h-10 rounded-xl shrink-0"
                                 />
                               ) : (
                                 <div
-                                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
+                                  className="flex items-center justify-center w-10 h-10 font-bold text-white rounded-xl shrink-0"
                                   style={{ background: 'var(--t-primary)' }}
                                 >
                                   {initials}
                                 </div>
                               )}
                               <div className="min-w-0">
-                                <p className="font-semibold text-sm truncate" style={{ color: 'var(--t-text)' }}>{user?.name}</p>
-                                <p className="text-xs capitalize font-medium" style={{ color: 'var(--t-primary)' }}>{user?.role}</p>
+                                <p className="text-sm font-semibold truncate" style={{ color: 'var(--t-text)' }}>{user?.name}</p>
+                                <p className="text-xs font-medium capitalize" style={{ color: 'var(--t-primary)' }}>{user?.role}</p>
                               </div>
                             </div>
                           </div>
@@ -392,7 +389,7 @@ export default function Navbar() {
                             </Link>
                           ))}
 
-                          <div className="border-t mt-1 pt-1" style={{ borderColor: 'var(--t-border)' }}>
+                          <div className="pt-1 mt-1 border-t" style={{ borderColor: 'var(--t-border)' }}>
                             <button
                               onClick={handleLogout}
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors duration-150"
@@ -407,15 +404,15 @@ export default function Navbar() {
                 </>
               ) : (
                 <>
-                  <Link to="/login" className="btn-ghost text-sm">{t('auth.login', 'Login')}</Link>
-                  <Link to="/register" className="btn-primary text-sm">{t('auth.getStarted', 'Get Started')}</Link>
+                  <Link to="/login" className="text-sm btn-ghost">{t('auth.login', 'Login')}</Link>
+                  <Link to="/register" className="text-sm btn-primary">{t('auth.getStarted', 'Get Started')}</Link>
                 </>
               )}
             </div>
 
             {/* ── Mobile hamburger ─────────────────────────────── */}
             <button
-              className="lg:hidden p-2 rounded-xl transition-colors duration-200 shrink-0"
+              className="p-2 transition-colors duration-200 lg:hidden rounded-xl shrink-0"
               style={{ color: 'var(--t-muted)' }}
               onClick={() => setMobileOpen(!mobileOpen)}
             >
@@ -434,7 +431,7 @@ export default function Navbar() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="lg:hidden fixed inset-0 z-40"
+              className="fixed inset-0 z-40 lg:hidden"
               style={{ background: 'var(--t-overlay)' }}
               onClick={() => setMobileOpen(false)}
             />
@@ -443,19 +440,19 @@ export default function Navbar() {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="lg:hidden fixed top-0 left-0 h-full w-72 z-50 flex flex-col overflow-hidden"
+              className="fixed top-0 left-0 z-50 flex flex-col h-full overflow-hidden lg:hidden w-72"
               style={{ background: 'var(--t-sidebar)', borderRight: '1px solid var(--t-sidebar-border)' }}
             >
               {/* Drawer header */}
               <div
-                className="flex items-center justify-between px-5 h-16 border-b flex-shrink-0"
+                className="flex items-center justify-between flex-shrink-0 h-16 px-5 border-b"
                 style={{ borderColor: 'var(--t-sidebar-border)' }}
               >
                 <Link to="/" className="flex items-center">
                   <img
                     src="https://zutsav.com/storage/settings/admin_logo_1778665731.png"
                     alt="Zutsav"
-                    className="h-9 w-auto object-contain"
+                    className="object-contain w-auto h-9"
                   />
                 </Link>
                 <button
@@ -472,23 +469,23 @@ export default function Navbar() {
               <div className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
                 {isAuthenticated && (
                   <div
-                    className="flex items-center gap-3 px-3 py-3 rounded-2xl mb-4"
+                    className="flex items-center gap-3 px-3 py-3 mb-4 rounded-2xl"
                     style={{ background: 'var(--t-nav-active-bg)' }}
                   >
                     {user?.profilePhoto ? (
                       <img src={getImageUrl(user.profilePhoto)} alt="avatar"
-                        className="w-10 h-10 rounded-xl object-cover shrink-0" />
+                        className="object-cover w-10 h-10 rounded-xl shrink-0" />
                     ) : (
                       <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shrink-0"
+                        className="flex items-center justify-center w-10 h-10 font-bold text-white rounded-xl shrink-0"
                         style={{ background: 'var(--t-primary)' }}
                       >
                         {initials}
                       </div>
                     )}
                     <div className="min-w-0">
-                      <p className="font-semibold text-sm truncate" style={{ color: 'var(--t-text)' }}>{user?.name}</p>
-                      <p className="text-xs capitalize font-medium" style={{ color: 'var(--t-primary)' }}>{user?.role}</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--t-text)' }}>{user?.name}</p>
+                      <p className="text-xs font-medium capitalize" style={{ color: 'var(--t-primary)' }}>{user?.role}</p>
                     </div>
                   </div>
                 )}
@@ -499,7 +496,7 @@ export default function Navbar() {
                   <Link
                     key={to}
                     to={to}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors duration-150"
+                    className="flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors duration-150 rounded-xl"
                     style={{
                       color: isActive(to) ? 'var(--t-primary)' : 'var(--t-muted)',
                       background: isActive(to) ? 'var(--t-nav-active-bg)' : 'transparent',
@@ -515,7 +512,7 @@ export default function Navbar() {
                     {user?.role === 'pandit' && (
                       <Link
                         to="/pandit/dashboard"
-                        className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors"
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors rounded-xl"
                         style={{ color: 'var(--t-muted)' }}
                       >
                         <LayoutDashboard size={16} /> {t('nav.panditDashboard', 'Pandit Dashboard')}
@@ -524,7 +521,7 @@ export default function Navbar() {
                     {isAdminRole(user?.role) && (
                       <Link
                         to="/admin"
-                        className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors"
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors rounded-xl"
                         style={{ color: 'var(--t-muted)' }}
                       >
                         <LayoutDashboard size={16} /> {t('nav.adminPanel', 'Admin Panel')}
@@ -534,7 +531,7 @@ export default function Navbar() {
                     {/* Cart link in mobile */}
                     <Link
                       to="/cart"
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors duration-150"
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors duration-150 rounded-xl"
                       style={{
                         color: isActive('/cart') ? 'var(--t-primary)' : 'var(--t-muted)',
                         background: isActive('/cart') ? 'var(--t-nav-active-bg)' : 'transparent',
@@ -558,7 +555,7 @@ export default function Navbar() {
                       <Link
                         key={to}
                         to={to}
-                        className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition-colors duration-150"
+                        className="flex items-center gap-3 px-4 py-3 text-sm transition-colors duration-150 rounded-xl"
                         style={{ color: 'var(--t-muted)' }}
                       >
                         <Icon size={16} style={{ color: 'var(--t-muted)', opacity: 0.7 }} />
@@ -579,13 +576,13 @@ export default function Navbar() {
 
               {/* Drawer footer */}
               <div
-                className="border-t p-4 flex-shrink-0"
+                className="flex-shrink-0 p-4 border-t"
                 style={{ borderColor: 'var(--t-sidebar-border)' }}
               >
                 {isAuthenticated ? (
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm text-red-500 hover:bg-red-50 transition-colors font-medium"
+                    className="flex items-center justify-center w-full gap-2 px-4 py-3 text-sm font-medium text-red-500 transition-colors rounded-xl hover:bg-red-50"
                   >
                     <LogOut size={16} /> {t('nav.signOut', 'Sign Out')}
                   </button>

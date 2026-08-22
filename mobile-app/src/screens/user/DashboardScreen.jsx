@@ -21,6 +21,7 @@ const QUICK_ACTIONS = [
   { key: 'pooja',    label: 'Book Pooja',  sub: 'Find & Book',      icon: 'flame',           tone: 'primary',   nav: 'PoojaList' },
   { key: 'panchang', label: 'Panchang',    sub: 'Check Tithi',      icon: 'calendar',        tone: 'info',      nav: 'Panchang' },
   { key: 'temples',  label: 'Temples',     sub: 'Explore Temples',  emoji: '🛕',             tone: 'success',   nav: 'Temples' },
+  { key: 'livestreams', label: 'Live Poojas', sub: 'Temple Livestreams', icon: 'videocam',    tone: 'secondary', nav: 'Livestreams' },
   { key: 'shop',     label: 'Marketplace', sub: 'Samagri & Kits',   icon: 'storefront',      tone: 'warning',   nav: 'ShopTab' },
   { key: 'orders',   label: 'Orders',      sub: 'My Purchases',     icon: 'receipt',         tone: 'secondary', nav: 'ShopTab', params: { screen: 'Orders' } },
   { key: 'ai',       label: 'AI Guru',     sub: 'Ask Anything',     icon: 'sparkles',        tone: 'accent',    nav: 'AIAssistant' },

@@ -112,7 +112,7 @@ const AppRoutes = () => {
           <Route path="/marketplace" element={<PublicLayout><Marketplace /></PublicLayout>} />
           <Route path="/marketplace/product/:slug" element={<PublicLayout><ProductDetail /></PublicLayout>} />
           <Route path="/temples"     element={<PublicLayout><TempleDirectory /></PublicLayout>} />
-          <Route path="/temples/livestreams" element={<PublicLayout><ComingSoon title="Temple Livestreams" /></PublicLayout>} />
+          <Route path="/temples/livestreams" element={<Navigate to="/livestreams" replace />} />
           {/* Legacy nav link — temple details now live on /temples/:id, reached from the directory */}
           <Route path="/temples/details" element={<Navigate to="/temples" replace />} />
           <Route path="/temples/location"    element={<PublicLayout><ComingSoon title="Temple Location" /></PublicLayout>} />
