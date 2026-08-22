@@ -3,6 +3,7 @@ const {
   getProfile, updateProfile, uploadPhoto, removePhoto, changePassword,
   getAddresses, addAddress, updateAddress, deleteAddress,
   getFamilyMembers, addFamilyMember, updateFamilyMember, deleteFamilyMember,
+  getWhatsAppConsent, updateWhatsAppConsent,
 } = require('../controllers/user.controller');
 const { protect } = require('../middleware/auth');
 const { uploadProfile } = require('../middleware/upload');
@@ -14,6 +15,10 @@ router.patch('/profile',           updateProfile);
 router.post('/profile/photo',      uploadProfile.single('photo'), uploadPhoto);
 router.delete('/profile/photo',    removePhoto);
 router.patch('/change-password',   changePassword);
+
+// WhatsApp communication preferences (My Profile preference center)
+router.get('/consent/whatsapp',   getWhatsAppConsent);
+router.patch('/consent/whatsapp', updateWhatsAppConsent);
 router.get('/addresses',           getAddresses);
 router.post('/addresses',          addAddress);
 router.patch('/addresses/:addrId', updateAddress);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Save, Trash2, Mail, MessageSquare, AlertTriangle, CheckCircle, RotateCcw } from 'lucide-react';
+import { Eye, EyeOff, Save, Trash2, Mail, MessageSquare, AlertTriangle, CheckCircle, RotateCcw, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import ProfilePhoto from '../components/shared/ProfilePhoto';
@@ -281,6 +281,50 @@ export default function Profile() {
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
+  // ── WhatsApp Communication Preferences (backend consent state) ────────────
+  // Source of truth is the backend WhatsAppPreference document (the same
+  // system the registration screen and the WhatsApp STOP webhook use). The
+  // toggles initialize from the real stored state — never hardcoded defaults.
+  const [consentLoading, setConsentLoading]     = useState(true);
+  const [consentError, setConsentError]         = useState(false);
+  const [marketingOptedIn, setMarketingOptedIn] = useState(false);
+  const [consentSaving, setConsentSaving]       = useState(false);
+
+  const loadConsent = async () => {
+    setConsentLoading(true);
+    setConsentError(false);
+    try {
+      const { data } = await API.get('/users/consent/whatsapp');
+      setMarketingOptedIn(data.consent?.whatsapp?.marketing?.status === 'opted_in');
+    } catch (err) {
+      setConsentError(true);
+    } finally {
+      setConsentLoading(false);
+    }
+  };
+
+  useEffect(() => { loadConsent(); }, []);
+
+  const handleMarketingToggle = async (next) => {
+    if (consentSaving) return;              // request lock — no duplicate submits
+    const previous = marketingOptedIn;
+    setMarketingOptedIn(next);              // immediate interaction feedback
+    setConsentSaving(true);
+    try {
+      const { data } = await API.patch('/users/consent/whatsapp', { marketingConsent: next });
+      // Re-sync from the authoritative backend state (also covers a no-op).
+      setMarketingOptedIn(data.consent?.whatsapp?.marketing?.status === 'opted_in');
+      toast.success(next
+        ? 'Promotional WhatsApp updates enabled'
+        : 'Promotional WhatsApp updates turned off');
+    } catch (err) {
+      setMarketingOptedIn(previous);        // restore previous state on failure
+      toast.error(err.response?.data?.message || 'Could not update your preference. Please try again.');
+    } finally {
+      setConsentSaving(false);
+    }
+  };
+
   // Referral system temporarily hidden — backend intact, UI disabled
   // const [referral, setReferral] = useState(null);
   // useEffect(() => { API.get('/referral/my').then(({ data }) => setReferral(data)).catch(() => {}); }, []);
@@ -384,6 +428,81 @@ export default function Profile() {
         </div>
 
         {/* Referral section temporarily hidden */}
+
+        {/* ── WhatsApp Communication Preferences ──────────────────── */}
+        <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100">
+          <div className="flex items-center gap-2 mb-1">
+            <MessageSquare size={15} className="text-green-600" />
+            <h2 className="font-semibold text-gray-700">WhatsApp Communication Preferences</h2>
+          </div>
+          <p className="text-xs text-gray-400 mb-5">Choose what Zutsav can send you on WhatsApp.</p>
+
+          {consentLoading ? (
+            <div className="space-y-3" aria-busy="true">
+              {[0, 1].map((i) => (
+                <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-gray-50 border border-gray-100 animate-pulse">
+                  <div className="space-y-2">
+                    <div className="h-3.5 w-44 bg-gray-200 rounded" />
+                    <div className="h-2.5 w-60 bg-gray-100 rounded" />
+                  </div>
+                  <div className="w-11 h-6 bg-gray-200 rounded-full" />
+                </div>
+              ))}
+            </div>
+          ) : consentError ? (
+            <div className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-red-50 border border-red-100">
+              <p className="text-xs text-red-600">Couldn't load your communication preferences.</p>
+              <button onClick={loadConsent}
+                className="shrink-0 flex items-center gap-1.5 text-xs font-semibold text-saffron-700 border border-saffron-200 bg-white hover:bg-saffron-50 px-3 py-2 rounded-xl transition-colors">
+                <RotateCcw size={12} /> Retry
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+
+              {/* Transactional / service — required, mirrors registration copy */}
+              <div className="flex items-start justify-between gap-4 p-4 rounded-2xl bg-green-50 border border-green-100">
+                <div>
+                  <p className="font-semibold text-sm text-gray-700">Transactional &amp; Service Updates</p>
+                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                    Account, booking and order updates about your poojas and purchases.
+                  </p>
+                  <p className="text-[11px] text-gray-400 mt-1.5 flex items-center gap-1">
+                    <Lock size={10} /> Required for booking, order and account updates.
+                  </p>
+                </div>
+                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-green-700 bg-green-100 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  Always On
+                </span>
+              </div>
+
+              {/* Promotional / marketing — user-manageable */}
+              <div className="flex items-start justify-between gap-4 p-4 rounded-2xl border transition-colors"
+                style={marketingOptedIn
+                  ? { borderColor: '#f59e0b', backgroundColor: '#fffbeb' }
+                  : { borderColor: '#e5e7eb', backgroundColor: '#f9fafb' }}>
+                <div>
+                  <p className="font-semibold text-sm text-gray-700">Promotional Updates</p>
+                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed max-w-xs">
+                    Offers, discounts and promotional updates on WhatsApp.
+                  </p>
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    Optional. You can also stop these anytime by replying STOP on WhatsApp.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5" title={marketingOptedIn ? 'Turn off promotional updates' : 'Turn on promotional updates'}>
+                  <input type="checkbox" className="sr-only peer"
+                    checked={marketingOptedIn}
+                    disabled={consentSaving}
+                    onChange={(e) => handleMarketingToggle(e.target.checked)} />
+                  <div className={`w-11 h-6 bg-gray-200 peer-focus:ring-2 peer-focus:ring-saffron-200 rounded-full peer peer-checked:bg-saffron-500 transition-colors ${consentSaving ? 'opacity-60' : ''}`} />
+                  <span className="absolute top-0.5 left-0 w-5 h-5 translate-x-0.5 peer-checked:translate-x-5 bg-white rounded-full shadow transition-transform duration-200" />
+                </label>
+              </div>
+
+            </div>
+          )}
+        </div>
 
         {/* ── Change Password ──────────────────────────────────────────────── */}
         <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100">

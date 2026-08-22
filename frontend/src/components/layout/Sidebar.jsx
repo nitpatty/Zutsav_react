@@ -20,6 +20,7 @@ const USER_NAV = [
   { icon: LayoutDashboard, label: 'Dashboard',     path: '/dashboard' },
   { icon: CalendarDays,    label: 'My Bookings',   path: '/my-bookings' },
   { icon: ShoppingBag,     label: 'My Orders',     path: '/my-orders' },
+  { icon: Users,           label: 'Family Members', path: '/family' },
   { icon: Flame,           label: 'Browse Poojas', path: '/poojas' },
   { icon: Store,           label: 'Marketplace',   path: '/marketplace' },
   { icon: Landmark,        label: 'Temples',       path: '/temples' },
