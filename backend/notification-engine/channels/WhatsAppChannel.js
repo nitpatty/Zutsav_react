@@ -98,12 +98,16 @@ async function buildVariableChecklist(mapping, payload) {
   // Reverse direction — dynamic template URL buttons the mapping can't fill.
   // Mapped urlButtons live at declared index `baseIndex + i` (mirroring
   // VariableResolver.buildWhatsAppButtonComponents, where a copy_code button
-  // occupies index 0).
+  // occupies index 0). Indices below baseIndex belong to the copy_code
+  // button, which is filled from whatsappButtonPayloadPath — never treated
+  // as missing urlButtons config.
   const baseIndex = mapping.whatsappButtonType === 'copy_code' ? 1 : 0;
   const buttonBlockers = [];
   if (declaredUrlButtons) {
-    for (const [index, declared] of Object.entries(declaredUrlButtons)) {
+    for (const [rawIndex, declared] of Object.entries(declaredUrlButtons)) {
+      const index = Number(rawIndex);
       if (!declared.hasPlaceholders) continue; // static URL buttons need no parameter
+      if (index < baseIndex) continue; // copy_code territory — covered via buttonConfig
       const mapped = (mapping.whatsappUrlButtons || [])[index - baseIndex];
       const value = mapped?.parameterPath ? resolve(mapped.parameterPath, payload) : '';
       if (!mapped || !mapped.parameterPath || value === '') {

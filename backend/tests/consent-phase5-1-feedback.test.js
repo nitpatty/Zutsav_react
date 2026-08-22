@@ -203,18 +203,19 @@ describe('buildWhatsAppComponents URL buttons', () => {
   ];
   const payload = { customer: { name: 'A' }, booking: { id: 'BOOK-123' } };
 
-  test('declared dynamic + static buttons produce the right components', () => {
+  test('dynamic button sends its parameter; static button is omitted entirely (#132018)', () => {
     const warnings = [];
     const comps = VariableResolver.buildWhatsAppComponents(
       [{ position: 1, payloadPath: 'customer.name' }], payload, null, buttons, declared, warnings
     );
     const btnComps = comps.filter((c) => c.type === 'button');
-    assert.equal(btnComps.length, 2);
+    // ONLY the dynamic button may appear as a component — a static URL button
+    // component (even with empty parameters) is rejected by Meta (#132018).
+    assert.equal(btnComps.length, 1);
     assert.equal(btnComps[0].sub_type, 'url');
     assert.equal(btnComps[0].index, '0');
     assert.deepEqual(btnComps[0].parameters, [{ type: 'text', text: 'BOOK-123' }]);
-    assert.equal(btnComps[1].index, '1');
-    assert.deepEqual(btnComps[1].parameters, []); // static URL → no parameters
+    assert.ok(btnComps.every((c) => c.parameters.length > 0), 'no empty-parameter button components may ever be sent');
     assert.deepEqual(warnings, []);
   });
 
@@ -233,7 +234,9 @@ describe('buildWhatsAppComponents URL buttons', () => {
     const comps = VariableResolver.buildWhatsAppComponents(
       [], { booking: { id: '' } }, null, buttons, declared, warnings
     );
-    assert.equal(comps.filter((c) => c.type === 'button').length, 1); // only static one survives
+    // Nothing survives: the dynamic one lost its parameter, the static one is
+    // never sent as a component at all (#132018).
+    assert.equal(comps.filter((c) => c.type === 'button').length, 0);
     assert.equal(warnings.length, 1);
     assert.match(warnings[0], /resolved empty/);
   });
@@ -285,9 +288,12 @@ describe('WhatsAppChannel SERVICE_COMPLETED (purpose SERVICE)', () => {
     const sent = providerCalls[0];
     assert.equal(sent.templateName, tmpl.name);
     const btnComps = (sent.components || []).filter((c) => c.type === 'button');
-    assert.equal(btnComps.length, 2, 'declared URL buttons must reach the provider');
+    // Only the DYNAMIC button reaches Meta as a component; the static
+    // "Rate Your Experience" is filled by Meta itself — sending it with an
+    // empty parameters array is rejected (#132018).
+    assert.equal(btnComps.length, 1, 'only the dynamic URL button may reach the provider');
     assert.deepEqual(btnComps[0].parameters, [{ type: 'text', text: '65f0abc1234567890def0001' }]);
-    assert.deepEqual(btnComps[1].parameters, []);
+    assert.ok((sent.components || []).every((c) => c.type !== 'button' || c.parameters.length > 0), '#132018 guard: no empty-parameter buttons');
     // Body intact — the transactional message content is untouched.
     const bodyComp = sent.components.find((c) => c.type === 'body');
     assert.equal(bodyComp.parameters.length, 3);

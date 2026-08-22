@@ -86,9 +86,12 @@ function buildWhatsAppButtonComponents(urlButtons, declaredUrlButtons, payload, 
         return;
       }
       components.push({ type: 'button', sub_type: 'url', index: String(index), parameters: [{ type: 'text', text: value }] });
-    } else {
-      components.push({ type: 'button', sub_type: 'url', index: String(index), parameters: [] });
     }
+    // STATIC URL button (no {{n}} placeholder): omit the component entirely.
+    // Meta fills the approved URL itself — a button component with an empty
+    // `parameters` array is malformed there and rejected with "(#132018)
+    // There's an issue with the parameters in your template". Only buttons
+    // that actually carry a dynamic value may appear as components.
   });
   return components;
 }
