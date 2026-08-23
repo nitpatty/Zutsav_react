@@ -1,32 +1,20 @@
 /**
  * Geocoding Service — provider-agnostic public API.
  *
- * Nominatim (OpenStreetMap) is the only provider today, but every caller
- * only ever touches `geocodeLocation` / `reverseGeocodeLocation` and their
- * plain { found, lat, lng, displayName, boundingBox } result shape.
- * Everything below the "NOMINATIM PROVIDER" line is provider-specific;
- * swapping to a different geocoding vendor later means rewriting only
- * that section — no caller anywhere in the app needs to change.
+ * All provider intelligence lives server-side (backend/src/services/
+ * locationService.js): requests go through the authenticated
+ * /api/location/* proxy endpoints, so no vendor API key ever reaches the
+ * browser and provider selection (Ola Maps primary, Nominatim fallback)
+ * is a purely server-side concern.
+ *
+ * Every caller only touches `geocodeLocation`, `autocompletePlaces`,
+ * `reverseGeocodeLocation` and their plain result shapes:
+ *   { found, lat, lng, displayName }          — geocode
+ *   { found, results:[{label,lat,lng}] }      — autocomplete
+ *   { displayName }                            — reverse geocode
  */
-import { thirdParty, company } from '../config';
 
-/* ─────────────────────────────────────────────────────────
-   NOMINATIM PROVIDER
-   https://operations.osmfoundation.org/policies/nominatim/
-──────────────────────────────────────────────────────────── */
-
-const NOMINATIM_BASE = thirdParty.nominatimApiUrl;
-
-// Nominatim's usage policy requires every request to identify the calling
-// application via a valid User-Agent (or Referer). Browser `fetch()` cannot
-// set a custom User-Agent — it's a forbidden header the browser itself
-// strips for security — so the browser's own UA and the page's Referer are
-// sent automatically instead. As Nominatim's own docs note this fallback,
-// we identify via the `email` query param on every request so their ops
-// team can reach us if this integration ever needs attention.
-const CONTACT_EMAIL = company.email;
-
-const REQUEST_HEADERS = { Accept: 'application/json', 'Accept-Language': 'en' };
+import API from '../api/axios';
 
 // Session-lifetime result cache, keyed by exact query. Geocoding results
 // for a given query don't change within an admin's editing session, so a
@@ -40,78 +28,56 @@ function cacheSet(key, value) {
   cache.set(key, value);
 }
 
-function mapNominatimRow(row) {
-  const bb = Array.isArray(row.boundingbox) ? row.boundingbox.map(Number) : null;
-  return {
-    found: true,
-    lat: parseFloat(row.lat),
-    lng: parseFloat(row.lon),
-    displayName: row.display_name || '',
-    boundingBox: bb && bb.length === 4 ? { south: bb[0], north: bb[1], west: bb[2], east: bb[3] } : null,
-  };
+function isAbort(err) {
+  return err?.name === 'AbortError' || err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED';
 }
 
-async function nominatimSearch(query, { signal } = {}) {
-  const cached = cacheGet(query);
-  if (cached) return cached;
+/* ─────────────────────────────────────────────────────────
+   AUTOCOMPLETE — interactive place search (Ola-backed)
+──────────────────────────────────────────────────────────── */
 
-  const url = `${NOMINATIM_BASE}/search?` + new URLSearchParams({
-    q: query, format: 'json', addressdetails: '1', limit: '1',
-    countrycodes: 'in', email: CONTACT_EMAIL,
-  });
+/**
+ * Live place suggestions while the user types.
+ *
+ * @param {string} query
+ * @param {{signal?: AbortSignal}} [opts]
+ * @returns {Promise<{found:true, results:Array<{label:string,lat:number,lng:number,placeId?:string}>}
+ *                    | {found:false, aborted?:true}>}
+ */
+export async function autocompletePlaces(query, opts = {}) {
+  const q = String(query || '').trim();
+  if (q.length < 3) return { found: false };
 
-  try {
-    const res  = await fetch(url, { headers: REQUEST_HEADERS, signal });
-    const data = await res.json();
-    const result = data.length > 0 ? mapNominatimRow(data[0]) : { found: false };
-    cacheSet(query, result);
-    return result;
-  } catch (err) {
-    if (err.name === 'AbortError') return { found: false, aborted: true };
-    return { found: false }; // network/parse failure — never thrown to the caller
-  }
-}
-
-// Structured postal-code search — the Nominatim-recommended way to search by
-// PIN code, and materially more reliable than embedding the PIN as trailing
-// free text in a `q=` query (which its free-text parser frequently fails to
-// resolve for compound/uncommon Indian addresses).
-async function nominatimSearchByPincode(pincode, { signal } = {}) {
-  const key = `pin:${pincode}`;
+  const key = `ac:${q.toLowerCase()}`;
   const cached = cacheGet(key);
   if (cached) return cached;
 
-  const url = `${NOMINATIM_BASE}/search?` + new URLSearchParams({
-    postalcode: pincode, country: 'India', format: 'json', addressdetails: '1', limit: '1', email: CONTACT_EMAIL,
-  });
-
   try {
-    const res  = await fetch(url, { headers: REQUEST_HEADERS, signal });
-    const data = await res.json();
-    const result = data.length > 0 ? mapNominatimRow(data[0]) : { found: false };
+    const { data } = await API.get('/location/autocomplete', {
+      params: { q },
+      signal: opts.signal,
+    });
+    if (!data?.found || !Array.isArray(data.results)) return { found: false };
+    const result = {
+      found: true,
+      results: data.results.map((r) => ({
+        label: r.label || '',
+        lat: Number(r.lat),
+        lng: Number(r.lng),
+        placeId: r.placeId || '',
+      })).filter((r) => r.label && Number.isFinite(r.lat) && Number.isFinite(r.lng)),
+    };
     cacheSet(key, result);
     return result;
   } catch (err) {
-    if (err.name === 'AbortError') return { found: false, aborted: true };
+    if (isAbort(err)) return { found: false, aborted: true };
+    // Network/server failure — surfaced as "no suggestions", never thrown.
     return { found: false };
   }
 }
 
-async function nominatimReverse(lat, lng, { signal } = {}) {
-  const url = `${NOMINATIM_BASE}/reverse?` + new URLSearchParams({
-    format: 'json', lat: String(lat), lon: String(lng), email: CONTACT_EMAIL,
-  });
-  try {
-    const res  = await fetch(url, { headers: REQUEST_HEADERS, signal });
-    const data = await res.json();
-    return { displayName: data.display_name || '' };
-  } catch {
-    return { displayName: '' };
-  }
-}
-
 /* ─────────────────────────────────────────────────────────
-   PUBLIC API — provider-agnostic, this is what every caller uses
+   FORWARD GEOCODE — address fields → coordinates
 ──────────────────────────────────────────────────────────── */
 
 /**
@@ -134,36 +100,72 @@ function buildQueryTiers({ address = '', city = '', state = '', pincode = '', na
   ];
 }
 
+async function proxyGeocode(query, opts = {}) {
+  const cached = cacheGet(query);
+  if (cached) return cached;
+
+  try {
+    const { data } = await API.get('/location/geocode', {
+      params: { q: query },
+      signal: opts.signal,
+    });
+    const result = data?.found
+      ? { found: true, lat: Number(data.lat), lng: Number(data.lng), displayName: data.label || '' }
+      : { found: false };
+    cacheSet(query, result);
+    return result;
+  } catch (err) {
+    if (isAbort(err)) return { found: false, aborted: true };
+    return { found: false }; // network/parse failure — never thrown to the caller
+  }
+}
+
 /**
  * Geocode a location from whatever fields are available, trying the most
- * accurate combination first (see buildQueryTiers) and falling back to a
- * structured PIN-code lookup last. Never throws — always resolves to
- * { found: false } (or { found: false, aborted: true } if cancelled via
- * `signal`) so callers can show a friendly message instead of crashing.
+ * accurate combination first (see buildQueryTiers). Never throws — always
+ * resolves to { found: false } (or { found: false, aborted: true }) so
+ * callers can show a friendly message instead of crashing.
  *
  * @param {{address?, city?, state?, pincode?, name?}} input
  * @param {{signal?: AbortSignal}} [opts]
- * @returns {Promise<{found:true, lat:number, lng:number, displayName:string, boundingBox:object|null} | {found:false, aborted?:true}>}
+ * @returns {Promise<{found:true, lat:number, lng:number, displayName:string} | {found:false, aborted?:true}>}
  */
 export async function geocodeLocation(input, opts = {}) {
   const tried = new Set();
   for (const q of buildQueryTiers(input)) {
     if (!q || tried.has(q)) continue;
     tried.add(q);
-    const result = await nominatimSearch(q, opts);
+    const result = await proxyGeocode(q, opts);
     if (result.aborted) return result;
     if (result.found) return result;
   }
 
+  // Structured PIN-code lookup last — materially more reliable for compound
+  // Indian addresses than embedding the PIN as trailing free text.
   if (input.pincode) {
-    const result = await nominatimSearchByPincode(input.pincode, opts);
-    if (result.found || result.aborted) return result;
+    const pinQuery = `${input.pincode}, India`;
+    const result = await proxyGeocode(pinQuery, opts);
+    if (result.aborted) return result;
+    if (result.found) return result;
   }
 
   return { found: false };
 }
 
+/* ─────────────────────────────────────────────────────────
+   REVERSE GEOCODE — coordinates → human-readable address
+──────────────────────────────────────────────────────────── */
+
 /** Reverse-geocode a lat/lng into a human-readable address (marker drag/click). */
 export async function reverseGeocodeLocation(lat, lng, opts = {}) {
-  return nominatimReverse(lat, lng, opts);
+  try {
+    const { data } = await API.get('/location/reverse-geocode', {
+      params: { lat, lng },
+      signal: opts.signal,
+    });
+    return { displayName: data?.displayName || '' };
+  } catch (err) {
+    if (isAbort(err)) return { displayName: '', aborted: true };
+    return { displayName: '' };
+  }
 }

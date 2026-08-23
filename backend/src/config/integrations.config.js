@@ -24,6 +24,12 @@ const vendors = {
   tekipost: {
     baseUrl: 'https://app.tekipost.com',
   },
+  olamaps: {
+    baseUrl: 'https://api.olamaps.io',
+    autocompletePath: '/places/v1/autocomplete',
+    geocodePath: '/places/v1/geocode',
+    reverseGeocodePath: '/places/v1/reverse-geocode',
+  },
 };
 
 const database = {

@@ -148,6 +148,7 @@ app.use('/api/poojas',           require('./routes/pooja.routes'));
 app.use('/api/festivals',        require('./routes/festival.routes'));
 app.use('/api/marketplace',      require('./routes/marketplace.routes'));
 app.use('/api/temples',          require('./routes/temple.routes'));
+app.use('/api/location',         require('./routes/location.routes'));
 app.use('/api/hero-banners',     require('./routes/heroBanner.routes'));
 app.use('/api/livestreams',      require('./routes/livestream.routes'));
 app.use('/api/ai',               require('./routes/ai.routes'));

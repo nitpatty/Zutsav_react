@@ -2,6 +2,7 @@ const axios  = require('axios');
 const Temple = require('../models/Temple');
 const { audit } = require('../services/auditService');
 const translationService = require('../services/translationService');
+const locationService = require('../services/locationService');
 
 async function withTempleTranslations(temples, langParam) {
   const lang = (langParam || 'en').toLowerCase();
@@ -12,14 +13,26 @@ async function withTempleTranslations(temples, langParam) {
 
 const STATUS_VALUES = ['draft', 'published', 'hidden', 'archived'];
 
+// Coordinate range validation shared by create/update. Returns a numeric
+// {latitude, longitude} pair, or an error message string when invalid.
+function validateCoords(latitude, longitude) {
+  const lat = typeof latitude === 'number' ? latitude : parseFloat(latitude);
+  const lng = typeof longitude === 'number' ? longitude : parseFloat(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return { error: 'Latitude and longitude must be valid numbers' };
+  }
+  if (lat < -90 || lat > 90)   return { error: 'Latitude must be between -90 and 90' };
+  if (lng < -180 || lng > 180) return { error: 'Longitude must be between -180 and 180' };
+  return { lat, lng };
+}
+
+// Best-effort server-side geocode used ONLY when a request arrives without
+// explicit coordinates (e.g. API clients other than the admin form). The
+// form always sends its exact map-picker coordinates, which are authoritative.
 const geocode = async (address, city, state) => {
   try {
-    const q = encodeURIComponent(`${address}, ${city}, ${state}, India`);
-    const { data } = await axios.get(
-      `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
-      { headers: { 'User-Agent': 'Zutsav/1.0 (zutsav@example.com)' }, timeout: 5000 }
-    );
-    if (data.length > 0) return { latitude: +data[0].lat, longitude: +data[0].lon };
+    const result = await locationService.geocodeAddress(`${address}, ${city}, ${state}, India`);
+    if (result.found) return { latitude: result.lat, longitude: result.lng };
   } catch (_) { /* geocoding is best-effort */ }
   return {};
 };
@@ -165,10 +178,14 @@ exports.createTemple = async (req, res, next) => {
     const images = req.files?.images ? req.files.images.map((f) => `uploads/temples/${f.filename}`) : [];
     const coverImage = req.files?.coverImage?.[0] ? `uploads/temples/${req.files.coverImage[0].filename}` : '';
 
-    // Use provided coords from map picker, fall back to geocoding from address
+    // Explicit coordinates from the admin's map picker are authoritative —
+    // validate and use them as-is. Only when a request arrives without any
+    // coordinates do we fall back to best-effort geocoding from the address.
     let coords = {};
-    if (latitude && longitude) {
-      coords = { latitude: +latitude, longitude: +longitude };
+    if (latitude !== undefined && latitude !== '' && longitude !== undefined && longitude !== '') {
+      const checked = validateCoords(latitude, longitude);
+      if (checked.error) return res.status(400).json({ success: false, message: checked.error });
+      coords = { latitude: checked.lat, longitude: checked.lng };
     } else {
       coords = await geocode(address, city, state);
     }
@@ -220,14 +237,31 @@ exports.updateTemple = async (req, res, next) => {
     if (updates.status && !STATUS_VALUES.includes(updates.status)) delete updates.status;
     if (updates.status) updates.isActive = updates.status === 'published';
 
-    // Re-geocode if address fields changed
-    if (updates.address || updates.city || updates.state) {
-      const coords = await geocode(
-        updates.address  || before.address,
-        updates.city     || before.city,
-        updates.state    || before.state
-      );
-      if (coords.latitude) { updates.latitude = coords.latitude; updates.longitude = coords.longitude; }
+    // Coordinates: the admin's explicitly-sent values win. Re-geocode from
+    // the address ONLY when the request carries no coordinates at all —
+    // previously ANY address edit silently overwrote hand-corrected marker
+    // positions with an approximate provider result.
+    const hasExplicitCoords =
+      updates.latitude !== undefined && updates.latitude !== '' &&
+      updates.longitude !== undefined && updates.longitude !== '';
+    if (hasExplicitCoords) {
+      const checked = validateCoords(updates.latitude, updates.longitude);
+      if (checked.error) return res.status(400).json({ success: false, message: checked.error });
+      updates.latitude  = checked.lat;
+      updates.longitude = checked.lng;
+    } else {
+      // Drop stray partial fields (e.g. one coordinate without the other)
+      // rather than persisting a broken pair.
+      delete updates.latitude;
+      delete updates.longitude;
+      if (updates.address || updates.city || updates.state) {
+        const coords = await geocode(
+          updates.address  || before.address,
+          updates.city     || before.city,
+          updates.state    || before.state
+        );
+        if (coords.latitude) { updates.latitude = coords.latitude; updates.longitude = coords.longitude; }
+      }
     }
 
     // Bump the translation version only when a translatable field actually

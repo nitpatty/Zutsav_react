@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import ProfilePhoto from '../components/shared/ProfilePhoto';
 import MapPicker from '../components/shared/MapPicker';
 import { geocodeLocation } from '../services/geocodingService';
+import LocationSearch from '../components/shared/LocationSearch';
 import PincodeInput from '../components/shared/PincodeInput';
 import { getImageUrl, handleImageError, thirdParty, company } from '../config';
 import RichTextEditor from '../components/editor/RichTextEditor';
@@ -7353,10 +7354,106 @@ function TemplesTab() {
     }
   }, []);
 
+  const handlePlaceSelect = useCallback(({ label, lat, lng }) => {
+    // An explicit search-selection is authoritative: adopt its coordinates
+    // immediately and cancel any debounced auto-geocode so a slower address
+    // lookup can't drag the marker off the picked spot afterwards.
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
+    setGeoStatus('idle');
+    setMapCoords({ lat, lng });
+    setGeoDisplayName(label || '');
+
+    // Populate the existing location fields from the suggestion text.
+    // Ola descriptions look like "Name, Locality, State[, PIN], India" —
+    // strip the country tail, lift a trailing 6-digit PIN, and take the
+    // two segments before it as state/city candidates. Every field stays
+    // hand-editable; heuristics only pre-fill.
+    const segs = label.split(',').map((s) => s.trim()).filter(Boolean);
+    if (/^india$/i.test(segs.at(-1) || '')) segs.pop();
+    let pincode = '';
+    if (/^\d{6}$/.test(segs.at(-1) || '')) pincode = segs.pop();
+    const state = segs.at(-1) || '';
+    const city  = segs.length > 1 ? segs.at(-2) : '';
+
+    // Programmatic fill must not re-arm the auto-geocode effect (the coords
+    // above are already exact) — same ref pattern as handlePinMove.
+    userChangedFormRef.current = false;
+    setForm((prev) => ({
+      ...prev,
+      address: segs.slice(0, Math.max(0, segs.length - 2)).join(', ') || label,
+      ...(city ? { city } : {}),
+      ...(state ? { state } : {}),
+      ...(pincode ? { pincode } : {}),
+    }));
+  }, []);
+
+  // ── Manual coordinate entry (first-class location control) ───────
+  // Drafts hold the raw keystrokes; a valid pair applies to mapCoords
+  // (debounced while typing, immediate on blur). mapCoords flows back into
+  // drafts whenever the inputs aren't focused, keeping search/pin/click
+  // updates visible without fighting an active edit session.
+  const [coordDraft, setCoordDraft] = useState({ lat: '', lng: '' });
+  const [coordError, setCoordError] = useState('');
+  const coordFocusRef     = useRef(false);
+  const coordDebounceRef  = useRef(null);
+
+  useEffect(() => {
+    if (!coordFocusRef.current) {
+      setCoordDraft({ lat: mapCoords.lat.toFixed(6), lng: mapCoords.lng.toFixed(6) });
+      setCoordError('');
+    }
+  }, [mapCoords]);
+
+  const cancelPendingAutoGeocode = () => {
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
+  };
+
+  const applyCoordDraft = (latStr, lngStr) => {
+    if (latStr === '' && lngStr === '') { setCoordError(''); return; }
+    const la = parseFloat(latStr);
+    const ln = parseFloat(lngStr);
+    const badLat = !Number.isFinite(la) || la < -90 || la > 90;
+    const badLng = !Number.isFinite(ln) || ln < -180 || ln > 180;
+    if (badLat || badLng) {
+      setCoordError('Latitude must be between -90 and 90; longitude between -180 and 180.');
+      return;
+    }
+    setCoordError('');
+    cancelPendingAutoGeocode();
+    setGeoStatus('idle');
+    setGeoDisplayName('');
+    setMapCoords({ lat: la, lng: ln });
+  };
+
+  const handleCoordChange = (field) => (e) => {
+    const v = e.target.value;
+    if (v !== '' && !/^-?\d*\.?\d*$/.test(v)) return; // digits, optional sign/decimal point only
+    const next = { ...coordDraft, [field]: v };
+    setCoordDraft(next);
+    if (coordDebounceRef.current) clearTimeout(coordDebounceRef.current);
+    coordDebounceRef.current = setTimeout(() => applyCoordDraft(next.lat, next.lng), 600);
+  };
+
+  const handleCoordBlur = (field) => () => {
+    if (coordDebounceRef.current) { clearTimeout(coordDebounceRef.current); coordDebounceRef.current = null; }
+    const normalized = coordDraft[field] !== '' && Number.isFinite(parseFloat(coordDraft[field]))
+      ? parseFloat(coordDraft[field]).toFixed(6)
+      : coordDraft[field];
+    setCoordDraft((prev) => ({ ...prev, [field]: normalized }));
+    applyCoordDraft(
+      field === 'lat' ? normalized : coordDraft.lat,
+      field === 'lng' ? normalized : coordDraft.lng
+    );
+  };
+
   const resetForm = () => {
     setEditingTemple(null);
     setForm(EMPTY_TEMPLE_FORM);
     setMapCoords(INDIA_CENTER);
+    setCoordDraft({ lat: INDIA_CENTER.lat.toFixed(6), lng: INDIA_CENTER.lng.toFixed(6) });
+    setCoordError('');
     setCoverFile(null);
     setCoverUrl('');
     setExistingImages([]);
@@ -7377,6 +7474,10 @@ function TemplesTab() {
       category: t.category || '', primaryDeity: t.primaryDeity || '', openingHours: t.openingHours || '',
     });
     setMapCoords(t.latitude && t.longitude ? { lat: t.latitude, lng: t.longitude } : INDIA_CENTER);
+    const editLat  = t.latitude && t.longitude ? t.latitude : INDIA_CENTER.lat;
+    const editLng  = t.latitude && t.longitude ? t.longitude : INDIA_CENTER.lng;
+    setCoordDraft({ lat: Number(editLat).toFixed(6), lng: Number(editLng).toFixed(6) });
+    setCoordError('');
     setCoverFile(null);
     setCoverUrl(t.coverImage || '');
     setExistingImages(t.images || []);
@@ -7501,6 +7602,7 @@ function TemplesTab() {
             <section className="card p-6 md:p-8">
               <SectionHeader icon={MapPin} color="teal" title="Location" />
               <div className="space-y-4">
+                <LocationSearch onSelect={handlePlaceSelect} />
                 <div>
                   <label className="label">Pincode</label>
                   <PincodeInput
@@ -7522,17 +7624,47 @@ function TemplesTab() {
                 </div>
                 <div>
                   <label className="label">Address</label>
-                  <input className="input" value={form.address} onChange={handleFormChange('address')} placeholder="Auto-filled when pin is dragged" />
+                  <input className="input" value={form.address} onChange={handleFormChange('address')} placeholder="Auto-filled from search or pin drag" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label text-xs text-gray-500">Latitude</label>
-                    <input className="input bg-blue-50 text-sm font-mono" readOnly value={mapCoords.lat.toFixed(6)} />
+
+                {/* Exact coordinates — directly editable; the map follows the
+                    typed pair (debounced), and any map interaction writes back
+                    here. Manual entry always wins over approximate lookups. */}
+                <div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label text-xs text-gray-500">Latitude</label>
+                      <input
+                        className={`input bg-blue-50 text-sm font-mono ${coordError ? 'border-red-400' : ''}`}
+                        value={coordDraft.lat}
+                        onChange={handleCoordChange('lat')}
+                        onFocus={() => { coordFocusRef.current = true; }}
+                        onBlur={() => { coordFocusRef.current = false; handleCoordBlur('lat')(); }}
+                        placeholder="e.g. 30.7346"
+                        inputMode="decimal"
+                      />
+                    </div>
+                    <div>
+                      <label className="label text-xs text-gray-500">Longitude</label>
+                      <input
+                        className={`input bg-blue-50 text-sm font-mono ${coordError ? 'border-red-400' : ''}`}
+                        value={coordDraft.lng}
+                        onChange={handleCoordChange('lng')}
+                        onFocus={() => { coordFocusRef.current = true; }}
+                        onBlur={() => { coordFocusRef.current = false; handleCoordBlur('lng')(); }}
+                        placeholder="e.g. 79.0668"
+                        inputMode="decimal"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="label text-xs text-gray-500">Longitude</label>
-                    <input className="input bg-blue-50 text-sm font-mono" readOnly value={mapCoords.lng.toFixed(6)} />
-                  </div>
+                  {coordError && (
+                    <p className="text-xs text-red-600 mt-1">{coordError}</p>
+                  )}
+                  {!coordError && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Edit to reposition exactly — the map and marker follow these values.
+                    </p>
+                  )}
                 </div>
                 {geoStatus === 'loading' && (
                   <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl">
