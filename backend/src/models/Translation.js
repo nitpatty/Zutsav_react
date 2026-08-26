@@ -13,7 +13,7 @@ const translationSchema = new mongoose.Schema({
   translatedFields: { type: mongoose.Schema.Types.Mixed, default: {} },
 
   version:      { type: Number, default: 0 }, // source doc's translationVersion at time of success
-  translatedBy: { type: String, default: 'groq' },
+  translatedBy: { type: String, default: '' }, // provider name recorded at generation time (e.g. 'sarvam', 'groq')
   translatedAt: { type: Date, default: null },
   lastUsedAt:   { type: Date, default: null },
   lockedAt:     { type: Date, default: null }, // set when status flips to 'pending', used by stale-lock sweep

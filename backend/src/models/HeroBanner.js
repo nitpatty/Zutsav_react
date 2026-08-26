@@ -6,6 +6,7 @@ const heroBannerSchema = new mongoose.Schema({
   linkUrl:   { type: String, default: '' },
   isActive:  { type: Boolean, default: true },
   sortOrder: { type: Number, default: 0 },
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('HeroBanner', heroBannerSchema);

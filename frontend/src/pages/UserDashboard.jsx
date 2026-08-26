@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import {
   CalendarDays, ShoppingBag, Flame, Bot, Bell, Star,
   ArrowRight, TrendingUp, Clock, MapPin, Sun, Moon,
@@ -22,12 +23,11 @@ const stagger = {
   animate: { transition: { staggerChildren: 0.07 } },
 };
 
-/* ── Greeting based on time ─────────────────────────── */
-function getGreeting() {
+function getGreeting(t) {
   const h = new Date().getHours();
-  if (h < 12) return 'Good Morning';
-  if (h < 17) return 'Good Afternoon';
-  return 'Good Evening';
+  if (h < 12) return t('dashboard.goodMorning');
+  if (h < 17) return t('dashboard.goodAfternoon');
+  return t('dashboard.goodEvening');
 }
 
 /* ── Quick action card ──────────────────────────────── */
@@ -143,6 +143,7 @@ function StatChip({ label, value, icon: Icon }) {
 
 /* ── Daily Insight Card (WOW Section) ───────────────── */
 function DailyInsightCard({ panchang, loading }) {
+  const { t } = useTranslation();
   return (
     <motion.div
       variants={fadeUp(0.1)}
@@ -176,12 +177,12 @@ function DailyInsightCard({ panchang, loading }) {
             <Sun size={12} className="text-white" />
           </div>
           <span className="text-white/80 text-xs font-bold uppercase tracking-widest">
-            Daily Spiritual Insight
+            {t('dashboard.insightLabel')}
           </span>
         </div>
 
         <h2 className="text-white font-bold text-xl md:text-2xl mb-1" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-          {loading ? 'Loading today\'s panchang…' : (panchang?.yoga ? `${panchang.yoga} Yoga` : 'Auspicious Day')}
+          {loading ? t('dashboard.loadingPanchang') : (panchang?.yoga ? t('dashboard.yogaToday', { yoga: panchang.yoga }) : 'Auspicious Day')}
         </h2>
         <p className="text-white/70 text-sm mb-6">
           {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
@@ -189,10 +190,10 @@ function DailyInsightCard({ panchang, loading }) {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'Tithi',     value: panchang?.tithi     || 'Data Not Available', icon: '📿' },
-            { label: 'Nakshatra', value: panchang?.nakshatra  || 'Data Not Available', icon: '⭐' },
-            { label: 'Moon Phase',value: panchang?.moonPhase  || 'Data Not Available', icon: '🌙' },
-            { label: 'Auspicious',value: panchang?.muhurta    || 'Data Not Available', icon: '🪔' },
+            { label: t('dashboard.tithi'),     value: panchang?.tithi     || 'Data Not Available', icon: '📿' },
+            { label: t('dashboard.nakshatra'), value: panchang?.nakshatra  || 'Data Not Available', icon: '⭐' },
+            { label: t('dashboard.moonPhase'),value: panchang?.moonPhase  || 'Data Not Available', icon: '🌙' },
+            { label: t('dashboard.auspicious'),value: panchang?.muhurta    || 'Data Not Available', icon: '🪔' },
           ].map(({ label, value, icon }) => (
             <div key={label} className="bg-white/10 backdrop-blur-sm rounded-2xl p-3">
               <p className="text-white/60 text-[10px] uppercase tracking-wider mb-1">{label}</p>
@@ -222,6 +223,7 @@ export default function UserDashboard() {
   const { unreadCount } = useNotifications();
   const { currentTheme } = useTheme();
   const { lang } = useLanguage();
+  const { t } = useTranslation();
 
   const [bookings,      setBookings]      = useState([]);
   const [totalBookings, setTotalBookings] = useState(0);
@@ -256,17 +258,17 @@ export default function UserDashboard() {
     return () => { cancelled = true; };
   }, [lang]);
 
-  const greeting = getGreeting();
+  const greeting = getGreeting(t);
   const firstName = user?.name?.split(' ')[0] || 'Devotee';
   const primaryColor = 'var(--t-primary)';
 
   const QUICK_ACTIONS = [
-    { icon: Flame,      label: 'Book a Pooja',    sub: 'Find pandits & schedule', to: '/poojas',       color: '#D4602A' },
-    { icon: ShoppingBag,label: 'Marketplace',     sub: 'Sacred items & samagri',  to: '/marketplace',  color: '#059669' },
-    { icon: Bot,        label: 'AI Spiritual Guide', sub: 'Ask divine questions',  to: '/ai-assistant', color: '#8B5CF6' },
-    { icon: CalendarDays,label:'Festivals',        sub: 'Upcoming celebrations',   to: '/festivals',    color: '#D4AF37' },
-    { icon: Sun,        label: 'Panchang',         sub: 'Daily auspicious times',  to: '/panchang',     color: '#0EA5E9' },
-    { icon: MapPin,     label: 'Temples',          sub: 'Find nearby temples',     to: '/temples',      color: '#EC4899' },
+    { icon: Flame,      label: t('dashboard.qaBookPooja'),    sub: t('dashboard.qaBookPoojaSub'), to: '/poojas',       color: '#D4602A' },
+    { icon: ShoppingBag,label: t('dashboard.qaMarketplace'),     sub: t('dashboard.qaMarketplaceSub'),  to: '/marketplace',  color: '#059669' },
+    { icon: Bot,        label: t('dashboard.qaAiGuide'), sub: t('dashboard.qaAiGuideSub'),  to: '/ai-assistant', color: '#8B5CF6' },
+    { icon: CalendarDays,label:t('dashboard.qaFestivals'),        sub: t('dashboard.qaFestivalsSub'),   to: '/festivals',    color: '#D4AF37' },
+    { icon: Sun,        label: t('dashboard.qaPanchang'),         sub: t('dashboard.qaPanchangSub'),  to: '/panchang',     color: '#0EA5E9' },
+    { icon: MapPin,     label: t('dashboard.qaTemples'),          sub: t('dashboard.qaTemplesSub'),     to: '/temples',      color: '#EC4899' },
   ];
 
   return (
@@ -289,10 +291,10 @@ export default function UserDashboard() {
               className="text-2xl md:text-3xl font-bold tracking-tight"
               style={{ color: 'var(--t-text)', fontFamily: "'Cormorant Garamond', serif" }}
             >
-              Welcome back, {firstName} 🙏
+              {t('dashboard.welcomeBack', { name: firstName })}
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--t-muted)' }}>
-              Your spiritual journey continues today.
+              {t('dashboard.journeyContinues')}
             </p>
           </div>
 
@@ -304,7 +306,7 @@ export default function UserDashboard() {
               style={{ background: 'var(--t-primary)' }}
             >
               <Bell size={14} />
-              {unreadCount} new
+              {t('dashboard.newNotifications', { count: unreadCount })}
             </Link>
           )}
         </motion.div>
@@ -312,11 +314,11 @@ export default function UserDashboard() {
         {/* Stats row */}
         <motion.div variants={stagger} className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'Total Bookings', value: loading ? '…' : (totalBookings || '0'), icon: CalendarDays },
-            { label: 'Orders Placed',  value: loading ? '…' : (orders.length || '0'), icon: Package      },
-            { label: 'Notifications',  value: unreadCount,                              icon: Bell         },
+            { label: t('dashboard.statTotalBookings'), value: loading ? '…' : (totalBookings || '0'), icon: CalendarDays },
+            { label: t('dashboard.statOrdersPlaced'),  value: loading ? '…' : (orders.length || '0'), icon: Package      },
+            { label: t('dashboard.statNotifications'),  value: unreadCount,                              icon: Bell         },
             {
-              label: 'Days Active',
+              label: t('dashboard.statDaysActive'),
               value: user?.createdAt
                 ? Math.max(1, Math.floor((Date.now() - new Date(user.createdAt)) / (1000 * 60 * 60 * 24)))
                 : '—',
@@ -344,16 +346,16 @@ export default function UserDashboard() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-base font-bold" style={{ color: 'var(--t-text)' }}>
-                  Upcoming Bookings
+                  {t('dashboard.upcomingBookings')}
                 </h2>
-                <p className="text-xs" style={{ color: 'var(--t-muted)' }}>Your scheduled poojas</p>
+                <p className="text-xs" style={{ color: 'var(--t-muted)' }}>{t('dashboard.yourScheduledPoojas')}</p>
               </div>
               <Link
                 to="/my-bookings"
                 className="flex items-center gap-1 text-xs font-semibold transition-colors"
                 style={{ color: 'var(--t-primary)' }}
               >
-                View all <ArrowRight size={12} />
+                {t('common.viewAll')} <ArrowRight size={12} />
               </Link>
             </div>
 
@@ -373,13 +375,13 @@ export default function UserDashboard() {
                   style={{ borderColor: 'var(--t-border)', background: 'var(--t-surface)' }}
                 >
                   <Flame size={28} className="mb-3" style={{ color: 'var(--t-muted)', opacity: 0.4 }} />
-                  <p className="text-sm font-medium" style={{ color: 'var(--t-muted)' }}>No bookings yet</p>
+                  <p className="text-sm font-medium" style={{ color: 'var(--t-muted)' }}>{t('dashboard.noBookingsYet')}</p>
                   <Link
                     to="/poojas"
                     className="mt-3 text-xs font-semibold px-4 py-2 rounded-xl transition-colors"
                     style={{ background: 'var(--t-nav-active-bg)', color: 'var(--t-primary)' }}
                   >
-                    Book a Pooja
+                    {t('dashboard.bookPoojaCta')}
                   </Link>
                 </motion.div>
               )}
@@ -389,7 +391,7 @@ export default function UserDashboard() {
           {/* Quick Actions */}
           <div>
             <h2 className="text-base font-bold mb-4" style={{ color: 'var(--t-text)' }}>
-              Quick Actions
+              {t('dashboard.quickActions')}
             </h2>
             <motion.div
               variants={stagger}
@@ -410,13 +412,13 @@ export default function UserDashboard() {
           {/* Recent Orders */}
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold" style={{ color: 'var(--t-text)' }}>Recent Orders</h2>
+              <h2 className="text-base font-bold" style={{ color: 'var(--t-text)' }}>{t('dashboard.recentOrders')}</h2>
               <Link
                 to="/my-orders"
                 className="text-xs font-semibold"
                 style={{ color: 'var(--t-primary)' }}
               >
-                View all
+                {t('common.viewAll')}
               </Link>
             </div>
 
@@ -457,13 +459,13 @@ export default function UserDashboard() {
                   style={{ borderColor: 'var(--t-border)', background: 'var(--t-surface)' }}
                 >
                   <ShoppingBag size={24} className="mx-auto mb-2" style={{ color: 'var(--t-muted)', opacity: 0.4 }} />
-                  <p className="text-xs" style={{ color: 'var(--t-muted)' }}>No orders yet</p>
+                  <p className="text-xs" style={{ color: 'var(--t-muted)' }}>{t('dashboard.noOrdersYet')}</p>
                   <Link
                     to="/marketplace"
                     className="mt-2 inline-block text-xs font-semibold"
                     style={{ color: 'var(--t-primary)' }}
                   >
-                    Explore Marketplace →
+                    {t('dashboard.exploreMarketplace')}
                   </Link>
                 </div>
               )}
@@ -473,9 +475,9 @@ export default function UserDashboard() {
           {/* Upcoming Festivals */}
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold" style={{ color: 'var(--t-text)' }}>Upcoming Festivals</h2>
+              <h2 className="text-base font-bold" style={{ color: 'var(--t-text)' }}>{t('dashboard.upcomingFestivalsHeading')}</h2>
               <Link to="/festivals" className="text-xs font-semibold" style={{ color: 'var(--t-primary)' }}>
-                View all
+                {t('common.viewAll')}
               </Link>
             </div>
 
@@ -507,7 +509,7 @@ export default function UserDashboard() {
                       <p className="text-xs" style={{ color: 'var(--t-muted)' }}>
                         {f.date
                           ? new Date(f.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-                          : f.tithiDate || f.tithi || 'Upcoming'}
+                          : f.tithiDate || f.tithi || t('dashboard.upcomingFallback')}
                       </p>
                     </div>
                   </motion.div>

@@ -1,11 +1,19 @@
 const path = require('path');
 const fs = require('fs');
 const HeroBanner = require('../models/HeroBanner');
+const translationService = require('../services/translationService');
 
 // GET /api/hero-banners — public
 exports.getPublicBanners = async (req, res, next) => {
   try {
-    const banners = await HeroBanner.find({ isActive: true }).sort({ sortOrder: 1 });
+    let banners = await HeroBanner.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    if (lang !== 'en' && banners.length) {
+      const map = await translationService.getTranslationsForDocs('heroBanner', banners, lang);
+      banners = banners.map((b) => (map[String(b._id)] ? { ...b, ...map[String(b._id)], translationLanguage: lang } : b));
+    }
+
     res.json({ success: true, banners });
   } catch (err) { next(err); }
 };
@@ -46,6 +54,11 @@ exports.updateBanner = async (req, res, next) => {
       updates.image = `uploads/herobanners/${req.file.filename}`;
       const oldPath = path.join(__dirname, '../../', existing.image);
       if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+
+    // Bump translation version when altText changes
+    if (updates.altText !== undefined && updates.altText !== existing.altText) {
+      updates.translationVersion = (existing.translationVersion || 1) + 1;
     }
 
     const banner = await HeroBanner.findByIdAndUpdate(req.params.id, updates, { new: true });

@@ -1,5 +1,6 @@
 const Livestream = require('../models/Livestream');
 const Temple     = require('../models/Temple');
+const translationService = require('../services/translationService');
 
 // GET /api/livestreams  — all authenticated users
 exports.getLivestreams = async (req, res, next) => {
@@ -8,9 +9,16 @@ exports.getLivestreams = async (req, res, next) => {
     const query = { isActive: true };
     if (templeId) query.templeId = templeId;
 
-    const streams = await Livestream.find(query)
+    let streams = await Livestream.find(query)
       .populate('templeId', 'name city state')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    if (lang !== 'en' && streams.length) {
+      const map = await translationService.getTranslationsForDocs('livestream', streams, lang);
+      streams = streams.map((s) => (map[String(s._id)] ? { ...s, ...map[String(s._id)], translationLanguage: lang } : s));
+    }
 
     res.json({ success: true, livestreams: streams });
   } catch (err) {
@@ -35,8 +43,17 @@ exports.createLivestream = async (req, res, next) => {
 // PATCH /api/livestreams/:id  [admin]
 exports.updateLivestream = async (req, res, next) => {
   try {
-    const stream = await Livestream.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!stream) return res.status(404).json({ success: false, message: 'Livestream not found' });
+    const existing = await Livestream.findById(req.params.id);
+    if (!existing) return res.status(404).json({ success: false, message: 'Livestream not found' });
+
+    const updates = { ...req.body };
+    // Bump translation version when translatable fields change
+    if ((updates.title !== undefined && updates.title !== existing.title) ||
+        (updates.description !== undefined && updates.description !== existing.description)) {
+      updates.translationVersion = (existing.translationVersion || 1) + 1;
+    }
+
+    const stream = await Livestream.findByIdAndUpdate(req.params.id, updates, { new: true });
     res.json({ success: true, livestream: stream });
   } catch (err) {
     next(err);

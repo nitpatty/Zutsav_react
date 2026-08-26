@@ -1,37 +1,39 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, MessageCircle, Eye, EyeOff, CheckCircle, ShieldCheck } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
 import { useSettings } from '../context/SettingsContext';
 
 // ─── Step 1: Identify account ───────────────────────────────────
 function IdentifyStep({ onFound, loading }) {
+  const { t } = useTranslation();
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [error, setError] = useState('');
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!emailOrPhone.trim()) { setError('Enter your registered email or mobile number'); return; }
+    if (!emailOrPhone.trim()) { setError(t('auth.enterRegisteredContact')); return; }
     setError('');
     try {
       const { data } = await API.post('/auth/forgot-password/check-account', { emailOrPhone: emailOrPhone.trim() });
       onFound(emailOrPhone.trim(), data.channels);
     } catch (err) {
-      setError(err.response?.data?.message || 'No account found.');
+      setError(err.response?.data?.message || t('auth.noAccountFound'));
     }
   };
 
   return (
     <form onSubmit={submit} className="space-y-5">
       <div className="text-center mb-2">
-        <h2 className="text-xl font-bold text-gray-800">Recover your account</h2>
-        <p className="text-sm text-gray-500 mt-1">Enter your registered email or mobile number</p>
+        <h2 className="text-xl font-bold text-gray-800">{t('auth.recoverAccount')}</h2>
+        <p className="text-sm text-gray-500 mt-1">{t('auth.recoverSubtitle')}</p>
       </div>
       <div>
         <input
           className={`input ${error ? 'border-red-400' : ''}`}
-          placeholder="Email or 10-digit mobile"
+          placeholder={t('auth.registeredContactPlaceholder')}
           value={emailOrPhone}
           onChange={(e) => { setEmailOrPhone(e.target.value); setError(''); }}
           autoFocus
@@ -39,7 +41,7 @@ function IdentifyStep({ onFound, loading }) {
         {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
       </div>
       <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-        {loading ? 'Checking...' : 'Continue'}
+        {loading ? t('auth.checking') : t('common.continue')}
       </button>
     </form>
   );
@@ -47,13 +49,14 @@ function IdentifyStep({ onFound, loading }) {
 
 // ─── Step 2: Choose delivery channel ─────────────────────────────
 function ChannelStep({ channels, onSend, loading, onBack }) {
+  const { t } = useTranslation();
   const [channel, setChannel] = useState(channels[0]?.type || '');
 
   return (
     <div className="space-y-5">
-      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← Back</button>
+      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">{t('auth.backArrow')}</button>
       <div className="text-center mb-2">
-        <h2 className="text-xl font-bold text-gray-800">How would you like to receive your OTP?</h2>
+        <h2 className="text-xl font-bold text-gray-800">{t('auth.howReceiveOtp')}</h2>
       </div>
       <div className="space-y-3">
         {channels.map((c) => (
@@ -70,23 +73,22 @@ function ChannelStep({ channels, onSend, loading, onBack }) {
             </div>
             {c.type === 'email' ? <Mail size={20} className="text-saffron-500 shrink-0" /> : <MessageCircle size={20} className="text-green-600 shrink-0" />}
             <div>
-              <p className="font-semibold text-sm text-gray-800">{c.type === 'email' ? 'Email' : 'WhatsApp'}</p>
-              <p className="text-xs text-gray-500 mt-0.5">Send OTP to {c.masked}</p>
+              <p className="font-semibold text-sm text-gray-800">{c.type === 'email' ? t('auth.emailOtp') : t('auth.whatsappOtp')}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{t('auth.sendOtpTo', { contact: c.masked })}</p>
             </div>
           </button>
         ))}
       </div>
       <button onClick={() => channel && onSend(channel)} disabled={!channel || loading} className="btn-primary w-full py-3">
-        {loading ? 'Sending...' : 'Send OTP'}
+        {loading ? t('common.sending') : t('auth.sendOtp')}
       </button>
     </div>
   );
 }
 
 // ─── Step 3: Verify OTP ──────────────────────────────────────────
-// Same 6-box digit input / resend-cooldown pattern already used in
-// Register.jsx's OTP step, for a consistent experience across auth flows.
 function VerifyStep({ channel, masked, onVerify, onResend, loading, onBack }) {
+  const { t } = useTranslation();
   const [otp, setOtp] = useState('');
   const [resending, setResending] = useState(false);
   const [cooldown, setCooldown] = useState(60);
@@ -94,8 +96,8 @@ function VerifyStep({ channel, masked, onVerify, onResend, loading, onBack }) {
 
   useEffect(() => {
     if (cooldown > 0) {
-      const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
-      return () => clearTimeout(t);
+      const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
+      return () => clearTimeout(timer);
     }
   }, [cooldown]);
 
@@ -118,9 +120,9 @@ function VerifyStep({ channel, masked, onVerify, onResend, loading, onBack }) {
       await onResend();
       setOtp('');
       setCooldown(60);
-      toast.success('OTP resent!');
+      toast.success(t('auth.otpResentToast'));
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not resend OTP');
+      toast.error(err.response?.data?.message || t('auth.otpResendFailed'));
     } finally {
       setResending(false);
     }
@@ -128,11 +130,11 @@ function VerifyStep({ channel, masked, onVerify, onResend, loading, onBack }) {
 
   return (
     <div className="space-y-5">
-      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← Back</button>
+      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">{t('auth.backArrow')}</button>
       <div className="text-center">
         {channel === 'email' ? <Mail size={32} className="mx-auto text-saffron-500 mb-2" /> : <MessageCircle size={32} className="mx-auto text-green-500 mb-2" />}
-        <p className="font-semibold text-gray-800">Enter Verification Code</p>
-        <p className="text-sm text-gray-500 mt-1">Sent to <strong>{masked}</strong></p>
+        <p className="font-semibold text-gray-800">{t('auth.enterCodeTitle')}</p>
+        <p className="text-sm text-gray-500 mt-1">{t('auth.sentTo')} <strong>{masked}</strong></p>
       </div>
 
       <div className="flex gap-2 justify-center">
@@ -150,15 +152,15 @@ function VerifyStep({ channel, masked, onVerify, onResend, loading, onBack }) {
       </div>
 
       <button onClick={() => otp.length === 6 && onVerify(otp)} disabled={otp.length < 6 || loading} className="btn-primary w-full py-3">
-        {loading ? 'Verifying...' : 'Verify'}
+        {loading ? t('common.verifying') : 'Verify'}
       </button>
 
       <p className="text-center text-sm text-gray-500">
-        Didn't receive it?{' '}
+        {t('auth.didntReceive')}{' '}
         {cooldown > 0
-          ? <span className="text-gray-400">Resend OTP in {cooldown}s</span>
+          ? <span className="text-gray-400">{t('auth.resendCooldown', { n: cooldown })}</span>
           : <button onClick={handleResend} disabled={resending} className="text-saffron-600 font-semibold hover:underline">
-              {resending ? 'Sending...' : 'Resend OTP'}
+              {resending ? t('common.sending') : t('auth.resendOtp')}
             </button>
         }
       </p>
@@ -168,11 +170,11 @@ function VerifyStep({ channel, masked, onVerify, onResend, loading, onBack }) {
 
 // ─── Step 4: New password with live strength meter ──────────────
 const RULES = [
-  { key: 'length', label: 'At least 8 characters', test: (v) => v.length >= 8 },
-  { key: 'upper',  label: 'One uppercase letter',   test: (v) => /[A-Z]/.test(v) },
-  { key: 'lower',  label: 'One lowercase letter',   test: (v) => /[a-z]/.test(v) },
-  { key: 'number', label: 'One number',             test: (v) => /\d/.test(v) },
-  { key: 'special',label: 'One special character',  test: (v) => /[^A-Za-z0-9]/.test(v) },
+  { key: 'length', i18n: 'auth.pwRuleLength', test: (v) => v.length >= 8 },
+  { key: 'upper',  i18n: 'auth.pwRuleUpper',  test: (v) => /[A-Z]/.test(v) },
+  { key: 'lower',  i18n: 'auth.pwRuleLower',  test: (v) => /[a-z]/.test(v) },
+  { key: 'number', i18n: 'auth.pwRuleNumber', test: (v) => /\d/.test(v) },
+  { key: 'special',i18n: 'auth.pwRuleSpecial', test: (v) => /[^A-Za-z0-9]/.test(v) },
 ];
 
 function passwordStrength(pw) {
@@ -183,12 +185,13 @@ function passwordStrength(pw) {
 }
 
 const STRENGTH_META = {
-  weak:   { label: 'Weak',   color: '#dc2626', width: '33%' },
-  medium: { label: 'Medium', color: '#d97706', width: '66%' },
-  strong: { label: 'Strong', color: '#16a34a', width: '100%' },
+  weak:   { i18n: 'auth.pwWeak',   color: '#dc2626', width: '33%' },
+  medium: { i18n: 'auth.pwMedium', color: '#d97706', width: '66%' },
+  strong: { i18n: 'auth.pwStrong', color: '#16a34a', width: '100%' },
 };
 
 function NewPasswordStep({ onSubmit, loading, onBack }) {
+  const { t } = useTranslation();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm]   = useState('');
   const [show, setShow]         = useState(false);
@@ -199,21 +202,21 @@ function NewPasswordStep({ onSubmit, loading, onBack }) {
 
   const submit = (e) => {
     e.preventDefault();
-    if (!allRulesPass) { setError('Password does not meet all requirements'); return; }
-    if (password !== confirm) { setError('Passwords do not match'); return; }
+    if (!allRulesPass) { setError(t('auth.pwRequirementsNotMet')); return; }
+    if (password !== confirm) { setError(t('auth.passwordsNoMatch')); return; }
     setError('');
     onSubmit(password);
   };
 
   return (
     <form onSubmit={submit} className="space-y-5">
-      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← Back</button>
+      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">{t('auth.backArrow')}</button>
       <div className="text-center mb-2">
-        <h2 className="text-xl font-bold text-gray-800">Create New Password</h2>
+        <h2 className="text-xl font-bold text-gray-800">{t('auth.createNewPassword')}</h2>
       </div>
 
       <div>
-        <label className="label">New Password</label>
+        <label className="label">{t('auth.newPassword')}</label>
         <div className="relative">
           <input
             type={show ? 'text' : 'password'}
@@ -232,7 +235,7 @@ function NewPasswordStep({ onSubmit, loading, onBack }) {
             <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
               <div className="h-full transition-all duration-300 rounded-full" style={{ width: STRENGTH_META[strength].width, background: STRENGTH_META[strength].color }} />
             </div>
-            <p className="text-xs font-semibold mt-1" style={{ color: STRENGTH_META[strength].color }}>{STRENGTH_META[strength].label}</p>
+            <p className="text-xs font-semibold mt-1" style={{ color: STRENGTH_META[strength].color }}>{t(STRENGTH_META[strength].i18n)}</p>
           </div>
         )}
 
@@ -241,7 +244,7 @@ function NewPasswordStep({ onSubmit, loading, onBack }) {
             const pass = r.test(password);
             return (
               <li key={r.key} className={`text-xs flex items-center gap-1.5 ${pass ? 'text-green-600' : 'text-gray-400'}`}>
-                <CheckCircle size={11} className={pass ? 'text-green-500' : 'text-gray-300'} /> {r.label}
+                <CheckCircle size={11} className={pass ? 'text-green-500' : 'text-gray-300'} /> {t(r.i18n)}
               </li>
             );
           })}
@@ -249,11 +252,11 @@ function NewPasswordStep({ onSubmit, loading, onBack }) {
       </div>
 
       <div>
-        <label className="label">Confirm Password</label>
+        <label className="label">{t('auth.confirmNewPassword')}</label>
         <input
           type={show ? 'text' : 'password'}
           className="input"
-          placeholder="Re-enter new password"
+          placeholder={t('auth.reenterPassword')}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
         />
@@ -262,7 +265,7 @@ function NewPasswordStep({ onSubmit, loading, onBack }) {
       {error && <p className="text-red-500 text-xs">{error}</p>}
 
       <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-        {loading ? 'Updating...' : 'Reset Password'}
+        {loading ? t('auth.updating') : t('auth.resetPassword')}
       </button>
     </form>
   );
@@ -270,6 +273,7 @@ function NewPasswordStep({ onSubmit, loading, onBack }) {
 
 // ─── Main page ────────────────────────────────────────────────────
 export default function ForgotPassword() {
+  const { t } = useTranslation();
   const { logoUrl, platformName } = useSettings();
   const navigate = useNavigate();
 
@@ -292,7 +296,7 @@ export default function ForgotPassword() {
       setChannel(selectedChannel);
       setStep('verify');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not send OTP');
+      toast.error(err.response?.data?.message || t('auth.couldNotSendOtp'));
     } finally {
       setLoading(false);
     }
@@ -306,7 +310,7 @@ export default function ForgotPassword() {
       await API.post('/auth/forgot-password/verify-otp', { emailOrPhone, channel, otp });
       setStep('password');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Invalid OTP');
+      toast.error(err.response?.data?.message || t('auth.invalidOtp'));
     } finally {
       setLoading(false);
     }
@@ -317,7 +321,7 @@ export default function ForgotPassword() {
     try {
       await API.post('/auth/forgot-password/reset', { emailOrPhone, channel, newPassword });
       setStep('success');
-      toast.success('Password updated successfully.');
+      toast.success(t('auth.pwUpdatedSuccess'));
       setTimeout(() => navigate('/login'), 2000);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Could not reset password');
@@ -363,15 +367,15 @@ export default function ForgotPassword() {
               <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto">
                 <ShieldCheck size={28} className="text-green-600" />
               </div>
-              <h2 className="text-xl font-bold text-gray-800">Password updated successfully.</h2>
-              <p className="text-sm text-gray-500">Redirecting you to login...</p>
+              <h2 className="text-xl font-bold text-gray-800">{t('auth.pwUpdatedSuccess')}</h2>
+              <p className="text-sm text-gray-500">{t('auth.redirectingLogin')}</p>
             </div>
           )}
 
           {step !== 'success' && (
             <p className="text-center text-sm text-gray-500 mt-6">
-              Remember your password?{' '}
-              <Link to="/login" className="text-saffron-600 font-semibold hover:underline">Sign in</Link>
+              {t('auth.rememberPassword')}{' '}
+              <Link to="/login" className="text-saffron-600 font-semibold hover:underline">{t('auth.signIn')}</Link>
             </p>
           )}
         </div>

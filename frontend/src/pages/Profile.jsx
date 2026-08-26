@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Save, Trash2, Mail, MessageSquare, AlertTriangle, CheckCircle, RotateCcw, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +10,7 @@ import API from '../api/axios';
 
 // ── Account Deletion Modal ─────────────────────────────────────────────────
 function DeleteAccountModal({ onClose, onDeleted }) {
+  const { t } = useTranslation();
   // step: 'warning' | 'password' | 'otp_channel' | 'otp_verify' | 'confirm' | 'done'
   const [step,         setStep]         = useState('warning');
   const [password,     setPassword]     = useState('');
@@ -25,13 +27,13 @@ function DeleteAccountModal({ onClose, onDeleted }) {
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
   const verifyPassword = async () => {
-    if (!password) { toast.error('Enter your password'); return; }
+    if (!password) { toast.error(t('profile.enterPasswordError')); return; }
     setLoading(true);
     try {
       await API.post('/auth/delete-account/check-password', { password });
       setStep('otp_channel');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Password verification failed');
+      toast.error(err.response?.data?.message || t('profile.pwVerifyFailed'));
     } finally { setLoading(false); }
   };
 
@@ -42,20 +44,20 @@ function DeleteAccountModal({ onClose, onDeleted }) {
       const id = channel === 'email' ? user.email : user.phone;
       setOtpId(id);
       setStep('otp_verify');
-      toast.success(`Code sent to your ${channel === 'email' ? 'email' : 'WhatsApp'}`);
+      toast.success(t('profile.codeSentToChannel', { channel: channel === 'email' ? t('profile.emailChannel') : t('profile.whatsappChannel') }));
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to send OTP');
+      toast.error(err.response?.data?.message || t('profile.otpSendFailed'));
     } finally { setLoading(false); }
   };
 
   const verifyOTP = async () => {
-    if (!otp || otp.length !== 6) { toast.error('Enter the 6-digit code'); return; }
+    if (!otp || otp.length !== 6) { toast.error(t('profile.enterSixDigitsError')); return; }
     setLoading(true);
     try {
       await API.post('/auth/verify-otp', { identifier: otpId, otp, purpose: 'account_deletion' });
       setStep('confirm');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Invalid code');
+      toast.error(err.response?.data?.message || t('profile.invalidCode'));
     } finally { setLoading(false); }
   };
 
@@ -70,7 +72,7 @@ function DeleteAccountModal({ onClose, onDeleted }) {
         onDeleted();
       }, 4000);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to schedule deletion');
+      toast.error(err.response?.data?.message || t('profile.scheduleFailed'));
     } finally { setLoading(false); }
   };
 
@@ -88,8 +90,8 @@ function DeleteAccountModal({ onClose, onDeleted }) {
                 <Trash2 size={16} className="text-red-600" />
               </div>
               <div>
-                <p className="font-bold text-gray-800 text-sm">Delete My Account</p>
-                <p className="text-[10px] text-gray-400">Step {STEPS[step]} of 4</p>
+                <p className="font-bold text-gray-800 text-sm">{t('profile.deleteAccountTitle')}</p>
+                <p className="text-[10px] text-gray-400">{t('profile.modalStepOf', { step: STEPS[step] })}</p>
               </div>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl font-light">&times;</button>
@@ -104,24 +106,22 @@ function DeleteAccountModal({ onClose, onDeleted }) {
               <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex gap-3">
                 <AlertTriangle size={20} className="text-red-500 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-semibold text-red-700 mb-1">Before you continue</p>
+                  <p className="text-sm font-semibold text-red-700 mb-1">{t('profile.beforeYouContinue')}</p>
                   <p className="text-xs text-red-600 leading-relaxed">
-                    Deleting your account will remove access to bookings, order history, profile information,
-                    saved addresses, and associated services.
+                    {t('profile.deleteAccountDesc')}
                   </p>
                 </div>
               </div>
               <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
                 <p className="text-xs text-amber-700 leading-relaxed">
-                  <strong>30-day recovery window:</strong> Your account will not be deleted immediately.
-                  If you sign in within 30 days, your account will be automatically restored.
+                  <strong>{t('profile.recoveryWindowTitle')}</strong> {t('profile.recoveryWindowDesc')}
                 </p>
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={onClose} className="btn-outline flex-1">Cancel</button>
+                <button onClick={onClose} className="btn-outline flex-1">{t('common.cancel')}</button>
                 <button onClick={() => setStep('password')}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors">
-                  Continue
+                  {t('common.continue')}
                 </button>
               </div>
             </div>
@@ -130,12 +130,12 @@ function DeleteAccountModal({ onClose, onDeleted }) {
           {/* ── Step 2: Password verification ────── */}
           {step === 'password' && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">Enter your current password to continue.</p>
+              <p className="text-sm text-gray-600">{t('profile.enterCurrentPasswordPrompt')}</p>
               <div>
-                <label className="label">Current Password</label>
+                <label className="label">{t('profile.currentPassword')}</label>
                 <div className="relative">
                   <input type={showPw ? 'text' : 'password'} className="input pr-10"
-                    placeholder="Enter your password"
+                    placeholder={t('profile.currentPasswordPlaceholder')}
                     value={password} onChange={(e) => setPassword(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && verifyPassword()} />
                   <button type="button" onClick={() => setShowPw(!showPw)}
@@ -145,10 +145,10 @@ function DeleteAccountModal({ onClose, onDeleted }) {
                 </div>
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setStep('warning')} className="btn-outline flex-1">Back</button>
+                <button onClick={() => setStep('warning')} className="btn-outline flex-1">{t('common.back')}</button>
                 <button onClick={verifyPassword} disabled={loading}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors">
-                  {loading ? 'Verifying…' : 'Verify Password'}
+                  {loading ? t('common.verifying') : t('profile.verifyPasswordBtn')}
                 </button>
               </div>
             </div>
@@ -157,11 +157,11 @@ function DeleteAccountModal({ onClose, onDeleted }) {
           {/* ── Step 3a: OTP channel selection ───── */}
           {step === 'otp_channel' && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">How would you like to receive your verification code?</p>
+              <p className="text-sm text-gray-600">{t('profile.channelQuestion')}</p>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { value: 'email', label: 'Email', icon: Mail, desc: user?.email || 'No email', disabled: !user?.email },
-                  { value: 'whatsapp', label: 'WhatsApp', icon: MessageSquare, desc: user?.phone },
+                  { value: 'email', label: t('profile.emailChannel'), icon: Mail, desc: user?.email || t('profile.noEmailOnFile'), disabled: !user?.email },
+                  { value: 'whatsapp', label: t('profile.whatsappChannel'), icon: MessageSquare, desc: user?.phone },
                 ].map(({ value, label, icon: Icon, desc, disabled }) => (
                   <button key={value} type="button" disabled={disabled}
                     onClick={() => setChannel(value)}
@@ -173,10 +173,10 @@ function DeleteAccountModal({ onClose, onDeleted }) {
                 ))}
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setStep('password')} className="btn-outline flex-1">Back</button>
+                <button onClick={() => setStep('password')} className="btn-outline flex-1">{t('common.back')}</button>
                 <button onClick={sendOTP} disabled={!channel || loading}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors">
-                  {loading ? 'Sending…' : 'Send Code'}
+                  {loading ? t('common.sending') : t('profile.sendCodeBtn')}
                 </button>
               </div>
             </div>
@@ -186,11 +186,11 @@ function DeleteAccountModal({ onClose, onDeleted }) {
           {step === 'otp_verify' && (
             <div className="space-y-4">
               <p className="text-sm text-gray-600">
-                Enter the 6-digit code sent to your {channel === 'email' ? 'email' : 'WhatsApp'}{' '}
+                {t('profile.enterCodeSentTo', { channel: channel === 'email' ? t('profile.emailChannel') : t('profile.whatsappChannel') })}{' '}
                 <span className="font-semibold text-gray-800">{otpId}</span>.
               </p>
               <div>
-                <label className="label">Verification Code</label>
+                <label className="label">{t('profile.verificationCode')}</label>
                 <input className="input text-center text-2xl tracking-[0.4em] font-bold"
                   placeholder="——————" maxLength={6}
                   value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -198,13 +198,13 @@ function DeleteAccountModal({ onClose, onDeleted }) {
               </div>
               <button onClick={() => { setOtp(''); setStep('otp_channel'); }}
                 className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
-                <RotateCcw size={11} /> Resend / change method
+                <RotateCcw size={11} /> {t('profile.resendChangeMethod')}
               </button>
               <div className="flex gap-3">
-                <button onClick={() => setStep('otp_channel')} className="btn-outline flex-1">Back</button>
+                <button onClick={() => setStep('otp_channel')} className="btn-outline flex-1">{t('common.back')}</button>
                 <button onClick={verifyOTP} disabled={loading || otp.length !== 6}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors">
-                  {loading ? 'Verifying…' : 'Verify Code'}
+                  {loading ? t('common.verifying') : t('profile.verifyCodeBtn')}
                 </button>
               </div>
             </div>
@@ -213,21 +213,21 @@ function DeleteAccountModal({ onClose, onDeleted }) {
           {/* ── Step 4: Final confirmation ────────── */}
           {step === 'confirm' && (
             <div className="space-y-4">
-              <h3 className="font-bold text-gray-800 text-lg">Confirm Account Deletion</h3>
+              <h3 className="font-bold text-gray-800 text-lg">{t('profile.confirmDeletionTitle')}</h3>
               <div className="bg-gray-50 rounded-2xl p-4 space-y-2 text-sm text-gray-600">
-                <p>Your account <strong>will not be deleted immediately.</strong></p>
-                <p>It will enter a <strong>30-day deletion period</strong> starting today.</p>
-                <p>If you sign in again within the next 30 days, this request will be <strong>automatically cancelled</strong>.</p>
-                <p>After 30 days of inactivity, your account and associated data will be <strong>permanently removed.</strong></p>
+                <p>{t('profile.confirmNote1')}</p>
+                <p>{t('profile.confirmNote2')}</p>
+                <p>{t('profile.confirmNote3')}</p>
+                <p>{t('profile.confirmNote4')}</p>
               </div>
               <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-xs text-red-600">
-                Requested: {new Date().toLocaleDateString('en-IN')} &nbsp;·&nbsp; Scheduled: {new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-IN')}
+                {t('profile.requestedScheduledDates', { requested: new Date().toLocaleDateString('en-IN'), scheduled: new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-IN') })}
               </div>
               <div className="flex gap-3">
-                <button onClick={onClose} className="btn-outline flex-1">Cancel</button>
+                <button onClick={onClose} className="btn-outline flex-1">{t('common.cancel')}</button>
                 <button onClick={confirmDeletion} disabled={loading}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors">
-                  {loading ? 'Processing…' : 'Confirm Deletion Request'}
+                  {loading ? t('common.processing') : t('profile.confirmDeletionBtn')}
                 </button>
               </div>
             </div>
@@ -239,13 +239,12 @@ function DeleteAccountModal({ onClose, onDeleted }) {
               <div className="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
                 <CheckCircle size={28} className="text-amber-600" />
               </div>
-              <h3 className="font-bold text-gray-800 text-lg">Deletion Scheduled</h3>
+              <h3 className="font-bold text-gray-800 text-lg">{t('profile.deletionDoneTitle')}</h3>
               <p className="text-sm text-gray-500">
-                Your account will be permanently deleted on{' '}
-                <strong>{scheduledDate ? new Date(scheduledDate).toLocaleDateString('en-IN') : '—'}</strong>.
+                {t('profile.deletionDoneDesc', { date: scheduledDate ? new Date(scheduledDate).toLocaleDateString('en-IN') : '—' })}
               </p>
               <p className="text-xs text-gray-400">
-                Sign in before that date to restore your account. You are being logged out…
+                {t('profile.deletionDoneNote')}
               </p>
               <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-amber-400 rounded-full animate-[progressbar_4s_linear_forwards]" style={{ width: '100%' }} />
@@ -262,6 +261,7 @@ function DeleteAccountModal({ onClose, onDeleted }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Profile() {
+  const { t } = useTranslation();
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -315,11 +315,11 @@ export default function Profile() {
       // Re-sync from the authoritative backend state (also covers a no-op).
       setMarketingOptedIn(data.consent?.whatsapp?.marketing?.status === 'opted_in');
       toast.success(next
-        ? 'Promotional WhatsApp updates enabled'
-        : 'Promotional WhatsApp updates turned off');
+        ? t('profile.promoEnabledToast')
+        : t('profile.promoDisabledToast'));
     } catch (err) {
       setMarketingOptedIn(previous);        // restore previous state on failure
-      toast.error(err.response?.data?.message || 'Could not update your preference. Please try again.');
+      toast.error(err.response?.data?.message || t('profile.prefUpdateFailed'));
     } finally {
       setConsentSaving(false);
     }
@@ -337,9 +337,9 @@ export default function Profile() {
     try {
       await API.patch('/users/profile', form);
       await refreshUser();
-      toast.success('Profile updated successfully!');
+      toast.success(t('profile.updatedToast'));
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Update failed');
+      toast.error(err.response?.data?.message || t('profile.updateFailed'));
     } finally {
       setSaving(false);
     }
@@ -347,15 +347,15 @@ export default function Profile() {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    if (pwForm.newPassword !== pwForm.confirm) { toast.error('Passwords do not match'); return; }
-    if (pwForm.newPassword.length < 6)         { toast.error('Minimum 6 characters');   return; }
+    if (pwForm.newPassword !== pwForm.confirm) { toast.error(t('profile.pwMismatch')); return; }
+    if (pwForm.newPassword.length < 6)         { toast.error(t('profile.pwMinLength'));   return; }
     setPwSaving(true);
     try {
       await API.patch('/users/change-password', { currentPassword: pwForm.currentPassword, newPassword: pwForm.newPassword });
-      toast.success('Password changed!');
+      toast.success(t('profile.changedToast'));
       setPwForm({ currentPassword: '', newPassword: '', confirm: '' });
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed');
+      toast.error(err.response?.data?.message || t('profile.pwChangeFailed'));
     } finally {
       setPwSaving(false);
     }
@@ -365,11 +365,11 @@ export default function Profile() {
     <div className="min-h-screen bg-spiritual-light py-10">
       <div className="max-w-3xl mx-auto px-4 space-y-6">
 
-        <h1 className="text-2xl font-bold text-maroon-700">My Profile</h1>
+        <h1 className="text-2xl font-bold text-maroon-700">{t('profile.title')}</h1>
 
         {/* ── Photo section ─────────────────────────── */}
         <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100">
-          <h2 className="font-semibold text-gray-700 mb-4">Profile Photo</h2>
+          <h2 className="font-semibold text-gray-700 mb-4">{t('profile.photoSection')}</h2>
           <ProfilePhoto
             currentPhoto={user?.profilePhoto}
             onUpdate={refreshUser}
@@ -378,28 +378,28 @@ export default function Profile() {
           />
           <div className="mt-4 text-center">
             <p className="font-bold text-gray-800">{user?.name}</p>
-            <p className="text-sm text-gray-500 capitalize">{user?.role} account</p>
+            <p className="text-sm text-gray-500 capitalize">{t('profile.accountType', { role: user?.role })}</p>
             <p className="text-xs text-gray-400">{user?.phone}</p>
           </div>
         </div>
 
         {/* ── Personal details ──────────────────────── */}
         <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100">
-          <h2 className="font-semibold text-gray-700 mb-5">Personal Details</h2>
+          <h2 className="font-semibold text-gray-700 mb-5">{t('profile.personalDetails')}</h2>
           <form onSubmit={handleSave} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="label">Full Name</label>
+                <label className="label">{t('common.fields.fullName')}</label>
                 <input className="input" value={form.name} onChange={set('name')} />
               </div>
               <div>
-                <label className="label">Email</label>
-                <input type="email" className="input" value={form.email} onChange={set('email')} placeholder="your@email.com" />
+                <label className="label">{t('common.fields.email')}</label>
+                <input type="email" className="input" value={form.email} onChange={set('email')} placeholder={t('profile.emailPlaceholder')} />
               </div>
             </div>
 
             <div>
-              <label className="label">Pincode</label>
+              <label className="label">{t('common.fields.pincode')}</label>
               <PincodeInput
                 value={form.pincode}
                 onChange={(v) => setForm({ ...form, pincode: v })}
@@ -408,7 +408,7 @@ export default function Profile() {
             </div>
 
             <div className="grid grid-cols-3 gap-3">
-              {[['state','State'],['city','City'],['district','District']].map(([f, l]) => (
+              {[['state',t('common.fields.state')],['city',t('common.fields.city')],['district',t('common.fields.district')]].map(([f, l]) => (
                 <div key={f}>
                   <label className="label text-xs">{l}</label>
                   <input className="input bg-saffron-50 text-sm" value={form[f]} onChange={set(f)} />
@@ -417,12 +417,12 @@ export default function Profile() {
             </div>
 
             <div>
-              <label className="label">Address</label>
-              <textarea rows={2} className="input resize-none" value={form.address} onChange={set('address')} placeholder="Your address..." />
+              <label className="label">{t('common.fields.address')}</label>
+              <textarea rows={2} className="input resize-none" value={form.address} onChange={set('address')} placeholder={t('profile.addressPlaceholder')} />
             </div>
 
             <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
-              <Save size={16} /> {saving ? 'Saving...' : 'Save Changes'}
+              <Save size={16} /> {saving ? t('profile.saving') : t('profile.saveChanges')}
             </button>
           </form>
         </div>
@@ -433,9 +433,9 @@ export default function Profile() {
         <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100">
           <div className="flex items-center gap-2 mb-1">
             <MessageSquare size={15} className="text-green-600" />
-            <h2 className="font-semibold text-gray-700">WhatsApp Communication Preferences</h2>
+            <h2 className="font-semibold text-gray-700">{t('profile.whatsappPrefs')}</h2>
           </div>
-          <p className="text-xs text-gray-400 mb-5">Choose what Zutsav can send you on WhatsApp.</p>
+          <p className="text-xs text-gray-400 mb-5">{t('profile.whatsappPrefsSub')}</p>
 
           {consentLoading ? (
             <div className="space-y-3" aria-busy="true">
@@ -451,10 +451,10 @@ export default function Profile() {
             </div>
           ) : consentError ? (
             <div className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-red-50 border border-red-100">
-              <p className="text-xs text-red-600">Couldn't load your communication preferences.</p>
+              <p className="text-xs text-red-600">{t('profile.consentLoadError')}</p>
               <button onClick={loadConsent}
                 className="shrink-0 flex items-center gap-1.5 text-xs font-semibold text-saffron-700 border border-saffron-200 bg-white hover:bg-saffron-50 px-3 py-2 rounded-xl transition-colors">
-                <RotateCcw size={12} /> Retry
+                <RotateCcw size={12} /> {t('common.retry')}
               </button>
             </div>
           ) : (
@@ -463,16 +463,16 @@ export default function Profile() {
               {/* Transactional / service — required, mirrors registration copy */}
               <div className="flex items-start justify-between gap-4 p-4 rounded-2xl bg-green-50 border border-green-100">
                 <div>
-                  <p className="font-semibold text-sm text-gray-700">Transactional &amp; Service Updates</p>
+                  <p className="font-semibold text-sm text-gray-700">{t('profile.transactionalTitle')}</p>
                   <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                    Account, booking and order updates about your poojas and purchases.
+                    {t('profile.transactionalDesc')}
                   </p>
                   <p className="text-[11px] text-gray-400 mt-1.5 flex items-center gap-1">
-                    <Lock size={10} /> Required for booking, order and account updates.
+                    <Lock size={10} /> {t('profile.requiredNote')}
                   </p>
                 </div>
                 <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-green-700 bg-green-100 px-2.5 py-1 rounded-full whitespace-nowrap">
-                  Always On
+                  {t('profile.alwaysOn')}
                 </span>
               </div>
 
@@ -482,15 +482,15 @@ export default function Profile() {
                   ? { borderColor: '#f59e0b', backgroundColor: '#fffbeb' }
                   : { borderColor: '#e5e7eb', backgroundColor: '#f9fafb' }}>
                 <div>
-                  <p className="font-semibold text-sm text-gray-700">Promotional Updates</p>
+                  <p className="font-semibold text-sm text-gray-700">{t('profile.promotionalTitle')}</p>
                   <p className="text-xs text-gray-500 mt-0.5 leading-relaxed max-w-xs">
-                    Offers, discounts and promotional updates on WhatsApp.
+                    {t('profile.promotionalDesc')}
                   </p>
                   <p className="text-[11px] text-gray-400 mt-1.5">
-                    Optional. You can also stop these anytime by replying STOP on WhatsApp.
+                    {t('profile.optionalStopNote')}
                   </p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5" title={marketingOptedIn ? 'Turn off promotional updates' : 'Turn on promotional updates'}>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5" title={marketingOptedIn ? t('profile.promoOffTitle') : t('profile.promoOnTitle')}>
                   <input type="checkbox" className="sr-only peer"
                     checked={marketingOptedIn}
                     disabled={consentSaving}
@@ -506,12 +506,12 @@ export default function Profile() {
 
         {/* ── Change Password ──────────────────────────────────────────────── */}
         <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100">
-          <h2 className="font-semibold text-gray-700 mb-5">Change Password</h2>
+          <h2 className="font-semibold text-gray-700 mb-5">{t('profile.changePasswordHeading')}</h2>
           <form onSubmit={handlePasswordChange} className="space-y-4">
             {[
-              ['currentPassword', 'Current Password', 'current'],
-              ['newPassword',     'New Password',     'new'],
-              ['confirm',         'Confirm New Password', 'new'],
+              ['currentPassword', t('profile.currentPassword'), 'current'],
+              ['newPassword',     t('profile.newPassword'),     'new'],
+              ['confirm',         t('profile.confirmNewPassword'), 'new'],
             ].map(([field, label, showKey]) => (
               <div key={field}>
                 <label className="label">{label}</label>
@@ -527,27 +527,26 @@ export default function Profile() {
               </div>
             ))}
             <button type="submit" disabled={pwSaving} className="btn-primary flex items-center gap-2">
-              <Save size={16} /> {pwSaving ? 'Changing...' : 'Change Password'}
+              <Save size={16} /> {pwSaving ? t('profile.changing') : t('profile.changePasswordHeading')}
             </button>
           </form>
         </div>
 
         {/* ── Privacy & Security ───────────────────────────────────────────── */}
         <div className="bg-white rounded-3xl shadow-md p-6 border border-red-100">
-          <h2 className="font-semibold text-gray-700 mb-1">Privacy &amp; Security</h2>
-          <p className="text-xs text-gray-400 mb-5">Manage your account data and security settings.</p>
+          <h2 className="font-semibold text-gray-700 mb-1">{t('profile.privacySecurity')}</h2>
+          <p className="text-xs text-gray-400 mb-5">{t('profile.privacySecuritySub')}</p>
 
           <div className="flex items-start justify-between gap-4 p-4 rounded-2xl bg-red-50 border border-red-100">
             <div>
-              <p className="font-semibold text-red-700 text-sm">Delete My Account</p>
+              <p className="font-semibold text-red-700 text-sm">{t('profile.deleteAccountTitle')}</p>
               <p className="text-xs text-red-500 mt-0.5 max-w-xs leading-relaxed">
-                Deleting your account will remove access to bookings, order history, profile information,
-                saved addresses, and associated services.
+                {t('profile.deleteAccountDesc')}
               </p>
             </div>
             <button onClick={() => setShowDeleteModal(true)}
               className="shrink-0 flex items-center gap-1.5 text-xs font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 px-4 py-2 rounded-xl transition-colors whitespace-nowrap">
-              <Trash2 size={13} /> Delete Account
+              <Trash2 size={13} /> {t('profile.deleteAccountBtn')}
             </button>
           </div>
         </div>

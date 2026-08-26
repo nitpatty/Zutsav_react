@@ -7,6 +7,7 @@ const SENSITIVE = [
   'whatsappAccessToken',
   'emailSmtpPassword',
   'groqApiKey',
+  'sarvamApiKey',
   'freeAstroApiKey',
   'cloudinaryApiSecret',
   'tekipostApiKey',

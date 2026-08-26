@@ -19,9 +19,10 @@ async function getIntegrationStatuses() {
   const settingsService = require('../utils/settingsService');
   const mongoose = require('mongoose');
 
-  const [phonepeKey, groqKey, cloudName, waToken, smtpUser, tekiEmail, razorpayKeyId] = await Promise.all([
+  const [phonepeKey, groqKey, sarvamKey, cloudName, waToken, smtpUser, tekiEmail, razorpayKeyId] = await Promise.all([
     settingsService.get('phonepeMerchantId', readEnv('PHONEPE_MERCHANT_ID')),
     settingsService.get('groqApiKey', readEnv('GROQ_API_KEY')),
+    settingsService.get('sarvamApiKey', readEnv('SARVAM_API_KEY')),
     settingsService.get('cloudinaryCloudName', readEnv('CLOUDINARY_CLOUD_NAME')),
     settingsService.get('whatsappAccessToken', readEnv('WHATSAPP_ACCESS_TOKEN')),
     settingsService.get('emailSmtpUser', readEnv('EMAIL_USER')),
@@ -33,7 +34,8 @@ async function getIntegrationStatuses() {
     { key: 'database', label: 'MongoDB', status: mongoose.connection.readyState === 1 ? 'connected' : 'offline' },
     { key: 'razorpay', label: 'Razorpay (legacy)', status: configured(razorpayKeyId) ? 'configured' : 'not_configured' },
     { key: 'phonepe', label: 'PhonePe', status: configured(phonepeKey) ? 'configured' : 'not_configured' },
-    { key: 'groq', label: 'Groq AI', status: configured(groqKey) ? 'configured' : 'not_configured' },
+    { key: 'sarvam', label: 'Sarvam AI (Translation)', status: configured(sarvamKey) ? 'configured' : 'not_configured' },
+    { key: 'groq', label: 'Groq AI (Assistant + Translation Fallback)', status: configured(groqKey) ? 'configured' : 'not_configured' },
     { key: 'email', label: 'SMTP / Email', status: configured(smtpUser) ? 'configured' : 'not_configured' },
     { key: 'whatsapp', label: 'WhatsApp', status: configured(waToken) ? 'configured' : 'not_configured' },
     { key: 'tekipost', label: 'TekiPost', status: configured(tekiEmail) ? 'configured' : 'not_configured' },

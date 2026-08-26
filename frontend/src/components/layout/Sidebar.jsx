@@ -14,72 +14,73 @@ import { useTheme } from '../../context/ThemeContext';
 import { ThemeSwatchRow } from '../ui/ThemeSwitcher';
 import { useNotifications } from '../../context/NotificationContext';
 import { useSettings } from '../../context/SettingsContext';
+import { useTranslation } from 'react-i18next';
 
 /* ── Nav item configs per role ─────────────────────────── */
 const USER_NAV = [
-  { icon: LayoutDashboard, label: 'Dashboard',     path: '/dashboard' },
-  { icon: CalendarDays,    label: 'My Bookings',   path: '/my-bookings' },
-  { icon: ShoppingBag,     label: 'My Orders',     path: '/my-orders' },
-  { icon: Users,           label: 'Family Members', path: '/family' },
-  { icon: Flame,           label: 'Browse Poojas', path: '/poojas' },
-  { icon: Store,           label: 'Marketplace',   path: '/marketplace' },
-  { icon: Landmark,        label: 'Temples',       path: '/temples' },
-  { icon: Tv,              label: 'Livestreams',   path: '/livestreams' },
-  { icon: Calendar,        label: 'Festivals',     path: '/festivals' },
-  { icon: Sun,             label: 'Panchang',      path: '/panchang' },
-  { icon: FileText,        label: 'Blog',          path: '/blog' },
-  { icon: PenTool,         label: 'Write Blog',    path: '/blog/write' },
-  { icon: Bot,             label: 'AI Assistant',  path: '/ai-assistant' },
-  { icon: Bell,            label: 'Notifications', path: '/notifications', badge: true },
+  { icon: LayoutDashboard, labelKey: 'sidebar.items.dashboard',      path: '/dashboard' },
+  { icon: CalendarDays,    labelKey: 'sidebar.items.myBookings',     path: '/my-bookings' },
+  { icon: ShoppingBag,     labelKey: 'sidebar.items.myOrders',       path: '/my-orders' },
+  { icon: Users,           labelKey: 'sidebar.items.familyMembers',  path: '/family' },
+  { icon: Flame,           labelKey: 'sidebar.items.browsePoojas',   path: '/poojas' },
+  { icon: Store,           labelKey: 'sidebar.items.marketplace',    path: '/marketplace' },
+  { icon: Landmark,        labelKey: 'sidebar.items.temples',        path: '/temples' },
+  { icon: Tv,              labelKey: 'sidebar.items.livestreams',    path: '/livestreams' },
+  { icon: Calendar,        labelKey: 'sidebar.items.festivals',      path: '/festivals' },
+  { icon: Sun,             labelKey: 'sidebar.items.panchang',       path: '/panchang' },
+  { icon: FileText,        labelKey: 'sidebar.items.blog',           path: '/blog' },
+  { icon: PenTool,         labelKey: 'sidebar.items.writeBlog',      path: '/blog/write' },
+  { icon: Bot,             labelKey: 'sidebar.items.aiAssistant',    path: '/ai-assistant' },
+  { icon: Bell,            labelKey: 'sidebar.items.notifications',  path: '/notifications', badge: true },
 ];
 
 const PANDIT_NAV = [
-  { icon: LayoutDashboard, label: 'Dashboard',        path: '/pandit/dashboard' },
-  { icon: User,            label: 'My Profile',        path: '/pandit/profile' },
-  { icon: ClipboardList,   label: 'My Requested Poojas', path: '/pandit/requested-poojas' },
-  { icon: BookOpen,        label: 'My Bookings',       path: '/pandit/dashboard?tab=bookings' },
-  { icon: Calendar,        label: 'Availability',      path: '/pandit/dashboard?tab=availability' },
-  { icon: CalendarDays,    label: 'Festival Calendar', path: '/pandit/dashboard?tab=festivals' },
-  { icon: BarChart3,       label: 'Earnings',          path: '/pandit/dashboard?tab=earnings' },
-  { icon: Gift,            label: 'Referrals',         path: '/pandit/dashboard?tab=referrals' },
-  { icon: FileText,        label: 'Browse Blog',       path: '/blog' },
-  { icon: PenTool,         label: 'Write Blog',        path: '/blog/write' },
-  { icon: Bell,            label: 'Notifications',     path: '/notifications', badge: true },
-  { icon: Settings,        label: 'Settings',          path: '/settings' },
+  { icon: LayoutDashboard, labelKey: 'sidebar.items.dashboard',       path: '/pandit/dashboard' },
+  { icon: User,            labelKey: 'sidebar.items.myProfile',       path: '/pandit/profile' },
+  { icon: ClipboardList,   labelKey: 'sidebar.items.requestedPoojas', path: '/pandit/requested-poojas' },
+  { icon: BookOpen,        labelKey: 'sidebar.items.myBookings',      path: '/pandit/dashboard?tab=bookings' },
+  { icon: Calendar,        labelKey: 'sidebar.items.availability',    path: '/pandit/dashboard?tab=availability' },
+  { icon: CalendarDays,    labelKey: 'sidebar.items.festivalCalendar', path: '/pandit/dashboard?tab=festivals' },
+  { icon: BarChart3,       labelKey: 'sidebar.items.earnings',        path: '/pandit/dashboard?tab=earnings' },
+  { icon: Gift,            labelKey: 'sidebar.items.referrals',       path: '/pandit/dashboard?tab=referrals' },
+  { icon: FileText,        labelKey: 'sidebar.items.browseBlog',      path: '/blog' },
+  { icon: PenTool,         labelKey: 'sidebar.items.writeBlog',       path: '/blog/write' },
+  { icon: Bell,            labelKey: 'sidebar.items.notifications',   path: '/notifications', badge: true },
+  { icon: Settings,        labelKey: 'sidebar.items.settings',        path: '/settings' },
 ];
 
 const ADMIN_NAV = [
-  { icon: LayoutDashboard, label: 'Dashboard',         path: '/admin' },
-  { icon: BookOpen,        label: 'Bookings',          path: '/admin?tab=bookings' },
-  { icon: Users,           label: 'Pandit Management', path: '/admin?tab=pandits' },
-  { icon: Star,            label: 'Pandit Poojas',     path: '/admin?tab=pandit-poojas' },
-  { icon: User,            label: 'User Management',   path: '/admin?tab=users' },
-  { icon: ShoppingBag,     label: 'Pooja Catalogue',   path: '/admin?tab=poojas' },
-  { icon: Package,         label: 'Marketplace',       path: '/admin?tab=marketplace' },
-  { icon: ClipboardList,   label: 'Orders',            path: '/admin?tab=orders' },
-  { icon: CalendarDays,    label: 'Festivals',            path: '/admin?tab=festivals' },
-  { icon: GraduationCap,  label: 'Education Masters',    path: '/admin?tab=education-masters' },
-  { icon: Briefcase,      label: 'Specializations',      path: '/admin?tab=specialization-masters' },
-  { icon: MapPin,         label: 'Temple Directory',     path: '/admin?tab=temples' },
-  { icon: Image,          label: 'Homepage Curation',    path: '/admin?tab=homepage-curation' },
-  { icon: Tv,              label: 'Livestreams',       path: '/admin?tab=livestreams' },
-  { icon: IndianRupee,     label: 'Payout Management', path: '/admin?tab=payouts' },
-  { icon: Gift,            label: 'Referral Stats',    path: '/admin?tab=referrals' },
-  { icon: Zap,             label: 'Notification Engine', path: '/admin?tab=notifications' },
-  { icon: FileText,        label: 'Blog Management',   path: '/admin?tab=blog-management' },
-  { icon: Receipt,         label: 'Invoices',          path: '/admin?tab=invoices' },
-  { icon: Database,        label: 'Log Management',    path: '/admin?tab=log-management' },
-  { icon: Settings,        label: 'System Settings',   path: '/admin?tab=system-settings' },
-  { icon: Globe,           label: 'System Configuration', path: '/admin?tab=system-config' },
-  { icon: Bell,            label: 'Notifications',     path: '/notifications', badge: true },
-  { icon: User,            label: 'My Profile',        path: '/admin/profile' },
+  { icon: LayoutDashboard, labelKey: 'sidebar.items.dashboard',           path: '/admin' },
+  { icon: BookOpen,        labelKey: 'sidebar.items.bookings',            path: '/admin?tab=bookings' },
+  { icon: Users,           labelKey: 'sidebar.items.panditManagement',    path: '/admin?tab=pandits' },
+  { icon: Star,            labelKey: 'sidebar.items.panditPoojas',        path: '/admin?tab=pandit-poojas' },
+  { icon: User,            labelKey: 'sidebar.items.userManagement',      path: '/admin?tab=users' },
+  { icon: ShoppingBag,     labelKey: 'sidebar.items.poojaCatalogue',      path: '/admin?tab=poojas' },
+  { icon: Package,         labelKey: 'sidebar.items.marketplace',         path: '/admin?tab=marketplace' },
+  { icon: ClipboardList,   labelKey: 'sidebar.items.orders',              path: '/admin?tab=orders' },
+  { icon: CalendarDays,    labelKey: 'sidebar.items.festivals',           path: '/admin?tab=festivals' },
+  { icon: GraduationCap,   labelKey: 'sidebar.items.educationMasters',    path: '/admin?tab=education-masters' },
+  { icon: Briefcase,       labelKey: 'sidebar.items.specializations',     path: '/admin?tab=specialization-masters' },
+  { icon: MapPin,          labelKey: 'sidebar.items.templeDirectory',     path: '/admin?tab=temples' },
+  { icon: Image,           labelKey: 'sidebar.items.homepageCuration',    path: '/admin?tab=homepage-curation' },
+  { icon: Tv,              labelKey: 'sidebar.items.livestreams',         path: '/admin?tab=livestreams' },
+  { icon: IndianRupee,     labelKey: 'sidebar.items.payoutManagement',    path: '/admin?tab=payouts' },
+  { icon: Gift,            labelKey: 'sidebar.items.referralStats',       path: '/admin?tab=referrals' },
+  { icon: Zap,             labelKey: 'sidebar.items.notificationEngine',  path: '/admin?tab=notifications' },
+  { icon: FileText,        labelKey: 'sidebar.items.blogManagement',      path: '/admin?tab=blog-management' },
+  { icon: Receipt,         labelKey: 'sidebar.items.invoices',            path: '/admin?tab=invoices' },
+  { icon: Database,        labelKey: 'sidebar.items.logManagement',       path: '/admin?tab=log-management' },
+  { icon: Settings,        labelKey: 'sidebar.items.systemSettings',      path: '/admin?tab=system-settings' },
+  { icon: Globe,           labelKey: 'sidebar.items.systemConfiguration', path: '/admin?tab=system-config' },
+  { icon: Bell,            labelKey: 'sidebar.items.notifications',       path: '/notifications', badge: true },
+  { icon: User,            labelKey: 'sidebar.items.myProfile',           path: '/admin/profile' },
 ];
 
 // System Admin sees everything an Admin sees, plus the Admin Management
 // module — inserted before the trailing "My Profile" item.
 const SYSTEM_ADMIN_NAV = [
   ...ADMIN_NAV.slice(0, -1),
-  { icon: Shield, label: 'Admin Management', path: '/admin?tab=admin-management' },
+  { icon: Shield, labelKey: 'sidebar.items.adminManagement', path: '/admin?tab=admin-management' },
   ADMIN_NAV[ADMIN_NAV.length - 1],
 ];
 
@@ -90,11 +91,11 @@ function getNavItems(role) {
   return USER_NAV;
 }
 
-function getRoleLabel(role) {
-  if (role === 'system_admin') return 'System Administrator';
-  if (role === 'admin')        return 'Administrator';
-  if (role === 'pandit')       return 'Spiritual Guide';
-  return 'Devotee';
+function getRoleLabelKey(role) {
+  if (role === 'system_admin') return 'sidebar.roleSystemAdmin';
+  if (role === 'admin')        return 'sidebar.roleAdmin';
+  if (role === 'pandit')       return 'sidebar.rolePandit';
+  return 'sidebar.roleDevotee';
 }
 
 /* ── Determine if a nav item is active, supports ?tab= paths ── */
@@ -121,6 +122,7 @@ function computeIsActive(item, location) {
 /* ── Single nav item ───────────────────────────────────── */
 function NavItem({ item, collapsed, isActive, onClick }) {
   const { unreadCount } = useNotifications();
+  const { t } = useTranslation();
   const badgeCount = item.badge ? unreadCount : 0;
 
   return (
@@ -132,7 +134,7 @@ function NavItem({ item, collapsed, isActive, onClick }) {
         to={item.path}
         onClick={onClick}
         className={`nav-item ${isActive ? 'active' : ''} ${collapsed ? 'justify-center px-0' : ''}`}
-        title={collapsed ? item.label : undefined}
+        title={collapsed ? t(item.labelKey) : undefined}
       >
         {/* Active left bar */}
         {isActive && (
@@ -170,7 +172,7 @@ function NavItem({ item, collapsed, isActive, onClick }) {
               transition={{ duration: 0.15 }}
               className="text-sm font-medium truncate"
             >
-              {item.label}
+              {t(item.labelKey)}
             </motion.span>
           )}
         </AnimatePresence>
@@ -184,6 +186,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
   const { user, logout } = useAuth();
   const { currentTheme } = useTheme();
   const { logoUrl, platformName } = useSettings();
+  const { t } = useTranslation();
   const location  = useLocation();
   const navigate  = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -191,11 +194,11 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
   const searchRef = useRef(null);
 
   const navItems   = getNavItems(user?.role);
-  const roleLabel  = getRoleLabel(user?.role);
+  const roleLabel  = t(getRoleLabelKey(user?.role));
   const initials   = user?.name ? user.name.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase() : 'Z';
 
   const filtered = search
-    ? navItems.filter(i => i.label.toLowerCase().includes(search.toLowerCase()))
+    ? navItems.filter(i => t(i.labelKey).toLowerCase().includes(search.toLowerCase()))
     : navItems;
 
   const handleLogout = () => {
@@ -290,7 +293,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                 ref={searchRef}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search navigation…"
+                placeholder={t('sidebar.searchNavigation')}
                 className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border transition-all duration-200 focus:outline-none"
                 style={{
                   background: 'var(--t-input-bg)',
@@ -311,12 +314,12 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
               className="text-[10px] font-bold uppercase tracking-widest px-3 py-2"
               style={{ color: 'var(--t-muted)', opacity: 0.6 }}
             >
-              Menu
+              {t('sidebar.menu')}
             </p>
           )}
           {filtered.map(item => (
             <NavItem
-              key={item.path + item.label}
+              key={item.path + item.labelKey}
               item={item}
               collapsed={collapsed}
               isActive={computeIsActive(item, location)}
@@ -344,7 +347,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                 className="text-[10px] font-bold uppercase tracking-widest mb-2"
                 style={{ color: 'var(--t-muted)', opacity: 0.6 }}
               >
-                Theme
+                {t('sidebar.theme')}
               </p>
               <ThemeSwatchRow />
             </motion.div>
@@ -374,7 +377,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                 className="min-w-0 flex-1"
               >
                 <p className="text-sm font-semibold truncate" style={{ color: 'var(--t-text)' }}>
-                  {user?.name || 'User'}
+                  {user?.name || t('sidebar.user')}
                 </p>
                 <p className="text-xs truncate" style={{ color: 'var(--t-muted)' }}>
                   {roleLabel}
@@ -392,7 +395,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
               onClick={onMobileClose}
               className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 flex-1 justify-center"
               style={{ color: 'var(--t-muted)' }}
-              title="Profile"
+              title={t('sidebar.profile')}
             >
               <User size={14} />
               <AnimatePresence>
@@ -402,7 +405,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                   >
-                    Profile
+                    {t('sidebar.profile')}
                   </motion.span>
                 )}
               </AnimatePresence>
@@ -412,7 +415,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
             onClick={handleLogout}
             className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 flex-1 justify-center"
             style={{ color: 'var(--t-muted)' }}
-            title="Logout"
+            title={t('sidebar.logout')}
           >
             <LogOut size={14} />
             <AnimatePresence>
@@ -422,7 +425,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                 >
-                  Logout
+                  {t('sidebar.logout')}
                 </motion.span>
               )}
             </AnimatePresence>

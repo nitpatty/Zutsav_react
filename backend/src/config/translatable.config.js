@@ -110,4 +110,23 @@ module.exports = {
       message: { type: 'text', maxTokens: 300 },
     },
   },
+
+  heroBanner: {
+    model: () => require('../models/HeroBanner'),
+    versionField: 'translationVersion',
+    fields: {
+      altText: { type: 'text', maxTokens: 150 },
+    },
+    // Never register: image, linkUrl, isActive, sortOrder — visual/system data.
+  },
+
+  livestream: {
+    model: () => require('../models/Livestream'),
+    versionField: 'translationVersion',
+    fields: {
+      title:       { type: 'text', maxTokens: 150 },
+      description: { type: 'text', maxTokens: 500 },
+    },
+    // Never register: youtubeUrl, templeId, isActive — system/relational data.
+  },
 };

@@ -52,6 +52,10 @@ const systemSettingsSchema = new mongoose.Schema({
   groqApiKey: { type: String, default: '' },
   groqModel:  { type: String, default: 'llama-3.3-70b-versatile' },
 
+  // AI - Sarvam (content translation; primary provider, Groq is fallback)
+  sarvamApiKey: { type: String, default: '' },
+  sarvamModel:  { type: String, default: 'sarvam-translate:v1' },
+
   // Panchang - FreeAstroAPI
   freeAstroApiKey: { type: String, default: '' },
 

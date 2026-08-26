@@ -6,16 +6,18 @@
  * zero new engine code — only a config entry.
  *
  * Flow: cache hit -> return cached. Cache miss/stale -> acquire a Mongo-based
- * single-flight lock (see Translation model), translate via Groq, cache the
- * result. A concurrent request for the same (entityType, entityId, language)
- * waits briefly for the in-flight result instead of triggering a second Groq
- * call. If Groq is unavailable or the wait times out, falls back to the
- * English source — never throws, never blocks the page.
+ * single-flight lock (see Translation model), translate via the pluggable
+ * provider layer (services/translationProviders — Sarvam primary, Groq
+ * temporary fallback), cache the result. A concurrent request for the same
+ * (entityType, entityId, language) waits briefly for the in-flight result
+ * instead of triggering a second provider call. If every provider is
+ * unavailable or the wait times out, falls back to the English source —
+ * never throws, never blocks the page.
  */
 
 const Translation = require('../models/Translation');
 const translatable = require('../config/translatable.config');
-const { translateText } = require('../utils/groq');
+const { translateWithFallback } = require('./translationProviders');
 const { translateHtml, translateStringArray } = require('../utils/htmlTranslate');
 
 const WAIT_POLL_MS = 700;
@@ -31,21 +33,35 @@ function englishFields(source, fieldConfig) {
   return out;
 }
 
-async function translateField(sourceValue, fieldDef, language) {
+/**
+ * Build a translateFn with the engine-agnostic signature the field
+ * translators expect (`(batchedText) => Promise<string>`), routing through
+ * the provider layer and recording which provider actually served each
+ * batch into `sink` so persistence can record an accurate `translatedBy`.
+ */
+function makeTranslator(language, sink, maxTokens) {
+  return async (batched) => {
+    const { text, provider } = await translateWithFallback({ text: batched, targetLanguage: language, maxTokens });
+    if (sink && provider) sink.add(provider);
+    return text;
+  };
+}
+
+async function translateField(sourceValue, fieldDef, language, sink) {
   if (sourceValue === undefined || sourceValue === null) return sourceValue;
 
-  const groqTranslate = (batched) => translateText(batched, language, { maxTokens: fieldDef.maxTokens });
+  const providerTranslate = makeTranslator(language, sink, fieldDef.maxTokens);
 
   switch (fieldDef.type) {
     case 'text':
       if (!String(sourceValue).trim()) return sourceValue;
-      return translateText(sourceValue, language, { maxTokens: fieldDef.maxTokens });
+      return providerTranslate(sourceValue);
 
     case 'html':
-      return translateHtml(sourceValue, groqTranslate);
+      return translateHtml(sourceValue, providerTranslate);
 
     case 'string[]':
-      return translateStringArray(sourceValue, groqTranslate);
+      return translateStringArray(sourceValue, providerTranslate);
 
     case 'object[]': {
       // Array of objects with a per-key type map, e.g. FAQs: [{question, answer}].
@@ -56,7 +72,7 @@ async function translateField(sourceValue, fieldDef, language) {
         (sourceValue || []).map(async (item) => {
           const translatedItem = {};
           for (const key of Object.keys(shape)) {
-            translatedItem[key] = await translateField(item[key], { type: shape[key], maxTokens: fieldDef.maxTokens }, language);
+            translatedItem[key] = await translateField(item[key], { type: shape[key], maxTokens: fieldDef.maxTokens }, language, sink);
           }
           return { ...item, ...translatedItem };
         })
@@ -72,8 +88,9 @@ async function generateTranslation(entityType, entityId, language, source, cfg, 
   const startedAt = Date.now();
   try {
     const fieldEntries = Object.keys(cfg.fields);
+    const providersUsed = new Set(); // which provider(s) actually served the batches
     const translatedValues = await Promise.all(
-      fieldEntries.map((key) => translateField(source[key], cfg.fields[key], language))
+      fieldEntries.map((key) => translateField(source[key], cfg.fields[key], language, providersUsed))
     );
     const translatedFields = {};
     fieldEntries.forEach((key, i) => { translatedFields[key] = translatedValues[i]; });
@@ -86,7 +103,8 @@ async function generateTranslation(entityType, entityId, language, source, cfg, 
           translatedFields,
           version: sourceVersion,
           translatedAt: new Date(),
-          translatedBy: 'groq',
+          // e.g. 'sarvam', or 'groq' when the fallback engine served it
+          translatedBy: providersUsed.size ? [...providersUsed].sort().join('+') : 'unknown',
           lastError: '',
         },
         $inc: { attempts: 0 },
@@ -106,7 +124,8 @@ async function generateTranslation(entityType, entityId, language, source, cfg, 
 }
 
 // Atomically claims the right to (re)generate a translation. Returns true if
-// this call is the "owner" and should proceed to call Groq; false if another
+// this call is the "owner" and should proceed to call the translation
+// provider; false if another
 // request already owns it (caller should wait instead).
 async function acquireLock(entityType, entityId, language, sourceVersion) {
   // Case 1: an existing 'ready' doc is stale -> flip it to 'pending'.

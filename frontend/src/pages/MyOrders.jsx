@@ -4,6 +4,7 @@ import {
   Truck, CheckCircle, Clock, XCircle, RefreshCw, RotateCcw, ExternalLink, FileText, Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import API from '../api/axios';
 import { company } from '../config';
 import { roundToPaise } from '../utils/priceEngine';
@@ -77,56 +78,57 @@ function _openCustomerInvoice(order, shipment) {
 }
 
 const STATUS_META = {
-  pending_payment:  { label: 'Awaiting Payment', color: 'bg-yellow-100 text-yellow-700',   dot: 'bg-yellow-400' },
-  paid:             { label: 'Order Placed',      color: 'bg-blue-100 text-blue-700',       dot: 'bg-blue-500'   },
-  confirmed:        { label: 'Confirmed',          color: 'bg-indigo-100 text-indigo-700',   dot: 'bg-indigo-500' },
-  processing:       { label: 'Confirmed',          color: 'bg-indigo-100 text-indigo-700',   dot: 'bg-indigo-500' },
-  packed:           { label: 'Packed',             color: 'bg-purple-100 text-purple-700',   dot: 'bg-purple-500' },
-  shipped:          { label: 'Shipped',            color: 'bg-orange-100 text-orange-700',   dot: 'bg-orange-500' },
-  out_for_delivery: { label: 'Out for Delivery',   color: 'bg-amber-100 text-amber-700',     dot: 'bg-amber-500'  },
-  delivered:        { label: 'Delivered',          color: 'bg-green-100 text-green-700',     dot: 'bg-green-500'  },
-  cancelled:        { label: 'Cancelled',          color: 'bg-red-100 text-red-700',         dot: 'bg-red-500'    },
-  refunded:         { label: 'Refunded',           color: 'bg-gray-100 text-gray-600',       dot: 'bg-gray-400'   },
-  payment_failed:   { label: 'Payment Failed',     color: 'bg-red-100 text-red-700',         dot: 'bg-red-500'    },
+  pending_payment:  { labelKey: 'orders.statusAwaitingPayment', color: 'bg-yellow-100 text-yellow-700',   dot: 'bg-yellow-400' },
+  paid:             { labelKey: 'orders.statusPlaced',          color: 'bg-blue-100 text-blue-700',       dot: 'bg-blue-500'   },
+  confirmed:        { labelKey: 'orders.statusConfirmed',       color: 'bg-indigo-100 text-indigo-700',   dot: 'bg-indigo-500' },
+  processing:       { labelKey: 'orders.statusConfirmed',       color: 'bg-indigo-100 text-indigo-700',   dot: 'bg-indigo-500' },
+  packed:           { labelKey: 'orders.statusPacked',          color: 'bg-purple-100 text-purple-700',   dot: 'bg-purple-500' },
+  shipped:          { labelKey: 'orders.statusShipped',         color: 'bg-orange-100 text-orange-700',   dot: 'bg-orange-500' },
+  out_for_delivery: { labelKey: 'orders.statusOutForDelivery',  color: 'bg-amber-100 text-amber-700',     dot: 'bg-amber-500'  },
+  delivered:        { labelKey: 'orders.statusDelivered',       color: 'bg-green-100 text-green-700',     dot: 'bg-green-500'  },
+  cancelled:        { labelKey: 'orders.statusCancelled',       color: 'bg-red-100 text-red-700',         dot: 'bg-red-500'    },
+  refunded:         { labelKey: 'orders.statusRefunded',        color: 'bg-gray-100 text-gray-600',       dot: 'bg-gray-400'   },
+  payment_failed:   { labelKey: 'orders.statusPaymentFailed',   color: 'bg-red-100 text-red-700',         dot: 'bg-red-500'    },
 };
 
 const SHIPMENT_STATUS_META = {
-  created:          { label: 'Shipment Created',  color: 'bg-blue-100 text-blue-700'    },
-  picked_up:        { label: 'Picked Up',          color: 'bg-indigo-100 text-indigo-700'},
-  in_transit:       { label: 'In Transit',         color: 'bg-purple-100 text-purple-700'},
-  out_for_delivery: { label: 'Out for Delivery',   color: 'bg-amber-100 text-amber-700'  },
-  delivered:        { label: 'Delivered',          color: 'bg-green-100 text-green-700'  },
-  failed_delivery:  { label: 'Failed Delivery',    color: 'bg-red-100 text-red-700'      },
-  cancelled:        { label: 'Cancelled',          color: 'bg-red-100 text-red-700'      },
-  returned:         { label: 'Returned',           color: 'bg-gray-100 text-gray-600'    },
+  created:          { labelKey: 'orders.shipmentCreated',      color: 'bg-blue-100 text-blue-700'    },
+  picked_up:        { labelKey: 'orders.shipmentPickedUp',     color: 'bg-indigo-100 text-indigo-700'},
+  in_transit:       { labelKey: 'orders.shipmentInTransit',    color: 'bg-purple-100 text-purple-700'},
+  out_for_delivery: { labelKey: 'orders.statusOutForDelivery', color: 'bg-amber-100 text-amber-700'  },
+  delivered:        { labelKey: 'orders.statusDelivered',      color: 'bg-green-100 text-green-700'  },
+  failed_delivery:  { labelKey: 'orders.shipmentFailedDelivery', color: 'bg-red-100 text-red-700'    },
+  cancelled:        { labelKey: 'orders.statusCancelled',      color: 'bg-red-100 text-red-700'      },
+  returned:         { labelKey: 'orders.shipmentReturned',     color: 'bg-gray-100 text-gray-600'    },
 };
 
 const TRACKING_STEPS = [
-  { key: 'created',          label: 'Shipment Created'  },
-  { key: 'picked_up',        label: 'Picked Up'         },
-  { key: 'in_transit',       label: 'In Transit'        },
-  { key: 'out_for_delivery', label: 'Out for Delivery'  },
-  { key: 'delivered',        label: 'Delivered'         },
+  { key: 'created',          labelKey: 'orders.shipmentCreated'      },
+  { key: 'picked_up',        labelKey: 'orders.shipmentPickedUp'     },
+  { key: 'in_transit',       labelKey: 'orders.shipmentInTransit'    },
+  { key: 'out_for_delivery', labelKey: 'orders.statusOutForDelivery'  },
+  { key: 'delivered',        labelKey: 'orders.statusDelivered'      },
 ];
 
 const ORDER_TIMELINE_STEPS = [
-  { key: 'paid',             label: 'Order Placed'       },
-  { key: 'confirmed',        label: 'Confirmed'          },
-  { key: 'packed',           label: 'Packed'             },
-  { key: 'shipped',          label: 'Shipped'            },
-  { key: 'out_for_delivery', label: 'Out for Delivery'   },
-  { key: 'delivered',        label: 'Delivered'          },
+  { key: 'paid',             labelKey: 'orders.statusPlaced'         },
+  { key: 'confirmed',        labelKey: 'orders.statusConfirmed'      },
+  { key: 'packed',           labelKey: 'orders.statusPacked'         },
+  { key: 'shipped',          labelKey: 'orders.statusShipped'        },
+  { key: 'out_for_delivery', labelKey: 'orders.statusOutForDelivery' },
+  { key: 'delivered',        labelKey: 'orders.statusDelivered'      },
 ];
 
 const FILTERS = [
-  { key: '',          value: 'All Orders'  },
-  { key: 'active',    value: 'Active'      },
-  { key: 'delivered', value: 'Delivered'   },
-  { key: 'cancelled', value: 'Cancelled'   },
+  { key: '',          labelKey: 'orders.filterAll'      },
+  { key: 'active',    labelKey: 'orders.filterActive'    },
+  { key: 'delivered', labelKey: 'orders.filterDelivered' },
+  { key: 'cancelled', labelKey: 'orders.filterCancelled' },
 ];
 
 // ── Shipment tracking timeline (when shipment record exists) ────
 function ShipmentTimeline({ shipment }) {
+  const { t } = useTranslation();
   const historyMap = {};
   (shipment.shipmentHistory || []).forEach(h => { if (!historyMap[h.status]) historyMap[h.status] = h; });
   const currentIdx = TRACKING_STEPS.findIndex(s => s.key === shipment.shipmentStatus);
@@ -140,7 +142,7 @@ function ShipmentTimeline({ shipment }) {
       <div className={`flex items-center gap-3 py-3 px-4 rounded-xl border ${shipment.shipmentStatus === 'returned' ? 'bg-gray-50 border-gray-100' : 'bg-red-50 border-red-100'}`}>
         <XCircle size={18} className={shipment.shipmentStatus === 'returned' ? 'text-gray-400' : 'text-red-500'} />
         <div>
-          <p className="text-sm font-semibold" style={{ color: shipment.shipmentStatus === 'returned' ? '#374151' : '#b91c1c' }}>{meta?.label || shipment.shipmentStatus}</p>
+          <p className="text-sm font-semibold" style={{ color: shipment.shipmentStatus === 'returned' ? '#374151' : '#b91c1c' }}>{meta?.labelKey ? t(meta.labelKey) : shipment.shipmentStatus}</p>
           {lastEntry?.timestamp && (
             <p className="text-xs text-gray-400 mt-0.5">{new Date(lastEntry.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
           )}
@@ -166,13 +168,13 @@ function ShipmentTimeline({ shipment }) {
               {reached && <CheckCircle size={10} className="text-white" />}
             </div>
             <div className="pb-8">
-              <p className={`text-sm font-semibold ${reached ? 'text-gray-800' : 'text-gray-400'}`}>{step.label}</p>
+              <p className={`text-sm font-semibold ${reached ? 'text-gray-800' : 'text-gray-400'}`}>{t(step.labelKey)}</p>
               {entry?.timestamp && (
                 <p className="text-xs text-gray-400 mt-0.5">
                   {new Date(entry.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
               )}
-              {isCurrent && !entry && <p className="text-xs text-indigo-500 font-medium mt-0.5">Current stage</p>}
+              {isCurrent && !entry && <p className="text-xs text-indigo-500 font-medium mt-0.5">{t('orders.currentStage')}</p>}
             </div>
           </div>
         );
@@ -183,6 +185,7 @@ function ShipmentTimeline({ shipment }) {
 
 // ── Fallback order timeline (when no shipment record) ───────────
 function OrderTimeline({ order }) {
+  const { t } = useTranslation();
   const timelineMap = {};
   (order.statusTimeline || []).forEach(e => { timelineMap[e.status] = e; });
   if (timelineMap.processing && !timelineMap.confirmed) timelineMap.confirmed = timelineMap.processing;
@@ -193,8 +196,8 @@ function OrderTimeline({ order }) {
       <div className="flex items-center gap-3 py-3 px-4 bg-red-50 rounded-xl border border-red-100">
         <XCircle size={20} className="text-red-500 shrink-0" />
         <div>
-          <p className="text-sm font-semibold text-red-700">{STATUS_META[order.status]?.label || order.status}</p>
-          {order.cancelReason && <p className="text-xs text-red-500 mt-0.5">Reason: {order.cancelReason}</p>}
+          <p className="text-sm font-semibold text-red-700">{STATUS_META[order.status]?.labelKey ? t(STATUS_META[order.status].labelKey) : order.status}</p>
+          {order.cancelReason && <p className="text-xs text-red-500 mt-0.5">{t('orders.cancelReasonLabel')} {order.cancelReason}</p>}
         </div>
       </div>
     );
@@ -216,13 +219,13 @@ function OrderTimeline({ order }) {
               {isReached && <CheckCircle size={10} className="text-white" />}
             </div>
             <div className="pb-8">
-              <p className={`text-sm font-semibold ${isReached ? 'text-gray-800' : 'text-gray-400'}`}>{step.label}</p>
+              <p className={`text-sm font-semibold ${isReached ? 'text-gray-800' : 'text-gray-400'}`}>{t(step.labelKey)}</p>
               {entry?.timestamp && (
                 <p className="text-xs text-gray-400 mt-0.5">
                   {new Date(entry.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
               )}
-              {isCurrent && !entry && <p className="text-xs text-indigo-500 font-medium mt-0.5">Current stage</p>}
+              {isCurrent && !entry && <p className="text-xs text-indigo-500 font-medium mt-0.5">{t('orders.currentStage')}</p>}
             </div>
           </div>
         );
@@ -232,6 +235,7 @@ function OrderTimeline({ order }) {
 }
 
 function OrderCard({ order }) {
+  const { t } = useTranslation();
   const [expanded,     setExpanded]     = useState(false);
   const [invoiceLoading, setInvLoading] = useState(false);
   const meta      = STATUS_META[order.status] || STATUS_META.paid;
@@ -248,7 +252,7 @@ function OrderCard({ order }) {
     try {
       const { data } = await API.get(`/marketplace/orders/${order._id}/invoice`);
       _openCustomerInvoice(data.order, data.shipment);
-    } catch { toast.error('Could not load invoice'); }
+    } catch { toast.error(t('orders.invoiceFailed')); }
     finally { setInvLoading(false); }
   };
 
@@ -262,13 +266,13 @@ function OrderCard({ order }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-bold text-gray-800">#{order.orderNumber}</p>
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${meta.color}`}>{t(meta.labelKey)}</span>
             {shipMeta && (
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${shipMeta.color}`}>{shipMeta.label}</span>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${shipMeta.color}`}>{t(shipMeta.labelKey)}</span>
             )}
           </div>
           <p className="text-xs text-gray-500 mt-0.5 font-sans">
-            {firstItem?.name}{order.items?.length > 1 ? ` +${order.items.length - 1} more` : ''} · {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            {firstItem?.name}{order.items?.length > 1 ? ` ${t('orders.moreItems', { n: order.items.length - 1 })}` : ''} · {new Date(order.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
           </p>
           {displayName && !expanded && (
             <p className="text-[10px] text-indigo-600 mt-0.5 flex items-center gap-1">
@@ -290,7 +294,7 @@ function OrderCard({ order }) {
 
           {/* Items */}
           <div>
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Items Ordered</p>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">{t('orders.itemsOrdered')}</p>
             <div className="space-y-2">
               {order.items?.map((item, i) => (
                 <div key={i} className="flex justify-between items-center text-sm">
@@ -310,7 +314,7 @@ function OrderCard({ order }) {
           {/* Shipping address */}
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <MapPin size={12} /> Delivery Address
+              <MapPin size={12} /> {t('orders.deliveryAddress')}
             </p>
             <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-700 leading-relaxed">
               <p className="font-semibold">{order.shippingAddress?.name}</p>
@@ -325,41 +329,41 @@ function OrderCard({ order }) {
           {shipment ? (
             <div>
               <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                <Truck size={12} /> Shipment Details
+                <Truck size={12} /> {t('orders.shipmentDetails')}
               </p>
               <div className="bg-indigo-50 rounded-xl p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${shipment.shippingMethod === 'tekipost' ? 'bg-indigo-200 text-indigo-800' : 'bg-purple-200 text-purple-800'}`}>
-                      {shipment.shippingMethod === 'tekipost' ? '🚀 TekiPost' : `✋ ${shipment.manualType === 'local_delivery' ? 'Local Delivery' : 'Manual'}`}
+                      {shipment.shippingMethod === 'tekipost' ? '🚀 TekiPost' : `✋ ${shipment.manualType === 'local_delivery' ? t('orders.localDelivery') : t('orders.manualShipping')}`}
                     </span>
                     {shipMeta && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${shipMeta.color}`}>{shipMeta.label}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${shipMeta.color}`}>{t(shipMeta.labelKey)}</span>
                     )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   {(shipment.courierName || shipment.deliveryPartner) && (
                     <div>
-                      <p className="text-indigo-400 mb-0.5">{shipment.manualType === 'local_delivery' ? 'Partner' : 'Courier'}</p>
+                      <p className="text-indigo-400 mb-0.5">{shipment.manualType === 'local_delivery' ? t('orders.partnerLabel') : t('orders.courierLabel')}</p>
                       <p className="font-bold text-indigo-800">{shipment.courierName || shipment.deliveryPartner}</p>
                     </div>
                   )}
                   {displayTracking && (
                     <div>
-                      <p className="text-indigo-400 mb-0.5">Tracking #</p>
+                      <p className="text-indigo-400 mb-0.5">{t('orders.trackingNumber')}</p>
                       <p className="font-bold text-indigo-800 font-mono">{displayTracking}</p>
                     </div>
                   )}
                   {shipment.awbNumber && shipment.awbNumber !== shipment.trackingNumber && (
                     <div>
-                      <p className="text-indigo-400 mb-0.5">AWB</p>
+                      <p className="text-indigo-400 mb-0.5">{t('orders.awbNumber')}</p>
                       <p className="font-bold text-indigo-800 font-mono">{shipment.awbNumber}</p>
                     </div>
                   )}
                   {shipment.estimatedDelivery && (
                     <div>
-                      <p className="text-indigo-400 mb-0.5">Expected By</p>
+                      <p className="text-indigo-400 mb-0.5">{t('orders.expectedBy')}</p>
                       <p className="font-bold text-indigo-800">
                         {new Date(shipment.estimatedDelivery).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </p>
@@ -367,13 +371,13 @@ function OrderCard({ order }) {
                   )}
                   {shipment.driverName && (
                     <div>
-                      <p className="text-indigo-400 mb-0.5">Driver</p>
+                      <p className="text-indigo-400 mb-0.5">{t('orders.driverLabel')}</p>
                       <p className="font-bold text-indigo-800">{shipment.driverName}{shipment.driverPhone ? ` · ${shipment.driverPhone}` : ''}</p>
                     </div>
                   )}
                   {shipment.expectedTime && (
                     <div>
-                      <p className="text-indigo-400 mb-0.5">Expected Time</p>
+                      <p className="text-indigo-400 mb-0.5">{t('orders.expectedTime')}</p>
                       <p className="font-bold text-indigo-800">{shipment.expectedTime}</p>
                     </div>
                   )}
@@ -381,7 +385,7 @@ function OrderCard({ order }) {
                 {shipment.trackingUrl && (
                   <a href={shipment.trackingUrl} target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-xs text-indigo-700 font-semibold hover:underline mt-1">
-                    <ExternalLink size={11} /> Track Online
+                    <ExternalLink size={11} /> {t('orders.trackOnline')}
                   </a>
                 )}
               </div>
@@ -389,7 +393,7 @@ function OrderCard({ order }) {
           ) : (order.trackingId || order.courier) ? (
             <div>
               <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                <Truck size={12} /> Tracking
+                <Truck size={12} /> {t('orders.trackingFallback')}
               </p>
               <div className="bg-indigo-50 rounded-xl p-3 text-sm">
                 {order.courier    && <p className="font-semibold text-indigo-800">{order.courier}</p>}
@@ -401,7 +405,7 @@ function OrderCard({ order }) {
           {/* Payment */}
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-              <CreditCard size={12} /> Payment
+              <CreditCard size={12} /> {t('orders.paymentLabel')}
             </p>
             <div className="flex items-center gap-2 text-sm">
               <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">PhonePe</span>
@@ -416,9 +420,9 @@ function OrderCard({ order }) {
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5">
               <span className="text-amber-500 mt-0.5 shrink-0 text-base">🔐</span>
               <div>
-                <p className="text-xs font-bold text-amber-800">Delivery OTP Sent</p>
+                <p className="text-xs font-bold text-amber-800">{t('orders.deliveryOtpTitle')}</p>
                 <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
-                  A 6-digit OTP has been sent to your registered WhatsApp and email. Share it with the delivery executive <strong>only after receiving your order</strong>.
+                  {t('orders.deliveryOtpDesc')}
                 </p>
               </div>
             </div>
@@ -429,14 +433,14 @@ function OrderCard({ order }) {
             <div>
               <button onClick={handleDownloadInvoice} disabled={invoiceLoading}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50">
-                {invoiceLoading ? <><span className="animate-spin inline-block w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full" /> Loading...</> : <><FileText size={12} /> Download Invoice</>}
+                {invoiceLoading ? <><span className="animate-spin inline-block w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full" /> {t('orders.loadingInvoice')}</> : <><FileText size={12} /> {t('orders.downloadInvoice')}</>}
               </button>
             </div>
           )}
 
           {/* Tracking timeline */}
           <div>
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Order Timeline</p>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">{t('orders.orderTimeline')}</p>
             {shipment && !['cancelled', 'refunded', 'payment_failed'].includes(order.status) ? (
               <ShipmentTimeline shipment={shipment} />
             ) : (
@@ -450,6 +454,7 @@ function OrderCard({ order }) {
 }
 
 export default function MyOrders() {
+  const { t } = useTranslation();
   const [orders,  setOrders]  = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter,  setFilter]  = useState('');
@@ -462,11 +467,11 @@ export default function MyOrders() {
       const { data } = await API.get('/marketplace/orders/my');
       setOrders(data.orders || []);
     } catch {
-      toast.error('Could not load orders');
+      toast.error(t('orders.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -486,11 +491,11 @@ export default function MyOrders() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: '#1B1F3B', fontFamily: "'Cormorant Garamond', serif" }}>My Orders</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{orders.length > 0 ? `${orders.length} total order${orders.length !== 1 ? 's' : ''}` : 'No orders yet'}</p>
+          <h1 className="text-2xl font-bold" style={{ color: '#1B1F3B', fontFamily: "'Cormorant Garamond', serif" }}>{t('orders.title')}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{orders.length > 0 ? t('orders.countSummary', { count: orders.length }) : t('orders.noOrdersYet')}</p>
         </div>
         <button onClick={load} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-lg transition-colors">
-          <RefreshCw size={13} /> Refresh
+          <RefreshCw size={13} /> {t('common.refresh')}
         </button>
       </div>
 
@@ -498,10 +503,10 @@ export default function MyOrders() {
       {orders.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'Total',     value: orders.filter(o => o.status !== 'pending_payment').length, color: '#1B1F3B' },
-            { label: 'Active',    value: activeCount,    color: '#7c3aed' },
-            { label: 'Delivered', value: deliveredCount, color: '#059669' },
-            { label: 'Cancelled', value: orders.filter(o => ['cancelled', 'refunded'].includes(o.status)).length, color: '#dc2626' },
+            { label: t('orders.statTotal'),     value: orders.filter(o => o.status !== 'pending_payment').length, color: '#1B1F3B' },
+            { label: t('orders.statActive'),    value: activeCount,    color: '#7c3aed' },
+            { label: t('orders.statDelivered'), value: deliveredCount, color: '#059669' },
+            { label: t('orders.statCancelled'), value: orders.filter(o => ['cancelled', 'refunded'].includes(o.status)).length, color: '#dc2626' },
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-white rounded-2xl border border-gray-100 p-4 text-center">
               <p className="text-2xl font-bold" style={{ color, fontFamily: "'Cormorant Garamond', serif" }}>{value}</p>
@@ -513,7 +518,7 @@ export default function MyOrders() {
 
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
-        {FILTERS.map(({ key, value }) => (
+        {FILTERS.map(({ key, labelKey }) => (
           <button key={key} onClick={() => setFilter(key)}
             className="px-4 py-1.5 rounded-full text-xs font-semibold transition-all"
             style={{
@@ -521,7 +526,7 @@ export default function MyOrders() {
               color:      filter === key ? 'white'   : '#6b7280',
               border:     `1px solid ${filter === key ? '#1B1F3B' : '#e5e7eb'}`,
             }}>
-            {value}
+            {t(labelKey)}
           </button>
         ))}
       </div>
@@ -535,14 +540,14 @@ export default function MyOrders() {
             <Package size={36} className="text-gray-300" />
           </div>
           <p className="font-bold text-gray-700 text-lg" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            {filter ? 'No orders in this category' : 'No orders yet'}
+            {filter ? t('orders.noInCategory') : t('orders.noOrdersYet')}
           </p>
           <p className="text-sm text-gray-400 mt-1">
-            {filter ? 'Try a different filter' : 'Your marketplace orders will appear here after purchase'}
+            {filter ? t('orders.tryDifferentFilter') : 'Your marketplace orders will appear here after purchase'}
           </p>
           {filter && (
             <button onClick={() => setFilter('')} className="mt-4 btn-outline text-sm">
-              <RotateCcw size={13} /> Clear Filter
+              <RotateCcw size={13} /> {t('orders.clearFilter')}
             </button>
           )}
         </div>

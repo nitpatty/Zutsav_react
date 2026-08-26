@@ -297,9 +297,10 @@ const startPaymentSweepJob = () => {
 
 /**
  * Recovers translation-cache locks left stuck in 'pending' by a process
- * crash mid-Groq-call (see services/translationService.js). 2 minutes is
- * comfortably above Groq's own 30s translation timeout, so this only fires
- * on genuine crashes, not normal slow responses. The next read request for
+ * crash mid-provider-call (see services/translationService.js). 2 minutes is
+ * comfortably above the worst-case provider chain (~15s/request Sarvam with
+ * bounded retries, 30s Groq fallback), so this only fires on genuine
+ * crashes, not normal slow responses. The next read request for
  * that entity/language sees 'failed' and retries — no separate retry queue.
  */
 const sweepStaleTranslationLocks = async () => {

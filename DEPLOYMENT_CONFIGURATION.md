@@ -117,7 +117,9 @@ That's it — no file inside `src/` needs to change in any of the three apps.
 | `PHONEPE_ENV`, `PHONEPE_MERCHANT_ID`, `PHONEPE_SALT_KEY`, `PHONEPE_SALT_INDEX` | No | Primary payment gateway |
 | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_API_VERSION` | No | Meta Cloud API |
 | `EMAIL_USER`, `EMAIL_PASS`, `NOTIFY_ALWAYS_EMAIL` | No | Nodemailer/SMTP |
-| `GROQ_API_KEY` | No | AI spiritual assistant |
+| `GROQ_API_KEY` | No | AI spiritual assistant + temporary translation fallback |
+| `SARVAM_API_KEY` | No (recommended) | Primary content-translation provider (Indian languages). Falls back to Groq when unset/failing. Also settable via Admin → System Settings (`sarvamApiKey`) |
+| `TRANSLATION_PROVIDER` | No (default `auto`) | Which translation provider is tried first: `auto`/`sarvam`/`groq`; the other stays as fallback |
 | `ADMIN_NAME`, `ADMIN_PHONE`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | No (seed only) | First admin account, created once |
 | `GOOGLE_APPS_SCRIPT_URL` | No | Festival/Panchang sync |
 | `TEKIPOST_EMAIL`, `TEKIPOST_PASSWORD`, `TEKIPOST_SENDER_ADDRESS_ID`, `TEKIPOST_LOGISTICS_ID` | No | Courier integration |

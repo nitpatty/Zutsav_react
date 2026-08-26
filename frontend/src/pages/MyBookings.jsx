@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Calendar, Clock, Hash, User, BookOpen, CheckCircle, Sparkles, Star, X, AlertTriangle, CreditCard, IndianRupee, FileText, RefreshCw } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import API from '../api/axios';
 import toast from 'react-hot-toast';
 import { getImageUrl } from '../config';
@@ -8,44 +9,42 @@ import PaymentStatusBadge from '../components/shared/PaymentStatusBadge';
 
 const USER_CANCELLABLE = ['pending_payment', 'paid', 'pandit_assigned', 'pandit_accepted', 'pending_reassignment'];
 
-// Journey-bar/step metadata only — the actual badge label/color now comes from
-// the single shared <PaymentStatusBadge> so status and payment state never
-// render as two separate badges.
 const STATUS_META = {
-  pending_payment:      { label: 'Pending Payment',   color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200',   bar: 'bg-amber-400',   step: 0 },
-  paid:                 { label: 'Confirmed',          color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200',    bar: 'bg-blue-500',    step: 1 },
-  pandit_assigned:      { label: 'Pandit Assigned',   color: 'text-purple-700',  bg: 'bg-purple-50',  border: 'border-purple-200',  bar: 'bg-purple-500',  step: 2 },
-  pandit_accepted:      { label: 'Pandit Confirmed',  color: 'text-teal-700',    bg: 'bg-teal-50',    border: 'border-teal-200',    bar: 'bg-teal-500',    step: 2 },
-  pending_reassignment: { label: 'Finding Pandit',    color: 'text-orange-700',  bg: 'bg-orange-50',  border: 'border-orange-200',  bar: 'bg-orange-400',  step: 1 },
-  completion_requested: { label: 'Verifying',         color: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200',  bar: 'bg-indigo-400',  step: 3 },
-  completed:            { label: 'Completed',         color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', bar: 'bg-emerald-500', step: 4 },
-  cancelled:            { label: 'Cancelled',         color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200',     bar: 'bg-red-400',     step: -1 },
+  pending_payment:      { labelKey: 'bookings.statusPendingPayment', color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200',   bar: 'bg-amber-400',   step: 0 },
+  paid:                 { labelKey: 'bookings.statusConfirmed',       color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200',    bar: 'bg-blue-500',    step: 1 },
+  pandit_assigned:      { labelKey: 'bookings.statusPanditAssigned',  color: 'text-purple-700',  bg: 'bg-purple-50',  border: 'border-purple-200',  bar: 'bg-purple-500',  step: 2 },
+  pandit_accepted:      { labelKey: 'bookings.statusPanditAccepted',  color: 'text-teal-700',    bg: 'bg-teal-50',    border: 'border-teal-200',    bar: 'bg-teal-500',    step: 2 },
+  pending_reassignment: { labelKey: 'bookings.statusPendingReassignment', color: 'text-orange-700',  bg: 'bg-orange-50',  border: 'border-orange-200',  bar: 'bg-orange-400',  step: 1 },
+  completion_requested: { labelKey: 'bookings.statusCompletionRequested', color: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200',  bar: 'bg-indigo-400',  step: 3 },
+  completed:            { labelKey: 'bookings.statusCompleted',       color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', bar: 'bg-emerald-500', step: 4 },
+  cancelled:            { labelKey: 'bookings.statusCancelled',       color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200',     bar: 'bg-red-400',     step: -1 },
 };
 
 const JOURNEY_STEPS = [
-  { id: 0, label: 'Booked' },
-  { id: 1, label: 'Confirmed' },
-  { id: 2, label: 'Assigned' },
-  { id: 3, label: 'Verifying' },
-  { id: 4, label: 'Complete' },
+  { id: 0, labelKey: 'bookings.journeyBooked' },
+  { id: 1, labelKey: 'bookings.journeyConfirmed' },
+  { id: 2, labelKey: 'bookings.journeyAssigned' },
+  { id: 3, labelKey: 'bookings.journeyVerifying' },
+  { id: 4, labelKey: 'bookings.journeyComplete' },
 ];
 
 const FILTERS = [
-  { value: '',                      label: 'All Bookings'  },
-  { value: 'paid',                  label: 'Confirmed'     },
-  { value: 'pandit_assigned',       label: 'Assigned'      },
-  { value: 'pandit_accepted',       label: 'Confirmed'     },
-  { value: 'completed',             label: 'Completed'     },
-  { value: 'cancelled',             label: 'Cancelled'     },
-  { value: 'pending_payment',       label: 'Failed Payments' },
+  { value: '',                    labelKey: 'bookings.filterAll' },
+  { value: 'paid',                labelKey: 'bookings.filterConfirmed' },
+  { value: 'pandit_assigned',     labelKey: 'bookings.filterAssigned' },
+  { value: 'pandit_accepted',     labelKey: 'bookings.filterConfirmed' },
+  { value: 'completed',           labelKey: 'bookings.filterCompleted' },
+  { value: 'cancelled',           labelKey: 'bookings.filterCancelled' },
+  { value: 'pending_payment',     labelKey: 'bookings.filterFailedPayments' },
 ];
 
 function JourneyTracker({ status }) {
+  const { t } = useTranslation();
   if (status === 'cancelled') {
     return (
       <div className="flex items-center gap-2 text-xs text-red-500 font-semibold">
         <div className="w-2 h-2 rounded-full bg-red-400" />
-        Booking Cancelled
+        {t('bookings.cancelledBanner')}
       </div>
     );
   }
@@ -53,7 +52,7 @@ function JourneyTracker({ status }) {
     return (
       <div className="flex items-center gap-2 text-xs text-orange-600 font-semibold">
         <div className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
-        Finding the right pandit for you…
+        {t('bookings.findingPanditBanner')}
       </div>
     );
   }
@@ -72,7 +71,7 @@ function JourneyTracker({ status }) {
             </div>
             <span className={`text-[9px] font-semibold whitespace-nowrap ${
               i <= step ? 'text-indigo-700' : 'text-gray-300'
-            }`}>{s.label}</span>
+            }`}>{t(s.labelKey)}</span>
           </div>
           {i < JOURNEY_STEPS.length - 1 && (
             <div className={`w-6 h-0.5 mb-4 transition-all ${i < step ? 'bg-gold-400' : 'bg-gray-200'}`} />
@@ -84,20 +83,21 @@ function JourneyTracker({ status }) {
 }
 
 function StarRating({ bookingId, onRated }) {
+  const { t } = useTranslation();
   const [hovered,    setHovered]    = useState(0);
   const [selected,   setSelected]   = useState(0);
   const [review,     setReview]     = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
-    if (!selected) { toast.error('Please select a star rating'); return; }
+    if (!selected) { toast.error(t('bookings.selectStarError')); return; }
     setSubmitting(true);
     try {
       await API.post(`/bookings/${bookingId}/rate`, { rating: selected, review });
-      toast.success('Thank you for your rating!');
+      toast.success(t('bookings.thanksRating'));
       onRated();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not submit rating');
+      toast.error(err.response?.data?.message || t('bookings.ratingFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -105,7 +105,7 @@ function StarRating({ bookingId, onRated }) {
 
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
-      <p className="text-sm font-bold text-gray-800">Rate your experience</p>
+      <p className="text-sm font-bold text-gray-800">{t('bookings.rateExperience')}</p>
       <div className="flex gap-1">
         {[1,2,3,4,5].map((s) => (
           <button key={s} type="button"
@@ -122,14 +122,14 @@ function StarRating({ bookingId, onRated }) {
         ))}
         {selected > 0 && (
           <span className="ml-2 text-sm font-semibold text-gray-600 self-center">
-            {['','Poor','Fair','Good','Very Good','Excellent'][selected]}
+            {['', t('bookings.ratingPoor'), t('bookings.ratingFair'), t('bookings.ratingGood'), t('bookings.ratingVeryGood'), t('bookings.ratingExcellent')][selected]}
           </span>
         )}
       </div>
       <textarea
         className="w-full text-sm border border-amber-200 rounded-lg p-2.5 resize-none bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
         rows={2}
-        placeholder="Share your experience (optional)…"
+        placeholder={t('bookings.reviewPlaceholder')}
         value={review}
         onChange={(e) => setReview(e.target.value)}
       />
@@ -139,13 +139,14 @@ function StarRating({ bookingId, onRated }) {
         className="w-full py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 transition-colors"
         style={{ background: '#1B1F3B' }}
       >
-        {submitting ? 'Submitting…' : 'Submit Rating'}
+        {submitting ? t('common.submitting') : t('bookings.submitRating')}
       </button>
     </div>
   );
 }
 
 function PayRemainingButton({ booking, onDone }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const handlePay = async () => {
     setLoading(true);
@@ -153,7 +154,7 @@ function PayRemainingButton({ booking, onDone }) {
       const { data } = await API.post(`/bookings/${booking._id}/pay-remaining`);
       window.location.href = data.redirectUrl;
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not initiate payment');
+      toast.error(err.response?.data?.message || t('bookings.payFailed'));
       setLoading(false);
     }
   };
@@ -165,25 +166,26 @@ function PayRemainingButton({ booking, onDone }) {
       style={{ background: 'linear-gradient(135deg,#FF6B00,#ff9020)' }}
     >
       <CreditCard size={14} />
-      {loading ? 'Processing…' : `Pay Remaining ₹${booking.remainingAmount?.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}
+      {loading ? t('common.processing') : t('bookings.payRemaining', { amount: booking.remainingAmount?.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) })}
     </button>
   );
 }
 
 function RetryPaymentButton({ booking }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const handleRetry = async () => {
     setLoading(true);
     try {
       const { data } = await API.post(`/bookings/${booking._id}/retry-payment`);
       if (data.alreadyInFlight) {
-        toast('A payment attempt is already in progress for this booking', { icon: '⏳' });
+        toast(t('bookings.paymentInProgress'), { icon: '⏳' });
         setLoading(false);
         return;
       }
       window.location.href = data.redirectUrl;
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not start payment');
+      toast.error(err.response?.data?.message || t('bookings.startPaymentFailed'));
       setLoading(false);
     }
   };
@@ -195,12 +197,13 @@ function RetryPaymentButton({ booking }) {
       style={{ background: 'linear-gradient(135deg,#DC2626,#ef4444)' }}
     >
       <RefreshCw size={14} />
-      {loading ? 'Redirecting…' : 'Retry Payment'}
+      {loading ? t('bookings.redirecting') : t('bookings.retryPayment')}
     </button>
   );
 }
 
 function BookingCard({ b, onReload, onCancel }) {
+  const { t } = useTranslation();
   const meta = STATUS_META[b.status] || STATUS_META.pending_payment;
   const hasPartialPayment = b.paymentMode === 'PARTIAL' || b.paymentStatus === 'PARTIALLY_PAID';
   const attempts = b.paymentAttempts || [];
@@ -241,44 +244,39 @@ function BookingCard({ b, onReload, onCancel }) {
           </div>
         </div>
 
-        {/* Failed / pending payment recovery block */}
         {b.status === 'pending_payment' && (
           <div className="mt-3 bg-red-50 border border-red-100 rounded-xl p-3 space-y-2">
             {b.paymentStatus === 'FAILED' ? (
               <p className="text-xs text-red-700">
-                Your last payment attempt didn't go through
-                {lastAttempt?.failureReason ? ` (${lastAttempt.failureReason})` : ''}. Your booking is saved — retry when ready.
+                {t('bookings.failedPaymentMsg', { reason: lastAttempt?.failureReason ? ` (${lastAttempt.failureReason})` : '' })}
               </p>
             ) : (
               <p className="text-xs text-amber-700">
-                Payment wasn't completed for this booking. Your details are saved — retry anytime.
+                {t('bookings.pendingPaymentMsg')}
               </p>
             )}
             {attempts.length > 0 && (
               <p className="text-[11px] text-gray-400">
-                Attempts: {attempts.length}
-                {lastAttempt?.initiatedAt ? ` · Last attempt: ${new Date(lastAttempt.initiatedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
+                {t('bookings.attemptsCount', { count: attempts.length })}
+                {lastAttempt?.initiatedAt ? t('bookings.lastAttemptAt', { time: new Date(lastAttempt.initiatedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }) : ''}
               </p>
             )}
             <RetryPaymentButton booking={b} />
           </div>
         )}
 
-        {/* Pandit confirmation notice */}
         {b.status === 'pandit_accepted' && b.panditId && (
           <div className="mt-3 bg-teal-50 border border-teal-100 rounded-xl p-3 text-xs text-teal-700">
-            <span className="font-semibold">{b.panditId.name}</span> has confirmed attendance for your ceremony.
+            <span className="font-semibold">{t('bookings.panditConfirmedNotice', { name: b.panditId.name })}</span>
           </div>
         )}
 
-        {/* Pending reassignment notice */}
         {b.status === 'pending_reassignment' && (
           <div className="mt-3 bg-orange-50 border border-orange-100 rounded-xl p-3 text-xs text-orange-700">
-            We are finding a new pandit for your booking. You will be notified once assigned.
+            {t('bookings.reassignmentNotice')}
           </div>
         )}
 
-        {/* Kit delivery status */}
         {b.withKit && (
           <div className={`mt-3 rounded-xl p-3 border text-xs ${
             b.kitDelivery?.status === 'delivered'       ? 'bg-green-50 border-green-200 text-green-700' :
@@ -289,65 +287,62 @@ function BookingCard({ b, onReload, onCancel }) {
           }`}>
             <div className="flex items-center gap-2 font-semibold mb-0.5">
               <span>📦</span>
-              <span>Samagri Kit ·{' '}
-                {b.kitDelivery?.status === 'delivered'        ? 'Delivered' :
-                 b.kitDelivery?.status === 'shipped'          ? 'Shipped' :
-                 b.kitDelivery?.status === 'out_for_delivery' ? 'Out for Delivery' :
-                 b.kitDelivery?.status === 'packed'           ? 'Packed' :
-                 'Being prepared'}
+              <span>{t('bookings.kitLabel')} ·{' '}
+                {b.kitDelivery?.status === 'delivered'        ? t('bookings.kitDelivered') :
+                 b.kitDelivery?.status === 'shipped'          ? t('bookings.kitShipped') :
+                 b.kitDelivery?.status === 'out_for_delivery' ? t('bookings.kitOutForDelivery') :
+                 b.kitDelivery?.status === 'packed'           ? t('bookings.kitPacked') :
+                 t('bookings.kitPreparing')}
               </span>
             </div>
             {(b.kitDelivery?.status === 'shipped' || b.kitDelivery?.status === 'out_for_delivery') && b.kitDelivery.courier && (
-              <p>Courier: {b.kitDelivery.courier}{b.kitDelivery.trackingId ? ` · AWB: ${b.kitDelivery.trackingId}` : ''}</p>
+              <p>{t('bookings.kitCourier', { courier: b.kitDelivery.courier })}{b.kitDelivery.trackingId ? ` · ${t('bookings.kitAwb', { awb: b.kitDelivery.trackingId })}` : ''}</p>
             )}
             {b.kitDelivery?.status === 'out_for_delivery' && (
-              <p className="mt-0.5">Your kit is out for delivery today!</p>
+              <p className="mt-0.5">{t('bookings.kitOutForDeliveryToday')}</p>
             )}
             {!b.kitDelivery?.status || b.kitDelivery.status === 'pending' ? (
-              <p>Your samagri kit will be dispatched soon. It will arrive before your pooja date.</p>
+              <p>{t('bookings.kitDispatchSoon')}</p>
             ) : null}
           </div>
         )}
 
-        {/* ── Partial payment breakdown ── */}
         {hasPartialPayment && b.status !== 'pending_payment' && (
           <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50 overflow-hidden">
             <div className="px-4 py-2.5 border-b border-orange-200 flex items-center gap-2">
               <IndianRupee size={13} className="text-orange-600" />
-              <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">Payment Breakdown</p>
+              <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">{t('bookings.breakdownTitle')}</p>
             </div>
             <div className="px-4 py-3 space-y-1.5">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Booking Total</span>
+                <span className="text-gray-600">{t('bookings.bookingTotal')}</span>
                 <span className="font-semibold text-gray-800">₹{(b.grandTotal || b.amount)?.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-green-700 font-medium">Amount Paid</span>
+                <span className="text-green-700 font-medium">{t('bookings.amountPaid')}</span>
                 <span className="font-bold text-green-700">₹{(b.amountPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
               </div>
               {(b.remainingAmount || 0) > 0 && (
                 <div className="flex justify-between text-sm border-t border-orange-200 pt-1.5">
-                  <span className="text-red-600 font-semibold">Remaining Balance</span>
+                  <span className="text-red-600 font-semibold">{t('bookings.remainingBalance')}</span>
                   <span className="font-bold text-red-600">₹{b.remainingAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
               {(b.remainingAmount || 0) === 0 && b.paymentStatus === 'FULLY_PAID' && (
                 <div className="flex items-center gap-1.5 text-xs text-green-600 pt-1 border-t border-orange-200">
-                  <CheckCircle size={11} /> Fully paid — no balance due
+                  <CheckCircle size={11} /> {t('bookings.fullyPaid')}
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {/* ── Pay Remaining button ── */}
         {b.paymentStatus === 'PARTIALLY_PAID' && b.remainingAmount > 0 && b.status !== 'cancelled' && (
           <div className="mt-3">
             <PayRemainingButton booking={b} onDone={onReload} />
           </div>
         )}
 
-        {/* Journey tracker + pandit */}
         <div className="mt-5 pt-4 border-t border-gray-100 flex items-end justify-between flex-wrap gap-4">
           <JourneyTracker status={b.status} />
 
@@ -359,14 +354,13 @@ function BookingCard({ b, onReload, onCancel }) {
                   : <User size={13} className="text-indigo-400" />}
               </div>
               <div>
-                <p className="text-xs text-gray-400">Pandit</p>
+                <p className="text-xs text-gray-400">{t('bookings.panditLabel')}</p>
                 <p className="text-xs font-semibold text-gray-700">{b.panditId.name}</p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Rating section for completed bookings */}
         {b.status === 'completed' && (
           <div className="mt-4 border-t border-gray-100 pt-4">
             {b.rating ? (
@@ -376,7 +370,7 @@ function BookingCard({ b, onReload, onCancel }) {
                     <Star key={s} size={16} className={s <= b.rating ? 'text-amber-400 fill-amber-400' : 'text-gray-200 fill-gray-200'} />
                   ))}
                 </div>
-                <span className="text-xs text-gray-500">Your rating: <strong>{b.rating}/5</strong></span>
+                <span className="text-xs text-gray-500">{t('bookings.yourRating')} <strong>{b.rating}/5</strong></span>
                 {b.review && <span className="text-xs text-gray-400 italic truncate">"{b.review}"</span>}
               </div>
             ) : (
@@ -385,7 +379,6 @@ function BookingCard({ b, onReload, onCancel }) {
           </div>
         )}
 
-        {/* Action bar: Invoice + Cancel */}
         {(USER_CANCELLABLE.includes(b.status) || !['pending_payment', 'cancelled'].includes(b.status)) && (
           <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center gap-2 flex-wrap">
             {!['pending_payment', 'cancelled'].includes(b.status) ? (
@@ -395,7 +388,7 @@ function BookingCard({ b, onReload, onCancel }) {
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
               >
-                <FileText size={12} /> View Invoice
+                <FileText size={12} /> {t('bookings.viewInvoice')}
               </Link>
             ) : <span />}
             {USER_CANCELLABLE.includes(b.status) && (
@@ -403,7 +396,7 @@ function BookingCard({ b, onReload, onCancel }) {
                 onClick={() => onCancel(b)}
                 className="flex items-center gap-1.5 text-xs font-semibold text-red-500 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
               >
-                <X size={12} /> Cancel Booking
+                <X size={12} /> {t('bookings.cancelBookingBtn')}
               </button>
             )}
           </div>
@@ -431,6 +424,7 @@ function LoadingSkeleton() {
 }
 
 export default function MyBookings() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [bookings,        setBookings]        = useState([]);
   const [loading,         setLoading]         = useState(true);
@@ -454,14 +448,12 @@ export default function MyBookings() {
     setCancelTarget(booking);
     setCancelReason('');
     setRefundPreview(null);
-    // Only fetch refund preview if the customer has paid something
     if (booking.amountPaid > 0) {
       setPreviewLoading(true);
       try {
         const { data } = await API.get(`/bookings/${booking._id}/refund-preview`);
         setRefundPreview(data.refundPreview);
       } catch {
-        // Non-fatal — modal still works without preview
       } finally {
         setPreviewLoading(false);
       }
@@ -473,13 +465,13 @@ export default function MyBookings() {
     setCancelling(true);
     try {
       await API.patch(`/bookings/${cancelTarget._id}/cancel`, { reason: cancelReason });
-      toast.success('Booking cancelled successfully');
+      toast.success(t('bookings.cancelledSuccessToast'));
       setCancelTarget(null);
       setCancelReason('');
       setRefundPreview(null);
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not cancel booking');
+      toast.error(err.response?.data?.message || t('bookings.cancelFailedToast'));
     } finally {
       setCancelling(false);
     }
@@ -487,27 +479,25 @@ export default function MyBookings() {
 
   return (
     <div className="min-h-screen" style={{ background: '#FAF7F2' }}>
-      {/* Hero */}
       <div className="relative overflow-hidden sacred-pattern" style={{ background: '#1B1F3B' }}>
         <div className="absolute inset-0" style={{ background: 'rgba(27,31,59,0.88)' }} />
         <div className="relative max-w-3xl mx-auto px-4 py-12 md:py-16">
           <div className="inline-flex items-center gap-2 mb-3">
             <span className="w-6 h-px" style={{ background: 'rgba(212,175,55,0.5)' }} />
-            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#D4AF37' }}>Your Sacred Journeys</span>
+            <span className="text-xs font-bold tracking-widest uppercase" style={{ color: '#D4AF37' }}>{t('bookings.eyebrow')}</span>
             <span className="w-6 h-px" style={{ background: 'rgba(212,175,55,0.5)' }} />
           </div>
           <h1 className="text-4xl md:text-5xl font-bold text-white"
               style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', letterSpacing: '-0.02em' }}>
-            My Bookings
+            {t('bookings.title')}
           </h1>
-          <p className="text-white/50 mt-2 text-sm font-sans">Track your ceremony bookings from confirmation to completion</p>
+          <p className="text-white/50 mt-2 text-sm font-sans">{t('bookings.subtitle')}</p>
         </div>
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-8">
-        {/* Filter chips */}
         <div className="flex gap-2 mb-7 flex-wrap">
-          {FILTERS.map(({ value, label }) => (
+          {FILTERS.map(({ value, labelKey }) => (
             <button key={value} onClick={() => setFilter(value)}
               className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all duration-200 ${
                 filter === value
@@ -515,7 +505,7 @@ export default function MyBookings() {
                   : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
               }`}
               style={filter === value ? { background: '#1B1F3B' } : {}}>
-              {label}
+              {t(labelKey)}
             </button>
           ))}
         </div>
@@ -532,15 +522,15 @@ export default function MyBookings() {
             </div>
             <h3 className="text-2xl font-bold text-gray-800 mb-2"
                 style={{ fontFamily: '"Cormorant Garamond"' }}>
-              No Bookings Yet
+              {t('bookings.emptyTitle')}
             </h3>
             <p className="text-gray-500 text-sm max-w-xs mx-auto mb-6">
-              Your sacred journey awaits. Book a pooja ceremony to begin your spiritual experience.
+              {t('bookings.emptyDesc')}
             </p>
             <a href="/poojas"
                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-all shadow-sm"
                style={{ background: '#1B1F3B' }}>
-              <Sparkles size={15} /> Explore Poojas
+              <Sparkles size={15} /> {t('bookings.explorePoojas')}
             </a>
           </div>
         ) : (
@@ -552,7 +542,6 @@ export default function MyBookings() {
         )}
       </div>
 
-      {/* ── Cancel Confirmation Modal ── */}
       {cancelTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
@@ -562,7 +551,7 @@ export default function MyBookings() {
               </div>
               <div>
                 <h3 className="font-bold text-gray-900 text-lg" style={{ fontFamily: '"Cormorant Garamond", serif' }}>
-                  Cancel Booking
+                  {t('bookings.cancelModalTitle')}
                 </h3>
                 <p className="text-sm text-gray-500 mt-0.5">
                   {cancelTarget.poojaId?.name} · #{cancelTarget.bookingNumber}
@@ -570,66 +559,65 @@ export default function MyBookings() {
               </div>
             </div>
 
-            {/* Refund Summary */}
             {cancelTarget.amountPaid > 0 && (
               <div className="mb-4 rounded-xl border overflow-hidden" style={{ borderColor: '#e5e7eb' }}>
                 <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: '#f0fdf4', borderBottom: '1px solid #dcfce7' }}>
                   <IndianRupee size={13} className="text-green-600" />
-                  <span className="text-xs font-bold text-green-700 uppercase tracking-wide">Refund Summary</span>
+                  <span className="text-xs font-bold text-green-700 uppercase tracking-wide">{t('bookings.refundSummary')}</span>
                 </div>
                 {previewLoading ? (
-                  <div className="px-4 py-4 text-center text-sm text-gray-400">Calculating refund…</div>
+                  <div className="px-4 py-4 text-center text-sm text-gray-400">{t('bookings.calculatingRefund')}</div>
                 ) : refundPreview ? (
                   <div className="px-4 py-3 space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Amount You Paid</span>
+                      <span className="text-gray-600">{t('bookings.amountYouPaid')}</span>
                       <span className="font-semibold text-gray-800">₹{refundPreview.amountPaid.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
                     </div>
                     {refundPreview.platformFee > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-red-600">Less: Platform Fee</span>
+                        <span className="text-red-600">{t('bookings.lessPlatformFee')}</span>
                         <span className="font-semibold text-red-600">− ₹{refundPreview.platformFee.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
                       </div>
                     )}
                     {refundPreview.platformGST > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-red-600">Less: GST on Platform Fee</span>
+                        <span className="text-red-600">{t('bookings.lessPlatformGst')}</span>
                         <span className="font-semibold text-red-600">− ₹{refundPreview.platformGST.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm font-bold border-t pt-2" style={{ borderColor: '#dcfce7' }}>
-                      <span className="text-green-700">Refund Amount</span>
+                      <span className="text-green-700">{t('bookings.refundAmount')}</span>
                       <span className="text-green-700">₹{refundPreview.refundableAmount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
                     </div>
                     {refundPreview.refundableAmount === 0 && (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-1">
-                        Your payment was fully applied to non-refundable charges. No refund will be issued.
+                        {t('bookings.noRefundNote')}
                       </p>
                     )}
                     <p className="text-[11px] text-gray-400 pt-1">
-                      Platform convenience fee and applicable GST are non-refundable.
+                      {t('bookings.feesNonRefundableNote')}
                     </p>
                   </div>
                 ) : (
                   <div className="px-4 py-3 text-sm text-gray-500">
-                    Refund details unavailable. Contact support for assistance.
+                    {t('bookings.refundUnavailable')}
                   </div>
                 )}
               </div>
             )}
 
             <p className="text-sm text-gray-600 mb-4">
-              Are you sure you want to cancel this booking? This action cannot be undone.
+              {t('bookings.cancelConfirmText')}
             </p>
 
             <div className="mb-5">
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                Reason for cancellation <span className="text-gray-400">(optional)</span>
+                {t('bookings.reasonLabel')} <span className="text-gray-400">{t('common.optionalLabel')}</span>
               </label>
               <textarea
                 className="w-full text-sm border border-gray-200 rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-red-200 focus:border-red-300"
                 rows={3}
-                placeholder="Let us know why you're cancelling…"
+                placeholder={t('bookings.reasonPlaceholder')}
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
               />
@@ -640,7 +628,7 @@ export default function MyBookings() {
                 onClick={() => { setCancelTarget(null); setCancelReason(''); setRefundPreview(null); }}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
               >
-                Keep Booking
+                {t('bookings.keepBooking')}
               </button>
               <button
                 onClick={handleCancelConfirm}
@@ -648,7 +636,7 @@ export default function MyBookings() {
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-colors"
                 style={{ background: '#DC2626' }}
               >
-                {cancelling ? 'Cancelling…' : 'Yes, Cancel'}
+                {cancelling ? t('bookings.cancelling') : t('bookings.yesCancel')}
               </button>
             </div>
           </div>

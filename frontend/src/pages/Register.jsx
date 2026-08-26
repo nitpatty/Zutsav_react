@@ -7,6 +7,7 @@ import { useSettings } from '../context/SettingsContext';
 import PincodeInput from '../components/shared/PincodeInput';
 import API from '../api/axios';
 import { getStoredLanguage } from '../utils/languageStorage';
+import { useTranslation } from 'react-i18next';
 
 // ─── Communication consent (WhatsApp opt-in) ───────────────────────────────
 // Wording taken VERBATIM from the client's WhatsApp consent reference
@@ -21,24 +22,25 @@ const CONSENT_VERSION = 'v1.0';
 
 // ─── Step 1: Role selection ────────────────────────────────────
 function RoleStep({ onSelect }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-6 text-center">
-      <h2 className="text-xl font-bold text-gray-800">Who are you joining as?</h2>
+      <h2 className="text-xl font-bold text-gray-800">{t('auth.whoJoiningAs')}</h2>
       <div className="grid grid-cols-2 gap-4">
         <button onClick={() => onSelect('devotee')}
           className="flex flex-col items-center gap-3 p-6 rounded-2xl border-2 border-saffron-200 hover:border-saffron-500 hover:bg-saffron-50 transition-all">
           <span className="text-4xl">🙏</span>
           <div>
-            <p className="font-bold text-gray-800">Devotee</p>
-            <p className="text-xs text-gray-500 mt-1">Book poojas, explore rituals</p>
+            <p className="font-bold text-gray-800">{t('auth.devoteeRole')}</p>
+            <p className="text-xs text-gray-500 mt-1">{t('auth.devoteeRoleDesc')}</p>
           </div>
         </button>
         <button onClick={() => onSelect('pandit')}
           className="flex flex-col items-center gap-3 p-6 rounded-2xl border-2 border-saffron-200 hover:border-saffron-500 hover:bg-saffron-50 transition-all">
           <span className="text-4xl">🪔</span>
           <div>
-            <p className="font-bold text-gray-800">Pandit / Purohit</p>
-            <p className="text-xs text-gray-500 mt-1">Offer spiritual services</p>
+            <p className="font-bold text-gray-800">{t('auth.panditRole')}</p>
+            <p className="text-xs text-gray-500 mt-1">{t('auth.panditRoleDesc')}</p>
           </div>
         </button>
       </div>
@@ -48,32 +50,33 @@ function RoleStep({ onSelect }) {
 
 // ─── Shared: basic info step ───────────────────────────────────
 function BasicInfoStep({ form, setForm, errors, onBack, onNext, loading, backLabel = 'Change role' }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-5">
       <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">
         ← {backLabel}
       </button>
       <div>
-        <label className="label">Full Name *</label>
-        <input className={`input ${errors.name ? 'border-red-400' : ''}`} placeholder="Your full name"
+        <label className="label">{t('auth.fullNameLabel')}</label>
+        <input className={`input ${errors.name ? 'border-red-400' : ''}`} placeholder={t('auth.fullNamePlaceholder')}
           value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
       </div>
       <div>
-        <label className="label">Email Address *</label>
+        <label className="label">{t('auth.emailLabel')}</label>
         <input type="email" className={`input ${errors.email ? 'border-red-400' : ''}`} placeholder="your@email.com"
           value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
       </div>
       <div>
-        <label className="label">Phone Number *</label>
-        <input className={`input ${errors.phone ? 'border-red-400' : ''}`} placeholder="10-digit mobile" maxLength={10}
+        <label className="label">{t('auth.phoneLabel')}</label>
+        <input className={`input ${errors.phone ? 'border-red-400' : ''}`} placeholder={t('auth.phonePlaceholder')} maxLength={10}
           value={form.phone}
           onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/, '') })} />
         {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
       </div>
       <button onClick={onNext} disabled={loading} className="btn-primary w-full py-3 text-base">
-        {loading ? 'Please wait...' : 'Continue →'}
+        {loading ? t('auth.pleaseWait') : t('auth.continueArrow')}
       </button>
     </div>
   );
@@ -81,19 +84,20 @@ function BasicInfoStep({ form, setForm, errors, onBack, onNext, loading, backLab
 
 // ─── Shared: OTP channel selection ───────────────────────────
 function OTPChannelStep({ form, onSend, loading, onBack }) {
+  const { t } = useTranslation();
   const [channel, setChannel] = useState('');
 
   return (
     <div className="space-y-5">
-      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← Back</button>
+      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← {t('common.back')}</button>
       <div>
-        <p className="text-gray-700 font-semibold mb-3">How would you like to receive your OTP?</p>
+        <p className="text-gray-700 font-semibold mb-3">{t('auth.howReceiveOtp')}</p>
         <div className="grid grid-cols-2 gap-3">
           <button type="button" onClick={() => setChannel('email')}
             className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${channel === 'email' ? 'border-saffron-500 bg-saffron-50' : 'border-gray-200 hover:border-saffron-300'}`}>
             <Mail size={22} className={channel === 'email' ? 'text-saffron-600' : 'text-gray-400'} />
             <div className="text-center">
-              <p className="font-semibold text-sm text-gray-800">Email OTP</p>
+              <p className="font-semibold text-sm text-gray-800">{t('auth.emailOtp')}</p>
               <p className="text-xs text-gray-500 mt-0.5 truncate max-w-[100px]">{form.email}</p>
             </div>
           </button>
@@ -101,16 +105,16 @@ function OTPChannelStep({ form, onSend, loading, onBack }) {
             className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${channel === 'whatsapp' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}>
             <MessageCircle size={22} className={channel === 'whatsapp' ? 'text-green-600' : 'text-gray-400'} />
             <div className="text-center">
-              <p className="font-semibold text-sm text-gray-800">WhatsApp OTP</p>
+              <p className="font-semibold text-sm text-gray-800">{t('auth.whatsappOtp')}</p>
               <p className="text-xs text-gray-500 mt-0.5">+91 {form.phone}</p>
             </div>
           </button>
         </div>
-        {!channel && <p className="text-xs text-gray-400 text-center mt-2">Select a delivery method to continue</p>}
+        {!channel && <p className="text-xs text-gray-400 text-center mt-2">{t('auth.selectMethodFirst')}</p>}
       </div>
       <button onClick={() => channel && onSend(channel)} disabled={!channel || loading}
         className="btn-primary w-full py-3">
-        {loading ? 'Sending OTP...' : 'Send OTP'}
+        {loading ? t('auth.sendingOtp') : t('auth.sendOtp')}
       </button>
     </div>
   );
@@ -118,6 +122,7 @@ function OTPChannelStep({ form, onSend, loading, onBack }) {
 
 // ─── Shared: OTP verification step ────────────────────────────
 function OTPVerifyStep({ form, channel, onVerify, onResend, loading, onBack }) {
+  const { t } = useTranslation();
   const [otp, setOtp] = useState('');
   const [resending, setResending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -125,8 +130,8 @@ function OTPVerifyStep({ form, channel, onVerify, onResend, loading, onBack }) {
 
   useEffect(() => {
     if (cooldown > 0) {
-      const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
-      return () => clearTimeout(t);
+      const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
+      return () => clearTimeout(timer);
     }
   }, [cooldown]);
 
@@ -148,8 +153,8 @@ function OTPVerifyStep({ form, channel, onVerify, onResend, loading, onBack }) {
     try {
       await onResend(channel);
       setCooldown(30);
-      toast.success('OTP resent!');
-    } catch { toast.error('Could not resend OTP'); }
+      toast.success(t('auth.otpResentToast'));
+    } catch { toast.error(t('auth.otpResendFailed')); }
     finally { setResending(false); }
   };
 
@@ -157,10 +162,10 @@ function OTPVerifyStep({ form, channel, onVerify, onResend, loading, onBack }) {
 
   return (
     <div className="space-y-5">
-      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← Back</button>
+      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← {t('common.back')}</button>
       <div className="text-center">
         {channel === 'email' ? <Mail size={32} className="mx-auto text-saffron-500 mb-2" /> : <MessageCircle size={32} className="mx-auto text-green-500 mb-2" />}
-        <p className="font-semibold text-gray-800">Enter the 6-digit OTP</p>
+        <p className="font-semibold text-gray-800">{t('auth.enterOtpTitle')}</p>
         <p className="text-sm text-gray-500 mt-1">Sent to <strong>{identifier}</strong></p>
       </div>
 
@@ -180,15 +185,15 @@ function OTPVerifyStep({ form, channel, onVerify, onResend, loading, onBack }) {
 
       <button onClick={() => otp.length === 6 && onVerify(otp)} disabled={otp.length < 6 || loading}
         className="btn-primary w-full py-3">
-        {loading ? 'Verifying...' : 'Verify OTP'}
+        {loading ? t('common.verifying') : t('auth.verifyOtp')}
       </button>
 
       <p className="text-center text-sm text-gray-500">
-        Didn't receive it?{' '}
+        {t('auth.didntReceive')}{' '}
         {cooldown > 0
-          ? <span className="text-gray-400">Resend in {cooldown}s</span>
+          ? <span className="text-gray-400">{t('auth.resendCooldown', { n: cooldown })}</span>
           : <button onClick={handleResend} disabled={resending} className="text-saffron-600 font-semibold hover:underline">
-              {resending ? 'Sending...' : 'Resend OTP'}
+              {resending ? t('common.sending') : t('auth.resendOtp')}
             </button>
         }
       </p>
@@ -220,6 +225,7 @@ function ConsentRow({ checked, onChange, label, hint }) {
 
 // ─── Devotee: password step ────────────────────────────────────
 function DevoteePasswordStep({ form, setForm, onSubmit, loading, onBack, initialReferralCode }) {
+  const { t } = useTranslation();
   const [password, setPassword]       = useState('');
   const [confirm, setConfirm]         = useState('');
   const [referralCode, setReferralCode] = useState(initialReferralCode || '');
@@ -230,9 +236,9 @@ function DevoteePasswordStep({ form, setForm, onSubmit, loading, onBack, initial
 
   const validate = () => {
     const e = {};
-    if (!password)            e.password = 'Password is required';
-    else if (password.length < 6) e.password = 'Min 6 characters';
-    if (password !== confirm) e.confirm  = 'Passwords do not match';
+    if (!password)            e.password = t('auth.passwordRequiredReg');
+    else if (password.length < 6) e.password = t('auth.min6Chars');
+    if (password !== confirm) e.confirm  = t('auth.passwordsNoMatch');
     return e;
   };
 
@@ -244,16 +250,16 @@ function DevoteePasswordStep({ form, setForm, onSubmit, loading, onBack, initial
 
   return (
     <div className="space-y-5">
-      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← Back</button>
+      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← {t('common.back')}</button>
       <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2 text-green-700">
         <CheckCircle size={18} className="shrink-0" />
-        <p className="text-sm font-medium">Phone verified! Set your password to complete registration.</p>
+        <p className="text-sm font-medium">{t('auth.phoneVerifiedMsg')}</p>
       </div>
       <div>
-        <label className="label">Password *</label>
+        <label className="label">{t('auth.passwordLabel')}</label>
         <div className="relative">
           <input type={show ? 'text' : 'password'} className={`input pr-10 ${errors.password ? 'border-red-400' : ''}`}
-            placeholder="Min 6 characters" value={password} onChange={(e) => { setPassword(e.target.value); setErrors({ ...errors, password: '' }); }} />
+            placeholder={t('auth.min6Chars')} value={password} onChange={(e) => { setPassword(e.target.value); setErrors({ ...errors, password: '' }); }} />
           <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
             {show ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
@@ -261,36 +267,35 @@ function DevoteePasswordStep({ form, setForm, onSubmit, loading, onBack, initial
         {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
       </div>
       <div>
-        <label className="label">Confirm Password *</label>
+        <label className="label">{t('auth.confirmPasswordLabel')}</label>
         <input type="password" className={`input ${errors.confirm ? 'border-red-400' : ''}`}
-          placeholder="Re-enter password" value={confirm} onChange={(e) => { setConfirm(e.target.value); setErrors({ ...errors, confirm: '' }); }} />
+          placeholder={t('auth.reenterPassword')} value={confirm} onChange={(e) => { setConfirm(e.target.value); setErrors({ ...errors, confirm: '' }); }} />
         {errors.confirm && <p className="text-red-500 text-xs mt-1">{errors.confirm}</p>}
       </div>
       <div>
-        <label className="label flex items-center gap-1.5"><Gift size={13} className="text-saffron-500" /> Referral Code (optional)</label>
-        <input className="input uppercase" placeholder="e.g. AMIT3C4D" maxLength={10}
+        <label className="label flex items-center gap-1.5"><Gift size={13} className="text-saffron-500" /> {t('auth.referralCode')}</label>
+        <input className="input uppercase" placeholder={t('auth.referralPlaceholder')} maxLength={10}
           value={referralCode} onChange={(e) => setReferralCode(e.target.value.toUpperCase())} />
       </div>
 
-      {/* WhatsApp communication consent — separate from OTP verification */}
       <div className="space-y-2 pt-1">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">WhatsApp Communication Preferences</p>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{t('auth.whatsappCommPrefs')}</p>
         <ConsentRow
           checked={serviceConsent}
           onChange={setServiceConsent}
-          label={SERVICE_CONSENT_TEXT}
-          hint="Required for booking, order and account updates."
+          label={t('auth.serviceConsentText')}
+          hint={t('auth.serviceConsentHint')}
         />
         <ConsentRow
           checked={marketingConsent}
           onChange={setMarketingConsent}
-          label={MARKETING_CONSENT_TEXT}
-          hint="Optional. You can change this anytime in Settings."
+          label={t('auth.marketingConsentText')}
+          hint={t('auth.marketingConsentHint')}
         />
       </div>
 
       <button onClick={handleSubmit} disabled={loading} className="btn-primary w-full py-3">
-        {loading ? 'Creating account...' : 'Create Account 🙏'}
+        {loading ? t('auth.creatingAccount') : t('auth.createAccountBtn')}
       </button>
     </div>
   );
@@ -304,6 +309,7 @@ const SPECIALIZATIONS = [
 const LANGUAGES = ['Hindi','Sanskrit','English','Bengali','Tamil','Telugu','Kannada','Marathi','Gujarati','Punjabi'];
 
 function PanditProfileStep({ basicForm, onSubmit, loading, onBack }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     pincode:'', state:'', city:'', district:'', address:'',
     govtIdType:'', govtIdNumber:'',
@@ -319,11 +325,11 @@ function PanditProfileStep({ basicForm, onSubmit, loading, onBack }) {
 
   const validate = () => {
     const e = {};
-    if (!form.govtIdType)                       e.govtIdType = 'Select ID type';
-    if (!govtIdFile)                            e.govtIdFile = 'Upload your government ID image';
-    if (!form.password)                         e.password   = 'Password is required';
-    else if (form.password.length < 6)          e.password   = 'Min 6 characters';
-    if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
+    if (!form.govtIdType)                       e.govtIdType = t('auth.selectIdType');
+    if (!govtIdFile)                            e.govtIdFile = t('auth.idUploadRequired');
+    if (!form.password)                         e.password   = t('auth.passwordRequiredReg');
+    else if (form.password.length < 6)          e.password   = t('auth.min6Chars');
+    if (form.password !== form.confirmPassword) e.confirmPassword = t('auth.passwordsNoMatch');
     return e;
   };
 
@@ -350,36 +356,35 @@ function PanditProfileStep({ basicForm, onSubmit, loading, onBack }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← Back</button>
+      <button type="button" onClick={onBack} className="text-sm text-saffron-600 hover:underline">← {t('common.back')}</button>
       <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2 text-green-700 text-sm">
         <CheckCircle size={16} className="shrink-0" />
-        OTP verified for <strong>{basicForm.email}</strong>. Complete your profile below.
+        {t('auth.otpVerifiedFor', { email: basicForm.email })}
       </div>
 
-      {/* Govt ID */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="label">Government ID Type *</label>
+          <label className="label">{t('auth.govtIdType')}</label>
           <select className={`input ${errors.govtIdType ? 'border-red-400' : ''}`} value={form.govtIdType} onChange={set('govtIdType')}>
-            <option value="">Select ID</option>
-            {[['aadhaar','Aadhaar'],['pan','PAN Card'],['voter','Voter ID'],['passport','Passport'],['driving','Driving Licence']].map(([v,l]) => (
+            <option value="">{t('auth.selectId')}</option>
+            {[['aadhaar', t('auth.idAadhaar')],['pan', t('auth.idPan')],['voter', t('auth.idVoter')],['passport', t('auth.idPassport')],['driving', t('auth.idDriving')]].map(([v,l]) => (
               <option key={v} value={v}>{l}</option>
             ))}
           </select>
           {errors.govtIdType && <p className="text-red-500 text-xs mt-1">{errors.govtIdType}</p>}
         </div>
         <div>
-          <label className="label">ID Number (optional)</label>
-          <input className="input" placeholder="e.g. XXXX XXXX XXXX" value={form.govtIdNumber} onChange={set('govtIdNumber')} />
+          <label className="label">{t('auth.idNumberOptional')}</label>
+          <input className="input" placeholder={t('auth.idNumberPlaceholder')} value={form.govtIdNumber} onChange={set('govtIdNumber')} />
         </div>
       </div>
 
       <div>
-        <label className="label">Upload Government ID Image *</label>
+        <label className="label">{t('auth.uploadGovtId')}</label>
         <label className={`flex items-center gap-3 border-2 border-dashed rounded-xl p-4 cursor-pointer transition-colors ${errors.govtIdFile ? 'border-red-400 bg-red-50' : 'border-saffron-200 hover:border-saffron-400 hover:bg-saffron-50'}`}>
           <Upload size={20} className="text-saffron-500 shrink-0" />
           <span className="text-sm text-gray-600 flex-1 truncate">
-            {govtIdFile ? govtIdFile.name : 'Click to upload JPG / PNG (max 5 MB)'}
+            {govtIdFile ? govtIdFile.name : t('auth.clickUploadId')}
           </span>
           {govtIdFile && (
             <button type="button" onClick={(e) => { e.preventDefault(); setGovtIdFile(null); }} className="text-gray-400 hover:text-red-500">
@@ -393,40 +398,40 @@ function PanditProfileStep({ basicForm, onSubmit, loading, onBack }) {
       </div>
 
       <div>
-        <label className="label">Pincode</label>
+        <label className="label">{t('common.fields.pincode')}</label>
         <PincodeInput value={form.pincode} onChange={(v) => setForm({ ...form, pincode: v })}
           onFill={({ state, city, district }) => setForm((p) => ({ ...p, state, city, district }))} />
       </div>
 
       {form.state && (
         <div className="grid grid-cols-3 gap-3">
-          {[['state','State'],['city','City'],['district','District']].map(([f,l]) => (
+          {[[['state',t('common.fields.state')],['city',t('common.fields.city')],['district',t('common.fields.district')]]].map((fields) => fields.map(([f,l]) => (
             <div key={f}>
               <label className="label text-xs">{l}</label>
               <input className="input bg-saffron-50 text-sm" value={form[f]} onChange={set(f)} />
             </div>
-          ))}
+          )))}
         </div>
       )}
 
       <div>
-        <label className="label">Address</label>
-        <textarea className="input min-h-[60px] resize-none" placeholder="Your full address" value={form.address} onChange={set('address')} />
+        <label className="label">{t('common.fields.address')}</label>
+        <textarea className="input min-h-[60px] resize-none" placeholder={t('auth.addressPlaceholderFull')} value={form.address} onChange={set('address')} />
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2">
-          <label className="label">Bio (optional)</label>
-          <textarea className="input min-h-[60px] resize-none text-sm" placeholder="Briefly describe your background..." value={form.bio} onChange={set('bio')} />
+          <label className="label">{t('auth.bioOptional')}</label>
+          <textarea className="input min-h-[60px] resize-none text-sm" placeholder={t('auth.bioPlaceholder')} value={form.bio} onChange={set('bio')} />
         </div>
         <div>
-          <label className="label">Experience (yrs)</label>
-          <input type="number" min="0" className="input" placeholder="e.g. 10" value={form.experience} onChange={set('experience')} />
+          <label className="label">{t('auth.experienceYears')}</label>
+          <input type="number" min="0" className="input" placeholder={t('auth.experiencePlaceholder')} value={form.experience} onChange={set('experience')} />
         </div>
       </div>
 
       <div>
-        <label className="label">Specializations</label>
+        <label className="label">{t('auth.specializations')}</label>
         <div className="flex flex-wrap gap-2 mt-1">
           {SPECIALIZATIONS.map((s) => (
             <button key={s} type="button" onClick={() => toggleArr('specializations', s)}
@@ -438,7 +443,7 @@ function PanditProfileStep({ basicForm, onSubmit, loading, onBack }) {
       </div>
 
       <div>
-        <label className="label">Languages</label>
+        <label className="label">{t('auth.languages')}</label>
         <div className="flex flex-wrap gap-2 mt-1">
           {LANGUAGES.map((l) => (
             <button key={l} type="button" onClick={() => toggleArr('languages', l)}
@@ -451,10 +456,10 @@ function PanditProfileStep({ basicForm, onSubmit, loading, onBack }) {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="label">Password *</label>
+          <label className="label">{t('auth.passwordLabel')}</label>
           <div className="relative">
             <input type={show ? 'text' : 'password'} className={`input pr-10 ${errors.password ? 'border-red-400' : ''}`}
-              placeholder="Min 6 characters" value={form.password} onChange={set('password')} />
+              placeholder={t('auth.min6Chars')} value={form.password} onChange={set('password')} />
             <button type="button" onClick={() => setShow(!show)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
               {show ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
@@ -462,19 +467,19 @@ function PanditProfileStep({ basicForm, onSubmit, loading, onBack }) {
           {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
         </div>
         <div>
-          <label className="label">Confirm Password *</label>
+          <label className="label">{t('auth.confirmPasswordLabel')}</label>
           <input type="password" className={`input ${errors.confirmPassword ? 'border-red-400' : ''}`}
-            placeholder="Re-enter password" value={form.confirmPassword} onChange={set('confirmPassword')} />
+            placeholder={t('auth.reenterPassword')} value={form.confirmPassword} onChange={set('confirmPassword')} />
           {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>}
         </div>
       </div>
 
       <p className="text-xs text-gray-500 bg-saffron-50 rounded-xl p-3 border border-saffron-100">
-        Your application will be reviewed by the Zutsav team. You'll be notified once approved.
+        {t('auth.applicationNote')}
       </p>
 
       <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-        {loading ? 'Submitting application...' : 'Submit Application 🪔'}
+        {loading ? t('auth.submittingApplication') : t('auth.submitApplication')}
       </button>
     </form>
   );
@@ -482,37 +487,39 @@ function PanditProfileStep({ basicForm, onSubmit, loading, onBack }) {
 
 // ─── Success screens ──────────────────────────────────────────
 function DevoteeSuccess({ name }) {
+  const { t } = useTranslation();
   return (
     <div className="text-center space-y-4 py-4">
       <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto">
         <CheckCircle size={40} className="text-green-500" />
       </div>
-      <h2 className="text-xl font-bold text-gray-800">Welcome, {name}! 🙏</h2>
-      <p className="text-gray-600 text-sm">Your account has been created. Start your spiritual journey now.</p>
+      <h2 className="text-xl font-bold text-gray-800">{t('auth.devoteeSuccessTitle', { name })}</h2>
+      <p className="text-gray-600 text-sm">{t('auth.devoteeSuccessDesc')}</p>
     </div>
   );
 }
 
 function PanditAccountCreated() {
+  const { t } = useTranslation();
   return (
     <div className="text-center space-y-4 py-4">
       <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto">
         <CheckCircle size={40} className="text-green-500" />
       </div>
-      <h2 className="text-xl font-bold text-gray-800">Account Created! 🙏</h2>
+      <h2 className="text-xl font-bold text-gray-800">{t('auth.accountCreatedTitle')}</h2>
       <p className="text-gray-600 text-sm leading-relaxed">
-        Welcome to Zutsav! You now have access to your dashboard.
+        {t('auth.panditAccessDesc')}
       </p>
       <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-left space-y-2">
-        <p className="text-sm font-semibold text-amber-800">Complete these steps to start receiving bookings:</p>
+        <p className="text-sm font-semibold text-amber-800">{t('auth.completeStepsTitle')}</p>
         <ul className="text-sm text-gray-600 space-y-1">
-          <li>📋 Complete your profile in the dashboard</li>
-          <li>📄 Upload your KYC documents</li>
-          <li>⏳ Admin reviews and approves your KYC</li>
-          <li>🪔 Start accepting bookings</li>
+          <li>{t('auth.onboardingStepProfile')}</li>
+          <li>{t('auth.onboardingStepKyc')}</li>
+          <li>{t('auth.onboardingStepReview')}</li>
+          <li>{t('auth.onboardingStepAccept')}</li>
         </ul>
       </div>
-      <p className="text-xs text-gray-400">Redirecting to your dashboard…</p>
+      <p className="text-xs text-gray-400">{t('auth.redirectingDashboard')}</p>
     </div>
   );
 }
@@ -521,11 +528,10 @@ function PanditAccountCreated() {
 export default function Register() {
   const [searchParams] = useSearchParams();
   const initialRef     = searchParams.get('ref') || '';
-  // Same ?next= convention as Login.jsx — lets a mid-checkout guest who
-  // chooses "Register" instead of "Login" resume exactly where they left off.
   const next            = searchParams.get('next') || '/';
   const navigate       = useNavigate();
   const { login }      = useAuth();
+  const { t }          = useTranslation();
 
   const { logoUrl, platformName } = useSettings();
   const [role, setRole]     = useState(null);                // 'devotee' | 'pandit'
@@ -538,11 +544,11 @@ export default function Register() {
 
   const validateBasic = () => {
     const e = {};
-    if (!basicForm.name)                              e.name  = 'Name is required';
-    if (!basicForm.email)                             e.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(basicForm.email))  e.email = 'Invalid email';
-    if (!basicForm.phone)                             e.phone = 'Phone is required';
-    else if (!/^[6-9]\d{9}$/.test(basicForm.phone))  e.phone = 'Enter a valid 10-digit Indian mobile number';
+    if (!basicForm.name)                              e.name  = t('auth.nameRequired');
+    if (!basicForm.email)                             e.email = t('auth.emailRequired');
+    else if (!/\S+@\S+\.\S+/.test(basicForm.email))  e.email = t('auth.invalidEmail');
+    if (!basicForm.phone)                             e.phone = t('auth.phoneRequired');
+    else if (!/^[6-9]\d{9}$/.test(basicForm.phone))  e.phone = t('auth.invalidPhone');
     return e;
   };
 
@@ -558,10 +564,10 @@ export default function Register() {
     setChannel(ch);
     try {
       await API.post('/auth/send-otp', { ...basicForm, channel: ch });
-      toast.success(`OTP sent to your ${ch === 'email' ? 'email' : 'WhatsApp'}!`);
+      toast.success(t('auth.otpSentToast', { channel: ch === 'email' ? 'email' : 'WhatsApp' }));
       setStep('otp');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to send OTP');
+      toast.error(err.response?.data?.message || t('auth.otpSendFailed'));
     } finally {
       setLoading(false);
     }
@@ -572,10 +578,10 @@ export default function Register() {
     const identifier = channel === 'email' ? basicForm.email : basicForm.phone;
     try {
       await API.post('/auth/verify-otp', { identifier, otp, purpose: 'registration' });
-      toast.success('OTP verified!');
-      setStep('password'); // both devotee and pandit go to password step
+      toast.success(t('auth.otpVerifiedToast'));
+      setStep('password');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Invalid OTP');
+      toast.error(err.response?.data?.message || t('auth.invalidOtp'));
     } finally {
       setLoading(false);
     }
@@ -606,10 +612,10 @@ export default function Register() {
       localStorage.setItem('zutsav_user',  JSON.stringify(data.user));
       setSuccessName(data.user.name);
       setStep('done');
-      toast.success(`Welcome to Zutsav, ${data.user.name}!`);
+      toast.success(t('auth.welcomeToast', { name: data.user.name }));
       setTimeout(() => navigate(next, { replace: true }), 1500);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Registration failed');
+      toast.error(err.response?.data?.message || t('auth.registrationFailed'));
     } finally {
       setLoading(false);
     }
@@ -635,22 +641,22 @@ export default function Register() {
       localStorage.setItem('zutsav_token', data.token);
       localStorage.setItem('zutsav_user',  JSON.stringify(data.user));
       setStep('done');
-      toast.success('Account created! Complete your profile to start receiving bookings.');
+      toast.success(t('auth.panditCreatedToast'));
       setTimeout(() => navigate('/pandit/dashboard'), 1800);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Registration failed');
+      toast.error(err.response?.data?.message || t('auth.registrationFailed'));
     } finally {
       setLoading(false);
     }
   };
 
   const stepTitle = {
-    role:     'Create Account',
-    info:     role === 'devotee' ? 'Devotee Registration' : 'Pandit Registration',
-    channel:  'Verify Your Identity',
-    otp:      'Enter OTP',
-    password: 'Set Your Password',
-    done:     role === 'devotee' ? 'Account Created!' : 'Welcome to Zutsav!',
+    role:     t('auth.stepCreateAccount'),
+    info:     role === 'devotee' ? t('auth.stepDevoteeRegistration') : t('auth.stepPanditRegistration'),
+    channel:  t('auth.stepVerifyIdentity'),
+    otp:      t('auth.stepEnterOtp'),
+    password: t('auth.stepSetPassword'),
+    done:     role === 'devotee' ? t('auth.accountCreatedTitle') : 'Welcome to Zutsav!',
   };
 
   return (
@@ -664,7 +670,7 @@ export default function Register() {
             }
           </Link>
           <h1 className="text-2xl font-bold text-gray-800">{stepTitle[step] || 'Register'}</h1>
-          {step === 'role' && <p className="text-gray-500 mt-1 text-sm">Begin your spiritual journey</p>}
+          {step === 'role' && <p className="text-gray-500 mt-1 text-sm">{t('auth.registerSubtitle')}</p>}
         </div>
 
         <div className={`bg-white rounded-3xl shadow-xl border border-saffron-100 ${step === 'profile' ? 'p-6' : 'p-8'}`}>
@@ -731,7 +737,7 @@ export default function Register() {
           {!['done'].includes(step) && (
             <p className="text-center text-sm text-gray-500 mt-6">
               Already have an account?{' '}
-              <Link to="/login" className="text-saffron-600 font-semibold hover:underline">Sign in</Link>
+              <Link to="/login" className="text-saffron-600 font-semibold hover:underline">{t('auth.signIn')}</Link>
             </p>
           )}
         </div>

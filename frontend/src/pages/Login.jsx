@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertTriangle, RotateCcw, LogOut } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { useSettings } from '../context/SettingsContext';
 import API from '../api/axios';
 import { isAdminRole } from '../utils/roleUtils';
 
 export default function Login() {
+  const { t } = useTranslation();
   const { login, logout, loading } = useAuth();
   const { logoUrl, platformName } = useSettings();
   const navigate = useNavigate();
@@ -25,8 +27,8 @@ export default function Login() {
 
   const validate = () => {
     const e = {};
-    if (!form.emailOrPhone) e.emailOrPhone = 'Email or phone is required';
-    if (!form.password)      e.password     = 'Password is required';
+    if (!form.emailOrPhone) e.emailOrPhone = t('auth.emailOrPhoneRequired');
+    if (!form.password)      e.password     = t('auth.passwordRequired');
     return e;
   };
 
@@ -44,12 +46,12 @@ export default function Login() {
         return;
       }
 
-      toast.success(`Welcome back, ${data.user.name}! 🙏`);
+      toast.success(t('auth.welcomeBackToast', { name: data.user.name }));
       if (isAdminRole(data.user.role)) return navigate('/admin', { replace: true });
       if (data.user.role === 'pandit') return navigate('/pandit/dashboard', { replace: true });
       navigate(from, { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Login failed');
+      toast.error(err.response?.data?.message || t('auth.loginFailed'));
     }
   };
 
@@ -57,14 +59,14 @@ export default function Login() {
     setRestoring(true);
     try {
       await API.post('/auth/delete-account/cancel');
-      toast.success('Account restored! Welcome back 🙏');
+      toast.success(t('auth.restoredToast'));
       setDeletionData(null);
       const data = deletionData;
       if (isAdminRole(data.user.role)) return navigate('/admin', { replace: true });
       if (data.user.role === 'pandit') return navigate('/pandit/dashboard', { replace: true });
       navigate(from, { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to restore account');
+      toast.error(err.response?.data?.message || t('auth.restoreFailed'));
     } finally {
       setRestoring(false);
     }
@@ -73,7 +75,7 @@ export default function Login() {
   const handleContinueLogout = () => {
     logout();
     setDeletionData(null);
-    toast('You have been logged out.', { icon: '👋' });
+    toast(t('auth.loggedOutToast'), { icon: '👋' });
   };
 
   return (
@@ -87,18 +89,18 @@ export default function Login() {
               : <span className="font-serif text-3xl font-bold text-maroon-600">{platformName || 'Zutsav'}</span>
             }
           </Link>
-          <h1 className="text-2xl font-bold text-gray-800">Welcome Back</h1>
-          <p className="text-gray-500 mt-1 text-sm">Sign in to your spiritual journey</p>
+          <h1 className="text-2xl font-bold text-gray-800">{t('auth.welcomeBack')}</h1>
+          <p className="text-gray-500 mt-1 text-sm">{t('auth.signInSubtitle')}</p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-xl p-8 border border-saffron-100">
           <form onSubmit={handleSubmit} className="space-y-5">
 
             <div>
-              <label className="label">Email or Phone Number</label>
+              <label className="label">{t('auth.emailOrPhone')}</label>
               <input
                 className={`input ${errors.emailOrPhone ? 'border-red-400' : ''}`}
-                placeholder="Enter email or 10-digit mobile"
+                placeholder={t('auth.emailOrPhonePlaceholder')}
                 value={form.emailOrPhone}
                 onChange={(e) => { setForm({ ...form, emailOrPhone: e.target.value }); setErrors({ ...errors, emailOrPhone: '' }); }}
               />
@@ -106,12 +108,12 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="label">Password</label>
+              <label className="label">{t('auth.password')}</label>
               <div className="relative">
                 <input
                   type={show ? 'text' : 'password'}
                   className={`input pr-10 ${errors.password ? 'border-red-400' : ''}`}
-                  placeholder="Enter your password"
+                  placeholder={t('auth.passwordPlaceholder')}
                   value={form.password}
                   onChange={(e) => { setForm({ ...form, password: e.target.value }); setErrors({ ...errors, password: '' }); }}
                 />
@@ -131,21 +133,21 @@ export default function Login() {
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="w-4 h-4 rounded border-gray-300 text-saffron-600 focus:ring-saffron-500"
                 />
-                Remember Me
+                {t('auth.rememberMe')}
               </label>
               <Link to="/forgot-password" className="text-sm text-saffron-600 font-semibold hover:underline">
-                Forgot Password?
+                {t('auth.forgotPassword')}
               </Link>
             </div>
 
             <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-base">
-              {loading ? 'Signing in...' : 'Sign In 🙏'}
+              {loading ? t('auth.signingIn') : t('auth.signInBtn')}
             </button>
           </form>
 
           <p className="text-center text-sm text-gray-500 mt-6">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-saffron-600 font-semibold hover:underline">Register here</Link>
+            {t('auth.noAccountQuestion')}{' '}
+            <Link to="/register" className="text-saffron-600 font-semibold hover:underline">{t('auth.registerHere')}</Link>
           </p>
         </div>
       </div>
@@ -157,30 +159,28 @@ export default function Login() {
             <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center mb-4">
               <AlertTriangle size={22} className="text-amber-600" />
             </div>
-            <h3 className="font-bold text-gray-800 text-lg mb-2">Account Scheduled for Deletion</h3>
+            <h3 className="font-bold text-gray-800 text-lg mb-2">{t('auth.deletionTitle')}</h3>
             <p className="text-sm text-gray-500 mb-1">
-              Welcome back, <strong>{deletionData.user.name}</strong>.
+              {t('auth.deletionWelcome', { name: deletionData.user.name })}
             </p>
             <p className="text-sm text-gray-500 mb-4">
-              Your account was scheduled for permanent deletion on{' '}
-              <strong className="text-red-600">
-                {deletionData.scheduledDeletionDate
+              {t('auth.scheduledDeletionOn', {
+                date: deletionData.scheduledDeletionDate
                   ? new Date(deletionData.scheduledDeletionDate).toLocaleDateString('en-IN')
-                  : '—'}
-              </strong>.
-              Would you like to restore your account?
+                  : '—'
+              })}
             </p>
             <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-xs text-green-700 mb-5">
-              Restoring will cancel the deletion request. No data was deleted.
+              {t('auth.restoreNote')}
             </div>
             <div className="flex gap-3">
               <button onClick={handleContinueLogout} disabled={restoring}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors">
-                <LogOut size={14} /> Continue Logout
+                <LogOut size={14} /> {t('auth.continueLogout')}
               </button>
               <button onClick={handleRestoreAccount} disabled={restoring}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition-colors">
-                <RotateCcw size={14} /> {restoring ? 'Restoring…' : 'Restore Account'}
+                <RotateCcw size={14} /> {restoring ? t('auth.restoring') : t('auth.restoreAccount')}
               </button>
             </div>
           </div>

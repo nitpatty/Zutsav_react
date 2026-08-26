@@ -15,6 +15,15 @@ const vendors = {
     apiUrl: 'https://api.groq.com/openai/v1/chat/completions',
     defaultModel: 'llama-3.3-70b-versatile',
   },
+  sarvam: {
+    // Sarvam AI — Indian-language translation (primary content-translation
+    // provider; Groq remains the temporary fallback). See
+    // services/translationProviders/sarvam.provider.js.
+    translateUrl: 'https://api.sarvam.ai/translate',
+    defaultModel: 'sarvam-translate:v1',
+    timeoutMs: 15000,   // per HTTP request — well under cleanupJobs' 2-min stale-lock sweep
+    maxInputChars: 1900, // API hard limit is 2,000; margin keeps multi-byte/edge cases safe
+  },
   freeastroapi: {
     panchangUrl: 'https://api.freeastroapi.com/api/v2/vedic/panchang',
   },

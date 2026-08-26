@@ -6,6 +6,7 @@ const livestreamSchema = new mongoose.Schema({
   description: { type: String },
   youtubeUrl:  { type: String, required: true },
   isActive:    { type: Boolean, default: true },
+  translationVersion: { type: Number, default: 1 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Livestream', livestreamSchema);

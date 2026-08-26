@@ -1,4 +1,5 @@
 const Notification = require('../models/Notification');
+const translationService = require('../services/translationService');
 
 // GET /api/notifications
 exports.getNotifications = async (req, res, next) => {
@@ -7,10 +8,17 @@ exports.getNotifications = async (req, res, next) => {
     const query = { userId: req.user._id };
     if (unreadOnly === 'true') query.isRead = false;
 
-    const notifications = await Notification.find(query)
+    let notifications = await Notification.find(query)
       .sort({ createdAt: -1 })
       .limit(+limit)
-      .skip((+page - 1) * +limit);
+      .skip((+page - 1) * +limit)
+      .lean();
+
+    const lang = (req.query.lang || 'en').toLowerCase();
+    if (lang !== 'en' && notifications.length) {
+      const map = await translationService.getTranslationsForDocs('notification', notifications, lang);
+      notifications = notifications.map((n) => (map[String(n._id)] ? { ...n, ...map[String(n._id)], translationLanguage: lang } : n));
+    }
 
     const total    = await Notification.countDocuments(query);
     const unread   = await Notification.countDocuments({ userId: req.user._id, isRead: false });

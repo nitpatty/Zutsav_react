@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Search, Check, ChevronDown, Globe2, User, Shield, Bell, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useTranslation } from 'react-i18next';
 
 // Single source of truth on the frontend for the searchable dropdown — kept
 // in sync with backend/src/config/languages.config.js. Adding a language:
@@ -23,6 +24,7 @@ const SUPPORTED_LANGUAGES = [
 
 function LanguageDropdown() {
   const { lang, setLang } = useLanguage();
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef(null);
@@ -63,14 +65,14 @@ function LanguageDropdown() {
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search language…"
+                placeholder={t('settings.searchLanguage')}
                 className="bg-transparent outline-none text-sm w-full"
               />
             </div>
           </div>
           <div className="max-h-64 overflow-y-auto py-1">
             {filtered.length === 0 && (
-              <div className="px-4 py-3 text-sm text-gray-400">No language matches "{query}"</div>
+              <div className="px-4 py-3 text-sm text-gray-400">{t('settings.noLanguageMatch', { query })}</div>
             )}
             {filtered.map((l) => (
               <button
@@ -94,36 +96,38 @@ function LanguageDropdown() {
 }
 
 function FuturePreferenceRow({ icon: Icon, label }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border border-gray-100 bg-gray-50 opacity-60">
       <span className="flex items-center gap-2 text-gray-500">
         <Icon size={16} /> {label}
       </span>
-      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Future</span>
+      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{t('settings.futureBadge')}</span>
     </div>
   );
 }
 
 const TABS = [
-  { key: 'profile',      label: 'Profile',      icon: User },
-  { key: 'security',     label: 'Security',     icon: Shield },
-  { key: 'notifications',label: 'Notifications',icon: Bell },
-  { key: 'preferences',  label: 'Preferences',  icon: Sparkles },
+  { key: 'profile',      labelKey: 'settings.tabProfile',      icon: User },
+  { key: 'security',     labelKey: 'settings.tabSecurity',     icon: Shield },
+  { key: 'notifications',labelKey: 'settings.tabNotifications',icon: Bell },
+  { key: 'preferences',  labelKey: 'settings.tabPreferences',  icon: Sparkles },
 ];
 
 export default function Settings() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [tab, setTab] = useState('preferences');
 
   return (
     <div className="min-h-screen bg-spiritual-light py-10">
       <div className="max-w-3xl mx-auto px-4 space-y-6">
-        <h1 className="text-2xl font-bold text-maroon-700">Settings</h1>
+        <h1 className="text-2xl font-bold text-maroon-700">{t('settings.title')}</h1>
 
         {/* Tab switcher — role-independent: every role lands on this same
             Settings page/structure, per the global language preference spec. */}
         <div className="flex flex-wrap gap-2">
-          {TABS.map(({ key, label, icon: Icon }) => (
+          {TABS.map(({ key, labelKey, icon: Icon }) => (
             <button
               key={key}
               type="button"
@@ -132,32 +136,32 @@ export default function Settings() {
                 tab === key ? 'bg-maroon-700 text-white' : 'bg-white text-gray-600 border border-saffron-100 hover:border-saffron-300'
               }`}
             >
-              <Icon size={14} /> {label}
+              <Icon size={14} /> {t(labelKey)}
             </button>
           ))}
         </div>
 
         {tab === 'profile' && (
           <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100">
-            <h2 className="font-semibold text-gray-700 mb-2">Profile</h2>
-            <p className="text-sm text-gray-500 mb-4">Manage your name, photo, and contact details.</p>
-            <Link to="/profile" className="btn-secondary text-sm inline-block">Go to My Profile</Link>
+            <h2 className="font-semibold text-gray-700 mb-2">{t('settings.profileHeading')}</h2>
+            <p className="text-sm text-gray-500 mb-4">{t('settings.profileDesc')}</p>
+            <Link to="/profile" className="btn-secondary text-sm inline-block">{t('settings.goToProfile')}</Link>
           </div>
         )}
 
         {tab === 'security' && (
           <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100">
-            <h2 className="font-semibold text-gray-700 mb-2">Security</h2>
-            <p className="text-sm text-gray-500 mb-4">Password and account deletion are managed from My Profile.</p>
-            <Link to="/profile" className="btn-secondary text-sm inline-block">Go to My Profile</Link>
+            <h2 className="font-semibold text-gray-700 mb-2">{t('settings.securityHeading')}</h2>
+            <p className="text-sm text-gray-500 mb-4">{t('settings.securityDesc')}</p>
+            <Link to="/profile" className="btn-secondary text-sm inline-block">{t('settings.goToProfile')}</Link>
           </div>
         )}
 
         {tab === 'notifications' && (
           <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100">
-            <h2 className="font-semibold text-gray-700 mb-2">Notifications</h2>
-            <p className="text-sm text-gray-500 mb-4">View and manage your notifications.</p>
-            <Link to="/notifications" className="btn-secondary text-sm inline-block">Go to Notifications</Link>
+            <h2 className="font-semibold text-gray-700 mb-2">{t('settings.notificationsHeading')}</h2>
+            <p className="text-sm text-gray-500 mb-4">{t('settings.notificationsDesc')}</p>
+            <Link to="/notifications" className="btn-secondary text-sm inline-block">{t('settings.goToNotifications')}</Link>
           </div>
         )}
 
@@ -165,20 +169,20 @@ export default function Settings() {
           <div className="bg-white rounded-3xl shadow-md p-6 border border-saffron-100 space-y-5">
             <div>
               <h2 className="font-semibold text-gray-700 mb-1 flex items-center gap-2">
-                <Globe2 size={16} className="text-maroon-600" /> App Language
+                <Globe2 size={16} className="text-maroon-600" /> {t('settings.appLanguage')}
               </h2>
               <p className="text-sm text-gray-500 mb-3">
-                Applies across the entire platform — every page, dashboard, and role.
-                {user ? ' Saved to your account and remembered on every device.' : ' Saved on this device until you sign in.'}
+                {t('settings.languageScope')}
+                {user ? t('settings.savedToAccount') : t('settings.savedToDevice')}
               </p>
               <LanguageDropdown />
             </div>
 
             <div className="pt-2 border-t border-gray-100 space-y-2">
-              <FuturePreferenceRow icon={Sparkles} label="Currency" />
-              <FuturePreferenceRow icon={Sparkles} label="Time Zone" />
-              <FuturePreferenceRow icon={Sparkles} label="Date Format" />
-              <FuturePreferenceRow icon={Sparkles} label="Theme" />
+              <FuturePreferenceRow icon={Sparkles} label={t('settings.currency')} />
+              <FuturePreferenceRow icon={Sparkles} label={t('settings.timeZone')} />
+              <FuturePreferenceRow icon={Sparkles} label={t('settings.dateFormat')} />
+              <FuturePreferenceRow icon={Sparkles} label={t('settings.themePref')} />
             </div>
           </div>
         )}

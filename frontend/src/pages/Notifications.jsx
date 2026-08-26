@@ -4,35 +4,37 @@ import {
   Bell, CheckCheck, Trash2, BookOpen, Package, Star,
   Users, ShoppingBag, AlertCircle, Inbox,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useNotifications } from '../context/NotificationContext';
 
 const TYPE_CONFIG = {
-  booking_created:   { icon: BookOpen,    bg: 'rgba(59,130,246,0.12)',   color: '#3B82F6', label: 'Booking'    },
-  pandit_assigned:   { icon: Users,       bg: 'rgba(16,185,129,0.12)',   color: '#10B981', label: 'Assignment' },
-  new_booking:       { icon: BookOpen,    bg: 'rgba(212,96,42,0.12)',    color: '#D4602A', label: 'New Booking'},
-  booking_completed: { icon: CheckCheck,  bg: 'rgba(16,185,129,0.12)',   color: '#10B981', label: 'Completed'  },
-  pandit_approved:   { icon: Star,        bg: 'rgba(201,168,76,0.15)',   color: '#C9A84C', label: 'Approved'   },
-  pandit_registered: { icon: Users,       bg: 'rgba(139,92,246,0.12)',   color: '#8B5CF6', label: 'Pandit'     },
-  user_registered:   { icon: Users,       bg: 'rgba(212,96,42,0.12)',    color: '#D4602A', label: 'Welcome'    },
-  order_placed:      { icon: ShoppingBag, bg: 'rgba(99,102,241,0.12)',   color: '#6366F1', label: 'Order'      },
-  order_delivered:   { icon: Package,     bg: 'rgba(16,185,129,0.12)',   color: '#10B981', label: 'Delivered'  },
-  otp_sent:          { icon: AlertCircle, bg: 'rgba(245,158,11,0.12)',   color: '#F59E0B', label: 'OTP'        },
+  booking_created:   { icon: BookOpen,    bg: 'rgba(59,130,246,0.12)',   color: '#3B82F6', labelKey: 'notificationsPage.typeBooking'    },
+  pandit_assigned:   { icon: Users,       bg: 'rgba(16,185,129,0.12)',   color: '#10B981', labelKey: 'notificationsPage.typeAssignment' },
+  new_booking:       { icon: BookOpen,    bg: 'rgba(212,96,42,0.12)',    color: '#D4602A', labelKey: 'notificationsPage.typeNewBooking'},
+  booking_completed: { icon: CheckCheck,  bg: 'rgba(16,185,129,0.12)',   color: '#10B981', labelKey: 'notificationsPage.typeCompleted'  },
+  pandit_approved:   { icon: Star,        bg: 'rgba(201,168,76,0.15)',   color: '#C9A84C', labelKey: 'notificationsPage.typeApproved'   },
+  pandit_registered: { icon: Users,       bg: 'rgba(139,92,246,0.12)',   color: '#8B5CF6', labelKey: 'notificationsPage.typePandit'     },
+  user_registered:   { icon: Users,       bg: 'rgba(212,96,42,0.12)',    color: '#D4602A', labelKey: 'notificationsPage.typeWelcome'    },
+  order_placed:      { icon: ShoppingBag, bg: 'rgba(99,102,241,0.12)',   color: '#6366F1', labelKey: 'notificationsPage.typeOrder'      },
+  order_delivered:   { icon: Package,     bg: 'rgba(16,185,129,0.12)',   color: '#10B981', labelKey: 'notificationsPage.typeDelivered'  },
+  otp_sent:          { icon: AlertCircle, bg: 'rgba(245,158,11,0.12)',   color: '#F59E0B', labelKey: 'notificationsPage.typeOtp'        },
 };
 
-function timeAgo(dateStr) {
+function timeAgo(dateStr, t) {
   const diff = Date.now() - new Date(dateStr).getTime();
   const m = Math.floor(diff / 60000);
-  if (m < 1)  return 'Just now';
-  if (m < 60) return `${m}m ago`;
+  if (m < 1)  return t('notificationsPage.justNow');
+  if (m < 60) return t('notificationsPage.minsAgo', { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
+  if (h < 24) return t('notificationsPage.hoursAgo', { n: h });
   const d = Math.floor(h / 24);
-  if (d < 7)  return `${d}d ago`;
+  if (d < 7)  return t('notificationsPage.daysAgo', { n: d });
   return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 function NotificationItem({ n, onRead, onDelete }) {
-  const cfg  = TYPE_CONFIG[n.type] || { icon: Bell, bg: 'rgba(107,114,128,0.12)', color: '#6B7280', label: 'Info' };
+  const { t } = useTranslation();
+  const cfg  = TYPE_CONFIG[n.type] || { icon: Bell, bg: 'rgba(107,114,128,0.12)', color: '#6B7280', labelKey: 'notificationsPage.typeInfo' };
   const Icon = cfg.icon;
 
   return (
@@ -99,10 +101,10 @@ function NotificationItem({ n, onRead, onDelete }) {
             className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
             style={{ background: cfg.bg, color: cfg.color }}
           >
-            {cfg.label}
+            {t(cfg.labelKey)}
           </span>
           <span className="text-xs" style={{ color: 'var(--t-muted)' }}>
-            {timeAgo(n.createdAt)}
+            {timeAgo(n.createdAt, t)}
           </span>
         </div>
       </div>
@@ -111,6 +113,7 @@ function NotificationItem({ n, onRead, onDelete }) {
 }
 
 export default function Notifications() {
+  const { t } = useTranslation();
   const {
     notifications, unreadCount, loading,
     fetchNotifications, markRead, markAllRead, deleteNotification, clearAll,
@@ -146,7 +149,7 @@ export default function Notifications() {
         <div>
           <h1 className="page-title flex items-center gap-2">
             <Bell size={20} style={{ color: 'var(--t-primary)' }} />
-            Notifications
+            {t('notificationsPage.title')}
             {unreadCount > 0 && (
               <motion.span
                 initial={{ scale: 0 }}
@@ -158,7 +161,7 @@ export default function Notifications() {
               </motion.span>
             )}
           </h1>
-          <p className="page-subtitle">Stay updated on bookings, orders & more</p>
+          <p className="page-subtitle">{t('notificationsPage.subtitle')}</p>
         </div>
 
         {/* Actions */}
@@ -174,16 +177,16 @@ export default function Notifications() {
               }}
             >
               <CheckCheck size={12} />
-              Mark all read
+              {t('notificationsPage.markAllRead')}
             </button>
           )}
           {notifications.length > 0 && (
             <button
-              onClick={() => { if (window.confirm('Clear all notifications?')) clearAll(); }}
+              onClick={() => { if (window.confirm(t('notificationsPage.clearAllConfirm'))) clearAll(); }}
               className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border transition-all duration-150 text-red-500 border-red-200 hover:bg-red-50"
             >
               <Trash2 size={12} />
-              Clear all
+              {t('notificationsPage.clearAll')}
             </button>
           )}
         </div>
@@ -195,8 +198,8 @@ export default function Notifications() {
         style={{ background: 'var(--t-surface)' }}
       >
         {[
-          { key: 'all',    label: `All (${notifications.length})` },
-          { key: 'unread', label: `Unread (${unreadCount})` },
+          { key: 'all',    label: `${t('notificationsPage.filterAll')} (${notifications.length})` },
+          { key: 'unread', label: `${t('notificationsPage.filterUnread')} (${unreadCount})` },
         ].map(({ key, label }) => (
           <button
             key={key}
@@ -234,12 +237,12 @@ export default function Notifications() {
             <Inbox size={28} style={{ color: 'var(--t-muted)', opacity: 0.5 }} />
           </div>
           <p className="font-semibold text-sm" style={{ color: 'var(--t-text)' }}>
-            {filter === 'unread' ? 'All caught up!' : 'No notifications yet'}
+            {filter === 'unread' ? t('notificationsPage.emptyUnreadTitle') : t('notificationsPage.emptyAllTitle')}
           </p>
           <p className="text-xs mt-1 text-center max-w-xs" style={{ color: 'var(--t-muted)' }}>
             {filter === 'unread'
-              ? 'You have no unread notifications.'
-              : 'Booking updates, order status, and more will appear here.'}
+              ? t('notificationsPage.emptyUnreadDesc')
+              : t('notificationsPage.emptyAllDesc')}
           </p>
         </motion.div>
       ) : (
@@ -266,7 +269,7 @@ export default function Notifications() {
                 background: 'var(--t-card)',
               }}
             >
-              {loading ? 'Loading…' : 'Load more'}
+              {loading ? t('common.loading') : t('common.loadMore')}
             </button>
           )}
         </motion.div>

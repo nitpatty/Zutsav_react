@@ -8558,7 +8558,7 @@ function SystemSettingsTab() {
       </SectionForm>
     ),
     ai: (
-      <SectionForm title="AI — Groq" onSave={() => save(['groqApiKey','groqModel'])} saving={saving}>
+      <SectionForm title="AI — Assistant & Translation" onSave={() => save(['groqApiKey','groqModel','sarvamApiKey','sarvamModel'])} saving={saving}>
         <SecretInput label="Groq API Key" name="groqApiKey" value={form.groqApiKey || ''} onChange={set} />
         <div>
           <label className="label">Model</label>
@@ -8568,7 +8568,18 @@ function SystemSettingsTab() {
             ))}
           </select>
         </div>
-        <InfoBox>Get your API key from console.groq.com. The llama-3.3-70b model gives the best quality for spiritual queries.</InfoBox>
+        <InfoBox>Get your API key from console.groq.com. Powers the AI spiritual assistant and acts as the fallback translation engine when Sarvam is unavailable.</InfoBox>
+        <div className="border-t border-gray-200 my-4" />
+        <SecretInput label="Sarvam API Key" name="sarvamApiKey" value={form.sarvamApiKey || ''} onChange={set} />
+        <div>
+          <label className="label">Translation Model</label>
+          <select name="sarvamModel" value={form.sarvamModel || 'sarvam-translate:v1'} onChange={set} className="input">
+            {['sarvam-translate:v1','mayura:v1'].map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
+        <InfoBox>Primary translation provider (dashboard.sarvam.ai) — optimized for Indian languages. Translates poojas, temples, products, blogs, festivals and notifications on demand; results are cached in the database so each string is translated only once per language.</InfoBox>
       </SectionForm>
     ),
     panchang: (
