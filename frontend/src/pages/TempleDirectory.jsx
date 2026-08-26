@@ -31,9 +31,9 @@ function TempleCard({ temple }) {
       }}>
       {/* Image */}
       <div className="relative overflow-hidden cursor-pointer h-44" onClick={openDetails}>
-        {temple.images?.length > 0 ? (
+        {(temple.coverImage || temple.images?.length > 0) ? (
           <img
-            src={getImageUrl(temple.images[0])}
+            src={getImageUrl(temple.coverImage || temple.images[0])}
             alt={temple.name}
             className="object-cover w-full h-full transition-transform duration-700"
             style={{ transform: hovered ? 'scale(1.06)' : 'scale(1)' }}
