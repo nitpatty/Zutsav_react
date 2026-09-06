@@ -450,7 +450,8 @@ describe('bootstrap v1.3.0 — SERVICE_COMPLETED buttons + FEEDBACK_REQUEST disa
     for (const entry of bootstrap.VERIFIED_MAPPINGS) results.push(await bootstrap.applyEntry(entry));
     for (const entry of bootstrap.VERIFIED_EMAIL_MAPPINGS) results.push(await bootstrap.applyEmailEntry(entry));
     for (const entry of bootstrap.VERIFIED_INAPP_MAPPINGS) results.push(await bootstrap.applyInAppEntry(entry));
-    assert.equal(results.filter((r) => r.action === 'created').length, 51);
+    const expectedTotal = bootstrap.VERIFIED_MAPPINGS.length + bootstrap.VERIFIED_EMAIL_MAPPINGS.length + bootstrap.VERIFIED_INAPP_MAPPINGS.length;
+    assert.equal(results.filter((r) => r.action === 'created').length, expectedTotal);
 
     // Second run: everything already correct → zero unnecessary writes.
     results = [];
@@ -461,7 +462,7 @@ describe('bootstrap v1.3.0 — SERVICE_COMPLETED buttons + FEEDBACK_REQUEST disa
     assert.equal(results.filter((r) => r.action === 'created').length, 0);
     assert.equal(results.filter((r) => r.action === 'configured').length, 0);
     assert.equal(results.filter((r) => r.purposeAction === 'purpose-set').length, 0);
-    assert.equal(results.filter((r) => r.purposeAction === 'purpose-matches').length, 51);
+    assert.equal(results.filter((r) => r.purposeAction === 'purpose-matches').length, expectedTotal);
     assert.ok(results.every((r) => ['already-correct', 'preserved-custom'].includes(r.action)));
   });
 

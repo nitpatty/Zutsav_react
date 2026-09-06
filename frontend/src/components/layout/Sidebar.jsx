@@ -8,6 +8,7 @@ import {
   BookOpen, Menu, X, Shield, CreditCard, MessageSquare,
   Package, MapPin, Tv, Gift, ClipboardList,
   GraduationCap, Briefcase, IndianRupee, FileText, PenTool, Receipt, Zap, Database, Globe, Image,
+  Coins, UserPlus, Tag, Megaphone,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -32,6 +33,9 @@ const USER_NAV = [
   { icon: PenTool,         labelKey: 'sidebar.items.writeBlog',      path: '/blog/write' },
   { icon: Bot,             labelKey: 'sidebar.items.aiAssistant',    path: '/ai-assistant' },
   { icon: Bell,            labelKey: 'sidebar.items.notifications',  path: '/notifications', badge: true },
+  { icon: UserPlus,        labelKey: 'sidebar.items.myReferrals',   path: '/my-referrals' },
+  { icon: Coins,           labelKey: 'sidebar.items.wallet',         path: '/wallet' },
+  {icon: Settings,         labelKey: 'sidebar.items.settings',      path: '/settings'},
 ];
 
 const PANDIT_NAV = [
@@ -46,7 +50,7 @@ const PANDIT_NAV = [
   { icon: FileText,        labelKey: 'sidebar.items.browseBlog',      path: '/blog' },
   { icon: PenTool,         labelKey: 'sidebar.items.writeBlog',       path: '/blog/write' },
   { icon: Bell,            labelKey: 'sidebar.items.notifications',   path: '/notifications', badge: true },
-  { icon: Settings,        labelKey: 'sidebar.items.settings',        path: '/settings' },
+  { icon: Settings,        labelKey: 'Sidebar.items.settings',        path: '/settings' },
 ];
 
 const ADMIN_NAV = [
@@ -66,6 +70,10 @@ const ADMIN_NAV = [
   { icon: Tv,              labelKey: 'sidebar.items.livestreams',         path: '/admin?tab=livestreams' },
   { icon: IndianRupee,     labelKey: 'sidebar.items.payoutManagement',    path: '/admin?tab=payouts' },
   { icon: Gift,            labelKey: 'sidebar.items.referralStats',       path: '/admin?tab=referrals' },
+  { icon: Users,           labelKey: 'sidebar.items.userReferralMgmt',    path: '/admin?tab=user-referrals' },
+  { icon: Coins,           labelKey: 'sidebar.items.walletMgmt',          path: '/admin?tab=wallet' },
+  { icon: Tag,             labelKey: 'sidebar.items.couponMgmt',          path: '/admin?tab=coupons' },
+  { icon: Megaphone,       labelKey: 'sidebar.items.couponCampaigns',     path: '/admin?tab=coupon-campaigns' },
   { icon: Zap,             labelKey: 'sidebar.items.notificationEngine',  path: '/admin?tab=notifications' },
   { icon: FileText,        labelKey: 'sidebar.items.blogManagement',      path: '/admin?tab=blog-management' },
   { icon: Receipt,         labelKey: 'sidebar.items.invoices',            path: '/admin?tab=invoices' },
@@ -218,7 +226,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
     >
       {/* ── Header ──────────────────────────────────────── */}
       <div
-        className="flex items-center px-4 h-16 flex-shrink-0 border-b"
+        className="flex items-center flex-shrink-0 h-16 px-4 border-b"
         style={{ borderColor: 'var(--t-sidebar-border)' }}
       >
         <Link to="/" className={`flex items-center min-w-0 flex-1 ${collapsed ? 'justify-center' : ''}`}>
@@ -233,7 +241,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.15 }}
-                  className="h-7 w-7 object-contain flex-shrink-0"
+                  className="flex-shrink-0 object-contain h-7 w-7"
                 />
               ) : (
                 <motion.img
@@ -244,7 +252,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -8 }}
                   transition={{ duration: 0.15 }}
-                  className="h-8 w-auto object-contain"
+                  className="object-contain w-auto h-8"
                 />
               )
             ) : (
@@ -265,7 +273,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
         {/* Collapse button */}
         <button
           onClick={() => setCollapsed(c => !c)}
-          className="hidden lg:flex w-6 h-6 rounded-lg items-center justify-center transition-colors flex-shrink-0"
+          className="items-center justify-center flex-shrink-0 hidden w-6 h-6 transition-colors rounded-lg lg:flex"
           style={{ color: 'var(--t-muted)' }}
         >
           <motion.div animate={{ rotate: collapsed ? 0 : 180 }} transition={{ duration: 0.25 }}>
@@ -286,7 +294,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
             <div className="relative">
               <Search
                 size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2"
+                className="absolute -translate-y-1/2 left-3 top-1/2"
                 style={{ color: 'var(--t-muted)' }}
               />
               <input
@@ -294,7 +302,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder={t('sidebar.searchNavigation')}
-                className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border transition-all duration-200 focus:outline-none"
+                className="w-full py-2 pl-8 pr-3 text-xs transition-all duration-200 border rounded-xl focus:outline-none"
                 style={{
                   background: 'var(--t-input-bg)',
                   color: 'var(--t-text)',
@@ -331,7 +339,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
 
       {/* ── Bottom section ──────────────────────────────── */}
       <div
-        className="flex-shrink-0 border-t p-3 space-y-3"
+        className="flex-shrink-0 p-3 space-y-3 border-t"
         style={{ borderColor: 'var(--t-sidebar-border)' }}
       >
         {/* Theme switcher */}
@@ -361,7 +369,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
         >
           {/* Avatar */}
           <div
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+            className="flex items-center justify-center flex-shrink-0 w-8 h-8 text-xs font-bold text-white rounded-xl"
             style={{ background: 'var(--t-primary)' }}
           >
             {initials}
@@ -374,7 +382,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -8 }}
                 transition={{ duration: 0.15 }}
-                className="min-w-0 flex-1"
+                className="flex-1 min-w-0"
               >
                 <p className="text-sm font-semibold truncate" style={{ color: 'var(--t-text)' }}>
                   {user?.name || t('sidebar.user')}
@@ -441,7 +449,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
       <motion.aside
         animate={{ width: collapsed ? 72 : 280 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="hidden lg:flex flex-col flex-shrink-0 h-screen sticky top-0 overflow-hidden shadow-sidebar"
+        className="sticky top-0 flex-col flex-shrink-0 hidden h-screen overflow-hidden lg:flex shadow-sidebar"
         style={{
           background: 'var(--t-sidebar)',
           borderRight: '1px solid var(--t-sidebar-border)',
@@ -467,7 +475,7 @@ export default function Sidebar({ mobileOpen, onMobileClose }) {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="fixed left-0 top-0 bottom-0 z-50 w-72 lg:hidden overflow-hidden"
+              className="fixed top-0 bottom-0 left-0 z-50 overflow-hidden w-72 lg:hidden"
               style={{
                 background: 'var(--t-sidebar)',
                 borderRight: '1px solid var(--t-sidebar-border)',

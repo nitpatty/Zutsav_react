@@ -36,6 +36,8 @@ const {
 const { getRequiredVariables } = require('../../notification-engine/variables/VariableSchemas');
 const WhatsAppProvider = require('../../notification-engine/providers/WhatsAppProvider');
 const OtpService = require('../../notification-engine/otp/OtpService');
+const userReferralService = require('../services/userReferralService');
+const poojaLoyaltyService = require('../services/poojaLoyaltyService');
 
 const BOOKING_STATUS_LABEL = {
   pending_payment:      'Pending Payment',
@@ -1865,6 +1867,16 @@ exports.updateBookingStatus = async (req, res, next) => {
       NotificationEngine.emit('INVOICE_GENERATED', completedPayload).catch(() => {});
       NotificationEngine.emit('SERVICE_COMPLETED', completedPayload).catch(() => {});
       Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
+
+      // ── User Referral: auto-grant booking reward (fire-and-forget) ────
+      // Idempotent per booking; enforces the per-referred-user limit.
+      userReferralService.createBookingRewardEligibility(booking._id)
+        .catch((err) => console.error('[Referral] Booking reward grant failed:', err.message));
+
+      // ── Pooja Loyalty: auto-grant global loyalty coins (fire-and-forget) ────
+      // Applies to ALL users (referred or not); idempotent per booking.
+      poojaLoyaltyService.grantPoojaLoyaltyReward(booking._id)
+        .catch((err) => console.error('[Loyalty] Pooja loyalty reward failed:', err.message));
     }
 
     res.json({ success: true, booking });
@@ -1916,6 +1928,16 @@ exports.approveCompletion = async (req, res, next) => {
     NotificationEngine.emit('INVOICE_GENERATED', completionPayload).catch(() => {});
     NotificationEngine.emit('SERVICE_COMPLETED', completionPayload).catch(() => {});
     Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
+
+    // ── User Referral: auto-grant booking reward (fire-and-forget) ────
+    // Idempotent per booking; enforces the per-referred-user limit.
+    userReferralService.createBookingRewardEligibility(booking._id)
+      .catch((err) => console.error('[Referral] Booking reward grant failed:', err.message));
+
+    // ── Pooja Loyalty: auto-grant global loyalty coins (fire-and-forget) ────
+    // Applies to ALL users (referred or not); idempotent per booking.
+    poojaLoyaltyService.grantPoojaLoyaltyReward(booking._id)
+      .catch((err) => console.error('[Loyalty] Pooja loyalty reward failed:', err.message));
 
     res.json({ success: true, booking });
   } catch (err) {
@@ -4016,6 +4038,16 @@ function buildSamplePayload(eventName, req, overrides = {}) {
     otp:      bookingShaped.otp,
     account:  userShaped.account,
     reason:   bookingShaped.reason,
+    coupon:   {
+      code:            'SAMPLE100',
+      discountType:    'FIXED',
+      discountValue:   100,
+      minCartValue:    0,
+      maxDiscount:     null,
+      expiresAt:       null,
+      label:           '₹100 off',
+      campaignName:    'Sample Campaign',
+    },
   };
   payload.user = payload.customer; // legacy alias, mirrors withLegacyAliases()
 

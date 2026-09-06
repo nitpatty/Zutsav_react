@@ -9,6 +9,7 @@ const { deductStock } = require('../utils/inventoryUtils');
 const { urls } = require('../config');
 const translationService = require('../services/translationService');
 const { sanitizeHtml } = require('../utils/sanitizeHtml');
+const couponService = require('../services/couponService');
 
 // ── SKU helpers ──────────────────────────────────────────────
 function generateSku(name) {
@@ -312,7 +313,7 @@ exports.toggleProductStatus = async (req, res, next) => {
 // ─── User: POST /api/marketplace/orders/create ───────────────
 exports.createOrder = async (req, res, next) => {
   try {
-    const { items, shippingAddress } = req.body;
+    const { items, shippingAddress, couponCode } = req.body;
 
     let totalAmount = 0;
     const orderItems = [];
@@ -355,6 +356,36 @@ exports.createOrder = async (req, res, next) => {
       });
     }
 
+    // ── Coupon validation (server-authoritative) ──────────────
+    let couponDiscount = 0;
+    let resolvedCoupon = null;
+    if (couponCode && typeof couponCode === 'string' && couponCode.trim()) {
+      const coupon = await couponService.getCouponByCode(couponCode);
+      if (!coupon) {
+        return res.status(400).json({ success: false, message: 'Invalid coupon code' });
+      }
+      // Determine cart type: prefer PRODUCTS, fall back to MARKETPLACE
+      const cartType = coupon.applicability.includes('PRODUCTS')
+        ? 'PRODUCTS'
+        : (coupon.applicability.includes('MARKETPLACE') ? 'MARKETPLACE' : null);
+      if (!cartType) {
+        return res.status(400).json({ success: false, message: 'This coupon is not applicable to product orders' });
+      }
+
+      const couponResult = await couponService.validateCoupon({
+        code: couponCode,
+        userId: req.user._id,
+        cartValue: totalAmount,
+        cartType,
+      });
+      if (!couponResult.valid) {
+        return res.status(400).json({ success: false, message: couponResult.error });
+      }
+      couponDiscount = couponResult.discount;
+      resolvedCoupon = couponResult.coupon;
+      totalAmount = Math.max(0, Math.round((totalAmount - couponDiscount) * 100) / 100);
+    }
+
     const merchantTransactionId = `ZOM_${Date.now()}_${req.user._id.toString().slice(-6)}`;
     const baseUrl = urls.clientUrl;
 
@@ -367,7 +398,24 @@ exports.createOrder = async (req, res, next) => {
       paymentProvider:  'phonepe',
       status:           'pending_payment',
       statusTimeline:   [{ status: 'pending_payment', timestamp: new Date() }],
+      couponCode:       resolvedCoupon ? resolvedCoupon.code : null,
+      couponId:         resolvedCoupon ? resolvedCoupon._id : null,
+      couponDiscount,
     });
+
+    // Record coupon redemption
+    if (resolvedCoupon && couponDiscount > 0) {
+      await couponService.recordRedemption({
+        couponId: resolvedCoupon._id,
+        userId: req.user._id,
+        orderId: order._id,
+        purchaseType: resolvedCoupon.applicability.includes('PRODUCTS') ? 'PRODUCTS' : 'MARKETPLACE',
+        discountType: resolvedCoupon.discountType,
+        discountApplied: couponDiscount,
+        cartValue: order.totalAmount + couponDiscount,
+        finalPayable: order.totalAmount,
+      }).catch(() => {});
+    }
 
     const { redirectUrl } = await createPhonePeOrder({
       merchantTransactionId,
@@ -381,7 +429,7 @@ exports.createOrder = async (req, res, next) => {
       'ORDER_PLACED',
       normalizeOrderPayload({ order, user: req.user })
     ).catch(() => {});
-    res.status(201).json({ success: true, order, redirectUrl });
+    res.status(201).json({ success: true, order, redirectUrl, couponDiscount: couponDiscount || undefined });
   } catch (err) {
     next(err);
   }

@@ -13,6 +13,9 @@ const { isAdminRole } = require('../utils/roleUtils');
 const { isSupportedLanguage } = require('../config/languages.config');
 const { audit, extractRequestMeta } = require('../services/auditService');
 const consentService                 = require('../services/consentService');
+const userReferralService            = require('../services/userReferralService');
+const walletService                  = require('../services/walletService');
+const settings                       = require('../utils/settingsService');
 const { NotificationEngine }         = require('../../notification-engine');
 const OtpService                     = require('../../notification-engine/otp/OtpService');
 const { normalizeUserPayload }       = require('../../notification-engine/variables/PayloadNormalizer');
@@ -161,27 +164,66 @@ exports.completeRegistration = async (req, res, next) => {
     // authoritative. This is proof of control over the number, never consent.
     const whatsappVerified = otpRecord.channel === 'whatsapp';
 
+    // ── Resolve referral code: new system first, then legacy (prevents double attribution) ──
     let referredBy = null;
+    let newUserReferralResult = null;
+    let referralResolution = null;
+
     if (referralCode && !isPandit) {
-      const referrer = await User.findOne({ referralCode: referralCode.toUpperCase() });
-      if (referrer) referredBy = referrer._id;
+      try {
+        referralResolution = await userReferralService.resolveReferralCode(referralCode);
+      } catch (err) {
+        console.error('[Referral] Code resolution failed:', err.message);
+      }
     }
 
+    // ── Create user FIRST (no referral attribution yet) ──────────────────────
     const user = await User.create({
       name, email: email.toLowerCase(), phone, password,
       role: isPandit ? 'pandit' : 'user',
-      referredBy,
+      referredBy: null, // set below after resolution
       ...(whatsappVerified ? { whatsappVerified: true, whatsappVerifiedAt: new Date() } : {}),
-      // Migrate the guest's locally-stored language preference (if any) into
-      // the new account — a brand-new user has no DB value yet, so this is
-      // the one place we adopt the guest's choice instead of the schema
-      // default. Existing users on login always keep their DB value (see
-      // login handler — never overwritten from a device-local preference).
       ...(isSupportedLanguage(preferredLanguage) ? { preferredLanguage: preferredLanguage.toLowerCase() } : {}),
     });
 
-    if (referredBy) {
-      await User.findByIdAndUpdate(referredBy, { $inc: { referralCount: 1 } });
+    // ── Apply referral attribution (AFTER user exists — safe ordering) ────────
+    if (referralResolution) {
+      if (referralResolution.type === 'new') {
+        // New system: atomically consume code with real userId
+        try {
+          newUserReferralResult = await userReferralService.consumeCode(referralCode, user._id);
+          if (newUserReferralResult) {
+            // Set legacy referredBy for backward compatibility
+            referredBy = newUserReferralResult.referrerUserId;
+            await User.findByIdAndUpdate(user._id, { $set: { referredBy } });
+
+            // Credit +10 coins to referrer's wallet (idempotent)
+            const alreadyCredited = await userReferralService.isRegistrationRewardCredited(newUserReferralResult.referralCodeId);
+            if (!alreadyCredited) {
+              const rewardCoins = await settings.get('userReferralRegistrationRewardCoins', 10);
+              if (rewardCoins > 0) {
+                const idempotencyKey = `referral_registration_${newUserReferralResult.referralCodeId}`;
+                await walletService.credit({
+                  userId: newUserReferralResult.referrerUserId,
+                  amount: rewardCoins,
+                  type: 'REFERRAL_REGISTRATION',
+                  description: `Referral Registration Reward — ${user.name} registered via your referral code`,
+                  reference: { type: 'USER_REFERRAL', id: newUserReferralResult.referralCodeId },
+                  idempotencyKey,
+                });
+                await userReferralService.markRegistrationRewardCredited(newUserReferralResult.referralCodeId);
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[Referral] New system consumption failed:', err.message);
+        }
+      } else if (referralResolution.type === 'legacy') {
+        // Legacy system: set referredBy and increment count
+        referredBy = referralResolution.referrerId;
+        await User.findByIdAndUpdate(user._id, { $set: { referredBy } });
+        await User.findByIdAndUpdate(referredBy, { $inc: { referralCount: 1 } });
+      }
     }
 
     // For pandits: create minimal Pandit profile for dashboard access

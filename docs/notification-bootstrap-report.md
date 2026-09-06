@@ -1,8 +1,8 @@
 # Notification Mappings Bootstrap Report
 
-Generated: 2026-07-28T06:35:33.196Z
-Bootstrap script version: 1.1.0
-Database: zutsav_test @ localhost
+Generated: 2026-09-05T13:39:17.252Z
+Bootstrap script version: 1.3.0
+Database: zutsav @ localhost
 
 ## Summary — WhatsApp
 
@@ -12,9 +12,9 @@ Database: zutsav_test @ localhost
 | Configured (existed, was blank) | 0 |
 | Corrected (known-wrong legacy template) | 0 |
 | Corrected (known-wrong legacy variable mapping) | 0 |
-| Already correct (matches reference exactly) | 45 |
+| Already correct (matches reference exactly) | 46 |
 | Preserved (existing custom configuration, untouched) | 0 |
-| **Total WhatsApp mappings processed** | **45** |
+| **Total WhatsApp mappings processed** | **46** |
 
 ## Summary — Email
 
@@ -36,7 +36,22 @@ Database: zutsav_test @ localhost
 | Preserved (existing custom content, untouched) | 0 |
 | **Total In-App mappings processed** | **2** |
 
-**Grand total verified mappings processed (all channels): 51**
+**Grand total verified mappings processed (all channels): 52**
+
+## Purpose classification (Phase 5 — WhatsApp consent)
+
+Every verified mapping carries a communication purpose (ACCOUNT / BOOKING /
+ORDER / SERVICE / MARKETING). MARKETING-purpose WhatsApp messages require
+explicit marketing consent before sending; no verified mapping is MARKETING
+today. Purpose follows a fill-if-blank contract independent of channel
+content — an administrator-set purpose is never overwritten.
+
+| Outcome | Count |
+|---|---|
+| Created with purpose | 0 |
+| Purpose set (was blank) | 0 |
+| Purpose matches verified | 52 |
+| Purpose preserved (admin customization, untouched) | 0 |
 
 ## Created — WhatsApp
 _none_

@@ -1,11 +1,15 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, ChevronLeft, Receipt, Ban, Archive, Copy, Bell, BellOff, Zap, Filter, Send, ChevronUp, Activity, Database, Lock, History, Calendar, AlignLeft, Flame, ListChecks, Info, HelpCircle, LayoutGrid, List } from 'lucide-react';
+import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, ChevronLeft, Receipt, Ban, Archive, Copy, Bell, BellOff, Zap, Filter, Send, ChevronUp, Activity, Database, Lock, History, Calendar, AlignLeft, Flame, ListChecks, Info, HelpCircle, LayoutGrid, List, Coins } from 'lucide-react';
 import NotificationEngineAdmin from '../components/admin/NotificationEngineAdmin';
 import PoojaCategoriesManager from '../components/admin/PoojaCategoriesManager';
 import SystemConfigurationTab from '../components/admin/SystemConfigurationTab';
 import HomepageCurationTab from '../components/admin/HomepageCurationTab';
 import AdminManagementTab from '../components/admin/adminManagement/AdminManagementTab';
+import UserReferralManagement from '../components/admin/UserReferralManagement';
+import WalletManagement from '../components/admin/WalletManagement';
+import CouponManagement from '../components/admin/CouponManagement';
+import CouponCampaignManagement from '../components/admin/CouponCampaignManagement';
 import ZutsavLoader, { ZutsavLoaderInline } from '../components/shared/ZutsavLoader';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
@@ -96,6 +100,10 @@ export default function AdminDashboard() {
       {tab === 'blog-management'        && <BlogManagementTab />}
       {tab === 'invoices'               && <InvoicesTab />}
       {tab === 'admin-management'       && <AdminManagementTab />}
+      {tab === 'user-referrals'         && <UserReferralManagement />}
+      {tab === 'wallet'                 && <WalletManagement />}
+      {tab === 'coupons'                && <CouponManagement />}
+      {tab === 'coupon-campaigns'       && <CouponCampaignManagement />}
     </div>
   );
 }
@@ -8140,6 +8148,7 @@ const SETTING_SECTIONS = [
   { key: 'payment',       label: 'PhonePe',       icon: CreditCard },
   { key: 'payment_rules', label: 'Payment Rules', icon: IndianRupee },
   { key: 'commission',    label: 'Platform Fees', icon: IndianRupee },
+  { key: 'loyalty',       label: 'Wallet / Coins', icon: Coins },
   { key: 'whatsapp',      label: 'WhatsApp',      icon: MessageSquare },
   { key: 'email',         label: 'Email',         icon: Mail },
   { key: 'ai',            label: 'AI',            icon: Cpu },
@@ -8525,6 +8534,71 @@ function SystemSettingsTab() {
             </div>
           </div>
         </SectionForm>
+      );
+    })(),
+    loyalty: (() => {
+      const pct = form.poojaBookingCoinRewardPercent ?? 5;
+      const previewBase = 2000;
+      const previewCoins = Math.round((previewBase * Number(pct || 0)) / 100 * 100) / 100;
+      return (
+        <>
+        <SectionForm title="Pooja Booking Loyalty Reward" onSave={() => save(['poojaBookingCoinRewardPercent'])} saving={saving}>
+          <InfoBox>Users earn this percentage of the pre-tax Pooja booking amount as loyalty coins after the booking is completed. Applies globally to all eligible Pooja bookings — there is no per-Pooja configuration.</InfoBox>
+
+          <div className="max-w-xs">
+            <label className="label">Pooja Booking Coin Reward (%)</label>
+            <div className="relative">
+              <input type="number" name="poojaBookingCoinRewardPercent" min="0" max="100" step="0.5"
+                value={pct} onChange={set} className="input pr-8" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Set to 0 to disable loyalty coins for Pooja bookings.</p>
+          </div>
+
+          <div className="rounded-xl border p-4" style={{ background: '#f8f9fa', borderColor: 'var(--t-border)' }}>
+            <p className="text-xs font-semibold text-gray-600 mb-2">Preview (example ₹2,000 pre-tax Pooja):</p>
+            <div className="space-y-1 text-xs text-gray-600">
+              <div className="flex justify-between"><span>Pre-tax Pooja Amount</span><span>₹2,000</span></div>
+              <div className="flex justify-between">
+                <span>Loyalty Coins ({pct}%)</span>
+                <span style={{ color: '#1B1F3B', fontWeight: 700 }}>{previewCoins} coins</span>
+              </div>
+              <div className="flex justify-between"><span>Tax excluded</span><span className="text-green-600">Yes</span></div>
+            </div>
+          </div>
+        </SectionForm>
+
+        <SectionForm title="Coin Monetary Value" onSave={() => save(['coinMonetaryValue'])} saving={saving}>
+          <InfoBox>Global value of one coin in rupees. This is the single source of truth for coin-to-rupee conversion (used by coin redemption in checkout and any future coin <span>&#8594;</span> ₹ conversion). It is not specific to any program.</InfoBox>
+
+          <div className="max-w-xs">
+            <label className="label">Coin Monetary Value (₹ per coin)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
+              <input type="number" name="coinMonetaryValue" min="0" step="0.01"
+                value={form.coinMonetaryValue ?? ''} onChange={set} className="input pl-7"
+                placeholder="Not configured" />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Leave empty if the coin value is not yet determined. Must be a positive number.</p>
+          </div>
+        </SectionForm>
+
+        <SectionForm title="Coin Redemption" onSave={() => save(['coinRedemptionMinCoins'])} saving={saving}>
+          <InfoBox>Users can apply coins to their Pooja booking at checkout (mutually exclusive with coupons) only when their wallet balance is at least this minimum. Applies globally.</InfoBox>
+
+          <div className="max-w-xs">
+            <label className="label">Minimum Coins Required for Redemption</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                <Coins size={15} />
+              </span>
+              <input type="number" name="coinRedemptionMinCoins" min="0" step="1"
+                value={form.coinRedemptionMinCoins ?? 0} onChange={set} className="input pl-8" />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">A user must hold at least this many coins before redemption becomes available. Set 0 to allow redemption from the first coin.</p>
+          </div>
+        </SectionForm>
+        </>
       );
     })(),
     whatsapp: (

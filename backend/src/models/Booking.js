@@ -156,6 +156,17 @@ const bookingSchema = new mongoose.Schema({
     notes:           { type: String, default: '' },
   },
 
+  // Coupon applied at checkout (optional — null when no coupon used)
+  couponCode:     { type: String, default: null },
+  couponId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
+  couponDiscount: { type: Number, default: 0, min: 0 },
+
+  // Coin redemption applied at checkout (optional — 0 when no coins used).
+  // coinCoins is the wallet coins debited on payment success; coinValue is the
+  // monetary amount credited against this booking's payable.
+  coinCoins: { type: Number, default: 0, min: 0 },
+  coinValue: { type: Number, default: 0, min: 0 },
+
   // Audit trail for all status transitions and admin actions
   auditLog: [{
     action:          { type: String },
@@ -202,6 +213,15 @@ const bookingSchema = new mongoose.Schema({
 
   // How this booking's payment is being handled — set to PAY_LATER/COD only by admin action
   paymentWorkflow: { type: String, enum: ['ONLINE', 'PAY_LATER', 'COD'], default: 'ONLINE' },
+
+  // ── Pooja loyalty reward (audit trail; granted automatically at COMPLETED) ──
+  // Coins = poojaAmount (pre-tax service price) × poojaBookingCoinRewardPercent / 100.
+  // Idempotency is enforced by the wallet ledger's unique idempotencyKey
+  // (pooja_loyalty_reward_<bookingId>); these fields are for audit only.
+  loyaltyRewardCoins:      { type: Number, default: null },
+  loyaltyRewardPercent:    { type: Number, default: null },
+  loyaltyRewardBaseAmount: { type: Number, default: null },
+  loyaltyRewardCreditedAt: { type: Date,   default: null },
 }, { timestamps: true });
 
 // Auto-generate booking number

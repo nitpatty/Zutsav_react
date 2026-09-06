@@ -26,9 +26,18 @@ const BATCH_SIZE = 20;
 
 let _timer = null;
 let _processor = null;
+// Optional settlement hook invoked once per job after it reaches a terminal
+// outcome (delivered/skipped/failed/dead_letter/cancelled). Registered by
+// bootstrap (campaign ledger sync) — defaults to a no-op so the engine stays
+// fully decoupled from campaign concerns when nothing registers it.
+let _onJobSettled = async () => {};
 
 function setProcessor(fn) {
   _processor = fn;
+}
+
+function setOnJobSettled(fn) {
+  _onJobSettled = typeof fn === 'function' ? fn : _onJobSettled;
 }
 
 async function processOne(job) {
@@ -46,6 +55,7 @@ async function processOne(job) {
 
     if (result.skip) {
       await JobQueue.markSkipped(job._id, result.reason || 'Required variable missing');
+      await _onJobSettled(job, 'skipped', result.reason || '', null);
       const checklist = result.checklist || null;
       await NotificationLogger.log({
         jobId: job._id, type: job.channel, event: job.eventName,
@@ -67,6 +77,7 @@ async function processOne(job) {
     }
 
     await JobQueue.markDelivered(job._id);
+    await _onJobSettled(job, 'delivered', '', result.response || null);
     await NotificationLogger.log({
       jobId: job._id, type: job.channel, event: job.eventName,
       status: 'delivered', response: result.response, variables: result.variables,
@@ -74,6 +85,7 @@ async function processOne(job) {
     });
   } catch (err) {
     const updated = await JobQueue.markFailed(job._id, err.message);
+    await _onJobSettled(job, updated ? updated.status : 'failed', err.message, null);
     await NotificationLogger.log({
       jobId: job._id, type: job.channel, event: job.eventName,
       status: updated ? updated.status : 'failed', error: err.message, retryCount: job.attempts,
@@ -110,4 +122,4 @@ function stop() {
   _timer = null;
 }
 
-module.exports = { start, stop, tick, setProcessor };
+module.exports = { start, stop, tick, setProcessor, setOnJobSettled };

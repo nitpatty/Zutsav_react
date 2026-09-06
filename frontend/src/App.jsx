@@ -52,6 +52,8 @@ import MyBlogsPage      from './pages/MyBlogsPage';
 import ReferralLanding  from './pages/ReferralLanding';
 import Settings         from './pages/Settings';
 import FamilyMembers    from './pages/FamilyMembers';
+import MyReferrals      from './pages/MyReferrals';
+import Wallet            from './pages/Wallet';
 
 /* ── Auth guard ─────────────────────────────────────── */
 const ProtectedRoute = ({ children, roles }) => {
@@ -189,6 +191,16 @@ const AppRoutes = () => {
           <Route path="/kundli" element={
             <ProtectedRoute>
               <DashboardLayout><ComingSoon title="Kundli" /></DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/my-referrals" element={
+            <ProtectedRoute roles={['user']}>
+              <DashboardLayout><MyReferrals /></DashboardLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/wallet" element={
+            <ProtectedRoute roles={['user']}>
+              <DashboardLayout><Wallet /></DashboardLayout>
             </ProtectedRoute>
           } />
           <Route path="/settings" element={

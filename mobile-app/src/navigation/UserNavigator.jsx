@@ -38,6 +38,8 @@ import BlogDetailScreen     from '../screens/user/BlogDetailScreen';
 import InvoiceScreen        from '../screens/user/InvoiceScreen';
 import FamilyMembersScreen  from '../screens/user/FamilyMembersScreen';
 import FamilyMemberFormScreen from '../screens/user/FamilyMemberFormScreen';
+import MyReferralsScreen    from '../screens/user/MyReferralsScreen';
+import WalletScreen         from '../screens/user/WalletScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -103,6 +105,8 @@ function ProfileStack() {
       <Stack.Screen name="ChangePassword"    component={ChangePasswordScreen} />
       <Stack.Screen name="Settings"         component={SettingsScreen} />
       <Stack.Screen name="DeleteAccount"    component={DeleteAccountScreen} />
+      <Stack.Screen name="MyReferrals"       component={MyReferralsScreen} />
+      <Stack.Screen name="Wallet"            component={WalletScreen} />
       <Stack.Screen name="Notifications"    component={NotificationsScreen} />
     </Stack.Navigator>
   );

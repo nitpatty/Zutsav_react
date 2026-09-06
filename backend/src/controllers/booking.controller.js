@@ -10,6 +10,10 @@ const Kit           = require('../models/Kit');
 const User          = require('../models/User');
 const AdminAuditLog = require('../models/AdminAuditLog');
 const { isAdminRole } = require('../utils/roleUtils');
+const userReferralService = require('../services/userReferralService');
+const poojaLoyaltyService = require('../services/poojaLoyaltyService');
+const couponService = require('../services/couponService');
+const { resolveCoinRedemption, settleCoinRedemption } = require('../services/coinRedemptionService');
 
 const { createOrder, verifySignature }                                        = require('../utils/razorpay');
 const { createPhonePeOrder, checkPhonePeStatus, verifyWebhookChecksum }       = require('../utils/phonepe');
@@ -212,7 +216,9 @@ exports.createPhonePeBooking = async (req, res, next) => {
       userDetails, isUrgent, withKit, kitId, kitIds,
       paymentMode = 'FULL', partialAmount,
       referralToken,
+      couponCode,
     } = req.body;
+    const coinRedemptionCoins = req.body.coinRedemptionCoins;
 
     const urgent = isUrgent === true || isUrgent === 'true';
 
@@ -227,12 +233,83 @@ exports.createPhonePeBooking = async (req, res, next) => {
     const merchantTransactionId = `ZUT_${Date.now()}_${req.user._id.toString().slice(-6)}`;
     const clientUrl             = urls.clientUrl;
 
+    // ── Coupon validation (server-authoritative) ──────────────
+    let couponDiscount = 0;
+    let resolvedCoupon = null;
+    let resolvedCouponId = null;
+    if (couponCode && typeof couponCode === 'string' && couponCode.trim()) {
+      const coupon = await couponService.getCouponByCode(couponCode);
+      if (!coupon) {
+        return res.status(400).json({ success: false, message: 'Invalid coupon code' });
+      }
+      if (!coupon.isActive) {
+        return res.status(400).json({ success: false, message: 'This coupon is no longer active' });
+      }
+
+      // Determine the applicable context:
+      //  - POOJA coupon → valid for the pooja service booking (full grandTotal)
+      //  - KITS coupon → valid only when kits are present, against the kit portion
+      //  - PRODUCTS/MARKETPLACE coupons → not valid for a pooja booking
+      let eligibleAmount = pricing.grandTotal;
+      let cartType = 'POOJA';
+
+      if (coupon.applicability.includes('POOJA')) {
+        cartType = 'POOJA';
+        eligibleAmount = pricing.grandTotal;
+      } else if (coupon.applicability.includes('KITS') && !coupon.applicability.includes('POOJA')) {
+        // KITS-only coupon: only the kit portion qualifies
+        if (kitPrice <= 0) {
+          return res.status(400).json({ success: false, message: 'This coupon applies to kits only' });
+        }
+        cartType = 'KITS';
+        eligibleAmount = pricing.kitAmount + pricing.kitGST;
+      } else {
+        return res.status(400).json({ success: false, message: 'This coupon is not applicable to this booking' });
+      }
+
+      const couponResult = await couponService.validateCoupon({
+        code: couponCode,
+        userId: req.user._id,
+        cartValue: eligibleAmount,
+        cartType,
+      });
+      if (!couponResult.valid) {
+        return res.status(400).json({ success: false, message: couponResult.error });
+      }
+      couponDiscount = couponResult.discount;
+      resolvedCoupon = couponResult.coupon;
+      resolvedCouponId = couponResult.coupon._id;
+    }
+
+    // Post-discount total
+    const finalTotal = Math.max(0, Math.round((pricing.grandTotal - couponDiscount) * 100) / 100);
+
+    // ── Coin redemption (global Wallet / Coins, server-authoritative) ──────
+    // Pooja booking, mutually exclusive with coupons, wallet balance must meet
+    // the admin-configured minimum threshold, and redeemed coins never exceed
+    // the balance or the payable. The wallet debit itself happens only AFTER
+    // the payment succeeds (see settleCoinRedemption below/verify/webhook).
+    const coinResolution = await resolveCoinRedemption({
+      userId: req.user._id,
+      coinCoins: coinRedemptionCoins,
+      hasCoupon: !!(couponCode && typeof couponCode === 'string' && couponCode.trim()),
+      payable: finalTotal,
+    });
+    const { coinCoinsUsed, coinValueUsed } = coinResolution;
+    const payableTotal = Math.max(0, Math.round((finalTotal - coinValueUsed) * 100) / 100);
+
     const pMode = String(paymentMode).toUpperCase() === 'PARTIAL' ? 'PARTIAL' : 'FULL';
     let chargeAmount, paymentType;
-    try {
-      ({ chargeAmount, paymentType } = await resolveChargeAmount(pricing.grandTotal, pMode, partialAmount));
-    } catch (err) {
-      return res.status(err.status || 400).json({ success: false, message: err.message });
+    if (payableTotal <= 0) {
+      // Coins fully covered the booking — nothing left to charge via gateway.
+      chargeAmount = 0;
+      paymentType  = 'FULL';
+    } else {
+      try {
+        ({ chargeAmount, paymentType } = await resolveChargeAmount(payableTotal, pMode, partialAmount));
+      } catch (err) {
+        return res.status(err.status || 400).json({ success: false, message: err.message });
+      }
     }
 
     // ── Validate referral token (backend-only; never trust raw IDs from frontend) ──
@@ -266,17 +343,22 @@ exports.createPhonePeBooking = async (req, res, next) => {
       platformFee:      pricing.platformFee,
       platformGST:      pricing.platformGST,
       taxAmount:        pricing.kitGST,
-      grandTotal:       pricing.grandTotal,
+      grandTotal:       payableTotal,
       baseAmount:       pricing.baseAmount,
       commissionPercent:pricing.commissionPercent,
       commissionAmount: pricing.commissionAmount,
       gstPercent:       pricing.gstPercent,
       gstAmount:        pricing.gstAmount,
-      amount:           pricing.grandTotal,
+      amount:           payableTotal,
+      couponCode:       resolvedCoupon ? resolvedCoupon.code : null,
+      couponId:         resolvedCouponId,
+      couponDiscount,
+      coinCoins:        coinCoinsUsed,
+      coinValue:        coinValueUsed,
       paymentMode:      pMode,
       paymentStatus:    'PENDING',
       amountPaid:       0,
-      remainingAmount:  pricing.grandTotal,
+      remainingAmount:  payableTotal,
       paymentProvider:              'phonepe',
       phonePeMerchantTransactionId: merchantTransactionId,
       status:                       'pending_payment',
@@ -288,17 +370,51 @@ exports.createPhonePeBooking = async (req, res, next) => {
       referral:        resolvedReferral,
     });
 
-    // Record in ledger
-    await PaymentLedger.create({
-      bookingId:             booking._id,
-      amount:                chargeAmount,
-      paymentType,
-      paymentStatus:         'PENDING',
-      merchantTransactionId,
-    });
+  // Record in ledger
+  await PaymentLedger.create({
+    bookingId:             booking._id,
+    amount:                chargeAmount,
+    paymentType,
+    paymentStatus:         'PENDING',
+    merchantTransactionId,
+  });
 
-    recordAttemptInitiated(booking, { merchantTransactionId, amount: chargeAmount, paymentType });
-    await booking.save();
+  recordAttemptInitiated(booking, { merchantTransactionId, amount: chargeAmount, paymentType });
+  await booking.save();
+
+  // Record coupon redemption (idempotent; only if coupon was applied)
+  if (resolvedCouponId && couponDiscount > 0) {
+    const redemptionType = resolvedCoupon.applicability.includes('POOJA') ? 'POOJA'
+      : (resolvedCoupon.applicability.includes('KITS') ? 'KITS' : 'POOJA');
+    await couponService.recordRedemption({
+      couponId: resolvedCouponId,
+      userId: req.user._id,
+      bookingId: booking._id,
+      purchaseType: redemptionType,
+      discountType: resolvedCoupon.discountType,
+      discountApplied: couponDiscount,
+      cartValue: resolvedCoupon.applicability.includes('POOJA') ? pricing.grandTotal : (pricing.kitAmount + pricing.kitGST),
+      finalPayable: finalTotal,
+    }).catch(() => {});
+  }
+
+    if (payableTotal <= 0) {
+      // Coins fully covered the booking — no gateway charge needed. Settle the
+      // wallet debit and complete the booking inline.
+      await settleCoinRedemption([booking]);
+      booking.status = 'paid';
+      booking.paymentStatus = 'FULLY_PAID';
+      booking.amountPaid = 0;
+      booking.remainingAmount = 0;
+      await recordAttemptResult(booking, merchantTransactionId, { status: 'SUCCESS' }, booking.poojaId?.name || '');
+      await booking.save();
+      await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
+      await onPaymentSuccess(booking, booking.poojaId?.name || '');
+      return res.status(201).json({
+        success: true, booking, paidWithCoins: true, merchantTransactionId,
+        coinCoinsUsed, coinValueUsed,
+      });
+    }
 
     const { redirectUrl } = await createPhonePeOrder({
       merchantTransactionId,
@@ -310,7 +426,8 @@ exports.createPhonePeBooking = async (req, res, next) => {
 
     res.status(201).json({
       success: true, booking, redirectUrl, merchantTransactionId, pricing,
-      paymentMode: pMode, chargeAmount, remainingAmount: pricing.grandTotal - chargeAmount,
+      paymentMode: pMode, chargeAmount, remainingAmount: finalTotal - chargeAmount,
+      couponDiscount: couponDiscount || undefined,
     });
   } catch (err) { next(err); }
 };
@@ -360,6 +477,10 @@ exports.verifyPhonePePayment = async (req, res, next) => {
       } else {
         await onPaymentSuccess(booking, booking.poojaId?.name || '');
       }
+
+      // Coin redemption settlement (idempotent per merchant transaction —
+      // safe even if the webhook also fires for the same checkout).
+      await settleCoinRedemption([booking]);
 
       return res.json({ success: true, booking });
     }
@@ -632,6 +753,10 @@ exports.phonePeWebhook = async (req, res) => {
         } else {
           await onPaymentSuccess(booking, booking.poojaId?.name || '');
         }
+
+        // Coin redemption settlement (idempotent per merchant transaction —
+        // safe even if the verify endpoint also settled it).
+        await settleCoinRedemption([booking]);
       } else if (ledger && ledger.paymentStatus === 'PENDING') {
         ledger.paymentStatus = 'FAILED';
         await ledger.save();
@@ -971,6 +1096,18 @@ exports.verifyCompletionOtp = async (req, res, next) => {
     NotificationEngine.emit('INVOICE_GENERATED', completionPayload).catch(() => {});
     NotificationEngine.emit('SERVICE_COMPLETED', completionPayload).catch(() => {});
     Booking.findByIdAndUpdate(booking._id, { invoiceSent: true }).catch(() => {});
+
+    // ── User Referral: auto-grant booking reward (fire-and-forget) ────
+    // Only triggers if the booking user was referred via the new User → User referral
+    // system. Grant is idempotent per booking and enforces the per-referred-user limit.
+    userReferralService.createBookingRewardEligibility(booking._id)
+      .catch((err) => console.error('[Referral] Booking reward grant failed:', err.message));
+
+    // ── Pooja Loyalty: auto-grant global loyalty coins (fire-and-forget) ────
+    // Applies to ALL users (referred or not); idempotent per booking via the
+    // wallet ledger's unique idempotencyKey.
+    poojaLoyaltyService.grantPoojaLoyaltyReward(booking._id)
+      .catch((err) => console.error('[Loyalty] Pooja loyalty reward failed:', err.message));
 
     res.json({ success: true, message: 'Booking completed successfully', booking });
   } catch (err) { next(err); }

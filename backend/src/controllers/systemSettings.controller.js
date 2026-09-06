@@ -36,10 +36,40 @@ exports.updateSettings = async (req, res) => {
 
     // Coerce numeric fields
     ['emailSmtpPort', 'platformCommissionPercent', 'platformCommissionFixed', 'platformGstPercent',
-     'partialPaymentMinAmount',
+     'partialPaymentMinAmount', 'poojaBookingCoinRewardPercent', 'coinRedemptionMinCoins',
     ].forEach((f) => {
       if (update[f] !== undefined) update[f] = Number(update[f]);
     });
+
+    // Coin Monetary Value (global Wallet / Coins setting — the single source of
+    // truth for coin <-> money conversion). null / '' / 'null' mean 'not yet
+    // configured'; otherwise the value must be a positive number.
+    if (update.coinMonetaryValue !== undefined) {
+      if (update.coinMonetaryValue === null || update.coinMonetaryValue === '' || update.coinMonetaryValue === 'null') {
+        update.coinMonetaryValue = null;
+      } else {
+        const v = Number(update.coinMonetaryValue);
+        if (isNaN(v) || v <= 0) {
+          return res.status(400).json({ success: false, message: 'Coin value must be a positive number or null' });
+        }
+        update.coinMonetaryValue = v;
+      }
+    }
+
+    // Coin Redemption Minimum (global Wallet / Coins setting) — minimum coins a
+    // user must hold before redemption becomes available at checkout. Empty /
+    // null resets to 0; otherwise a non-negative whole number.
+    if (update.coinRedemptionMinCoins !== undefined) {
+      if (update.coinRedemptionMinCoins === null || update.coinRedemptionMinCoins === '' || update.coinRedemptionMinCoins === 'null') {
+        update.coinRedemptionMinCoins = 0;
+      } else {
+        const v = Number(update.coinRedemptionMinCoins);
+        if (isNaN(v) || v < 0 || !Number.isInteger(v)) {
+          return res.status(400).json({ success: false, message: 'Minimum coins for redemption must be a non-negative whole number' });
+        }
+        update.coinRedemptionMinCoins = v;
+      }
+    }
 
     // Coerce boolean fields
     if (update.partialPaymentEnabled !== undefined)
@@ -63,6 +93,7 @@ exports.updateSettings = async (req, res) => {
 
     // Sanitize NaN numerics — remove rather than fail runValidators
     ['emailSmtpPort','platformCommissionPercent','platformCommissionFixed','platformGstPercent','partialPaymentMinAmount',
+     'poojaBookingCoinRewardPercent','coinRedemptionMinCoins',
      'sessionTimeoutMinutes','otpExpiryMinutes','passwordMinLength'].forEach((f) => {
       if (update[f] !== undefined && isNaN(update[f])) delete update[f];
     });

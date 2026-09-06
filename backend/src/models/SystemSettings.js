@@ -105,6 +105,31 @@ const systemSettingsSchema = new mongoose.Schema({
 
   // Mobile (System Configuration Center)
   mobileSupportUrl: { type: String, default: '' },
+
+  // ── User Referral Program ─────────────────────────────────────────────────
+  userReferralEnabled:                { type: Boolean, default: false },
+  userReferralDefaultValidityDays:    { type: Number,  default: 30, min: 1 },
+  userReferralDailyLimit:             { type: Number,  default: 5,  min: 1 },
+  userReferralRegistrationRewardCoins:{ type: Number,  default: 10, min: 0 },
+  userReferralBookingRewardCoins:     { type: Number,  default: 50, min: 0 },
+  // Max qualifying completed bookings per referred user that can generate a
+  // booking reward for the referrer. 0 disables booking rewards entirely.
+  maxRewardedBookingsPerReferredUser:{ type: Number,  default: 5,  min: 0 },
+
+  // ── Wallet / Coins ────────────────────────────────────────────────────────
+  // coinMonetaryValue: null means 'not yet configured' — Admin must set it
+  // before coin redemption can be used in checkout. Do NOT default to 1.
+  coinMonetaryValue: { type: Number, default: null },
+
+  // Minimum coins a user must hold in their wallet before coin redemption
+  // becomes available at checkout. This is an ELIGIBILITY threshold (balance
+  // gate), not a minimum per-transaction redemption amount.
+  coinRedemptionMinCoins: { type: Number, default: 0, min: 0 },
+
+  // ── Pooja Booking Loyalty Reward (global, applies to all eligible Pooja
+  //    bookings; percentage of the PRE-TAX pooja service amount credited to
+  //    the user's wallet when the booking reaches COMPLETED) ──────────────
+  poojaBookingCoinRewardPercent: { type: Number, default: 5, min: 0, max: 100 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('SystemSettings', systemSettingsSchema);

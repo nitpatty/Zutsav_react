@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Zap, Package, Shield, ArrowLeft, ShoppingCart, BadgeCheck } from 'lucide-react';
+import { Sparkles, Zap, Package, Shield, ArrowLeft, ShoppingCart, BadgeCheck, Tag, X, Coins } from 'lucide-react';
 import { formatDuration } from '../../utils/durationFormatter';
 import { formatINR, roundToPaise } from '../../utils/priceEngine';
 import { getImageUrl } from '../../config';
@@ -13,7 +13,13 @@ export default function ReviewStep({
   referralToken, referralInfo,
   partialConfig, paymentMode, setPaymentMode, partialAmount, setPartialAmount,
   paying, onBack, onPay, onAddToCart,
+  couponInput, setCouponInput, appliedCoupon, setAppliedCoupon, applyingCoupon, onApplyCoupon, onRemoveCoupon,
+  walletInfo, useCoins, setUseCoins, coinCoins, coinValue, coinEligible, coinMinCoins, coinBalance,
 }) {
+  const discount = appliedCoupon?.discount || 0;
+  const coinRate = Number(walletInfo?.coinMonetaryValue) || 0;
+  const finalTotal = Math.max(0, Math.round((pricing.grandTotal - discount - coinValue) * 100) / 100);
+  const coinsDisabled = !!useCoins;
   return (
     <div className="card-premium rounded-3xl p-6">
       <StepHeader icon={Sparkles} title="Review & Pay" desc="Confirm your ceremony booking" />
@@ -120,8 +126,107 @@ export default function ReviewStep({
               {formatINR(pricing.grandTotal)}
             </span>
           </div>
+          {discount > 0 && (
+            <div className="border-t border-green-100 pt-2.5 flex justify-between items-center">
+              <span className="font-semibold text-green-600 text-sm">Coupon Discount</span>
+              <span className="font-semibold text-green-600 text-lg">−{formatINR(discount)}</span>
+            </div>
+          )}
+          {coinValue > 0 && (
+            <div className="border-t border-saffron-100 pt-2.5 flex justify-between items-center">
+              <span className="font-semibold text-saffron-600 text-sm">Coins Applied ({coinCoins} coins)</span>
+              <span className="font-semibold text-saffron-600 text-lg">−{formatINR(coinValue)}</span>
+            </div>
+          )}
+          {(discount > 0 || coinValue > 0) && (
+            <div className="border-t border-orange-100 pt-2.5 flex justify-between items-center">
+              <span className="font-bold text-gray-800 text-sm">Final Amount</span>
+              <span className="font-bold text-orange-600 text-2xl" style={{ fontFamily: "'Cormorant Garamond',serif" }}>
+                {formatINR(finalTotal)}
+              </span>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* ── Coupon ─────────────────────────── */}
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 mb-4">
+        {!appliedCoupon ? (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2 focus-within:border-saffron-400">
+              <Tag size={14} className="text-gray-400 shrink-0" />
+              <input
+                type="text"
+                value={couponInput}
+                onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                placeholder="Enter coupon code"
+                disabled={coinsDisabled}
+                className="flex-1 text-sm outline-none bg-transparent uppercase placeholder:normal-case disabled:opacity-50"
+                onKeyDown={(e) => e.key === 'Enter' && onApplyCoupon()}
+              />
+            </div>
+            <button onClick={onApplyCoupon} disabled={coinsDisabled || applyingCoupon || !couponInput.trim()}
+              className="px-4 py-2 bg-saffron-500 text-white text-sm font-semibold rounded-xl hover:bg-saffron-600 disabled:opacity-50">
+              {applyingCoupon ? '…' : 'Apply'}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Tag size={14} className="text-green-600" />
+              <span className="font-mono font-bold text-sm text-green-700">{appliedCoupon.code}</span>
+              <span className="text-xs text-gray-500">
+                {appliedCoupon.discountType === 'PERCENTAGE'
+                  ? `${appliedCoupon.discountValue}% off${appliedCoupon.maxDiscount != null ? ` (max ₹${appliedCoupon.maxDiscount})` : ''}`
+                  : `₹${appliedCoupon.discountValue} off`}
+              </span>
+            </div>
+            <button onClick={onRemoveCoupon} className="text-gray-400 hover:text-red-500">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        {coinsDisabled && !appliedCoupon && (
+          <p className="text-[11px] text-gray-400 mt-1.5">Remove coins to apply a coupon — they cannot be combined.</p>
+        )}
+      </div>
+
+      {/* ── Coins (redemption) ─────────────────────── */}
+      {walletInfo && (
+        <div className="rounded-2xl border border-saffron-200 bg-white p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide flex items-center gap-1.5">
+              <Coins size={13} className="text-saffron-500" /> Use Coins
+            </p>
+            <span className="text-xs text-gray-500">{coinBalance} coins balance</span>
+          </div>
+
+          {coinEligible ? (
+            <label className={`flex items-center justify-between gap-3 mt-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+              useCoins ? 'border-saffron-500 bg-saffron-50' : 'border-gray-200 hover:border-saffron-200'
+            }`}>
+              <div className="flex-1">
+                <p className="font-semibold text-sm text-gray-800">
+                  Apply {Math.max(0, coinCoins)} coins
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Redeem {formatINR(coinValue)} off this booking
+                </p>
+              </div>
+              <input type="checkbox" checked={useCoins} onChange={(e) => setUseCoins(e.target.checked)} className="w-4 h-4 accent-amber-500" />
+            </label>
+          ) : (
+            <p className="text-xs text-gray-500 mt-2">
+              {coinRate <= 0
+                ? 'Coin value is not configured yet — redemption is unavailable.'
+                : coinBalance < coinMinCoins
+                  ? `Redemption needs a minimum balance of ${coinMinCoins} coins. You have ${coinBalance}.`
+                  : 'Coins cannot be combined with a coupon — remove the coupon to use coins.'}
+            </p>
+          )}
+          {useCoins && <p className="text-[11px] text-gray-400 mt-1.5">Coins are debited only after the payment succeeds.</p>}
+        </div>
+      )}
 
       {/* Payment Mode Selection */}
       {partialConfig.enabled && (
@@ -137,9 +242,9 @@ export default function ReviewStep({
                 onChange={() => setPaymentMode('FULL')} className="accent-indigo-600" />
               <div className="flex-1">
                 <p className="font-semibold text-sm text-gray-800">Pay Full Amount</p>
-                <p className="text-xs text-gray-500 mt-0.5">Pay {formatINR(pricing.grandTotal)} now · No pending balance</p>
+                <p className="text-xs text-gray-500 mt-0.5">Pay {formatINR(finalTotal)} now · No pending balance</p>
               </div>
-              <span className="font-bold text-indigo-700 text-sm">{formatINR(pricing.grandTotal)}</span>
+              <span className="font-bold text-indigo-700 text-sm">{formatINR(finalTotal)}</span>
             </label>
 
             <label className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
@@ -149,7 +254,7 @@ export default function ReviewStep({
                 onChange={() => {
                   setPaymentMode('PARTIAL');
                   const opts = partialConfig.mode === 'percentage'
-                    ? partialConfig.options.map(p => roundToPaise(pricing.grandTotal * p / 100))
+                    ? partialConfig.options.map(p => roundToPaise(finalTotal * p / 100))
                     : partialConfig.options;
                   if (opts.length > 0 && !partialAmount) setPartialAmount(opts[0]);
                 }} className="accent-orange-500" />
@@ -164,11 +269,11 @@ export default function ReviewStep({
                 {partialConfig.options.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {partialConfig.options.map((opt) => {
-                      const resolvedAmt = partialConfig.mode === 'percentage'
-                        ? roundToPaise(pricing.grandTotal * opt / 100)
-                        : opt;
+                  const resolvedAmt = partialConfig.mode === 'percentage'
+                    ? roundToPaise(finalTotal * opt / 100)
+                    : opt;
                       const label = partialConfig.mode === 'percentage' ? `${opt}%` : formatINR(resolvedAmt);
-                      const isDisabled = resolvedAmt < partialConfig.minAmount || resolvedAmt >= pricing.grandTotal;
+                      const isDisabled = resolvedAmt < partialConfig.minAmount || resolvedAmt >= finalTotal;
                       return (
                         <button
                           key={opt} type="button" disabled={isDisabled}
@@ -192,7 +297,7 @@ export default function ReviewStep({
                     <input
                       type="number"
                       min={partialConfig.minAmount}
-                      max={pricing.grandTotal - 1}
+                      max={finalTotal - 1}
                       value={partialAmount || ''}
                       onChange={(e) => setPartialAmount(Math.max(0, parseInt(e.target.value) || 0))}
                       className="input flex-1 text-sm"
@@ -204,7 +309,7 @@ export default function ReviewStep({
                   )}
                 </div>
 
-                {partialAmount >= partialConfig.minAmount && partialAmount < pricing.grandTotal && (
+                {partialAmount >= partialConfig.minAmount && partialAmount < finalTotal && (
                   <div className="rounded-xl border border-orange-200 bg-amber-50 px-4 py-3 space-y-1.5">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Pay Now</span>
@@ -212,11 +317,11 @@ export default function ReviewStep({
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Pay Later</span>
-                      <span className="font-semibold text-red-600">{formatINR(pricing.grandTotal - partialAmount)}</span>
+                      <span className="font-semibold text-red-600">{formatINR(finalTotal - partialAmount)}</span>
                     </div>
                     <div className="border-t border-orange-200 pt-1.5 flex justify-between text-xs text-gray-500">
                       <span>Total Booking Amount</span>
-                      <span>{formatINR(pricing.grandTotal)}</span>
+                      <span>{formatINR(finalTotal)}</span>
                     </div>
                   </div>
                 )}
@@ -239,7 +344,7 @@ export default function ReviewStep({
           <button type="button" onClick={onPay} disabled={paying} className="btn-primary flex-1 py-3.5 text-base">
             {paying ? 'Processing…' : paymentMode === 'PARTIAL' && partialAmount >= partialConfig.minAmount
               ? `Pay ${formatINR(partialAmount)} Now 🙏`
-              : `Pay ${formatINR(pricing.grandTotal)} 🙏`}
+              : `Pay ${formatINR(finalTotal)} 🙏`}
           </button>
         </div>
 

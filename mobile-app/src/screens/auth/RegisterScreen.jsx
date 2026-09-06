@@ -51,13 +51,19 @@ function RegisterInput({ icon, value, onChangeText, placeholder, keyboardType, a
   );
 }
 
-export default function RegisterScreen({ navigation }) {
+export default function RegisterScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+
+  // Accept referral code from deep-link route params or global referral code store
+  const initialRef = route?.params?.referralCode || global.__zutsav_referral_code || '';
+  // Clear the global so it doesn't persist across navigation
+  if (global.__zutsav_referral_code) delete global.__zutsav_referral_code;
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('user');
+  const [referralCode, setReferralCode] = useState(initialRef);
 
   const handleRegister = () => {
     if (!name.trim() || !phone.trim() || !email.trim()) {
@@ -77,6 +83,7 @@ export default function RegisterScreen({ navigation }) {
       phone: phone.trim(),
       email: email.trim().toLowerCase(),
       role,
+      referralCode: referralCode || undefined,
     });
   };
 
@@ -138,6 +145,18 @@ export default function RegisterScreen({ navigation }) {
               placeholder="your@email.com"
               keyboardType="email-address"
               autoCapitalize="none"
+              returnKeyType="next"
+              style={{ marginBottom: 16 }}
+            />
+
+            <Text style={styles.fieldLabel}>Referral Code (optional)</Text>
+            <RegisterInput
+              icon="gift-outline"
+              value={referralCode}
+              onChangeText={(v) => setReferralCode(v.toUpperCase())}
+              placeholder="e.g. ABCDEF"
+              autoCapitalize="characters"
+              maxLength={10}
               returnKeyType="next"
               style={{ marginBottom: 20 }}
             />

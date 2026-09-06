@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle, Shield, Sparkles, BadgeCheck } from 'lucide-react';
+import { CheckCircle, Shield, Sparkles, BadgeCheck, Tag, X, Coins } from 'lucide-react';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
 import { useAuth }  from '../context/AuthContext';
@@ -47,6 +47,23 @@ export default function BookingFlow() {
   const [partialConfig, setPartialConfig] = useState({ enabled: false, minAmount: 500, mode: 'fixed', options: [] });
   const [paymentMode, setPaymentMode] = useState('FULL');
   const [partialAmount, setPartialAmount] = useState(0);
+
+  // Coupon state
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [applyingCoupon, setApplyingCoupon] = useState(false);
+
+  // Coin redemption state — wallet info comes from GET /api/wallet which now
+  // also returns the redemption context (coin value + minimum threshold).
+  const [walletInfo, setWalletInfo] = useState(null);
+  const [useCoins, setUseCoins] = useState(false);
+
+  useEffect(() => {
+    if (!user) { setWalletInfo(null); setUseCoins(false); return; }
+    API.get('/wallet')
+      .then(({ data }) => setWalletInfo((data.wallet) || null))
+      .catch(() => setWalletInfo(null));
+  }, [user]);
 
   const [linkedKits,  setLinkedKits]  = useState([]);
   const [kitsLoading, setKitsLoading] = useState(false);
@@ -212,6 +229,18 @@ export default function BookingFlow() {
     gstPercent:        rates.gstPercent,
   });
 
+  // ── Coin redemption derived values ──────────────────────────
+  // Mutually exclusive with coupons: enabling coins clears any applied coupon
+  // and applying a coupon turns coins off (the backend enforces this too).
+  const coinRate     = Number(walletInfo?.coinMonetaryValue) || 0;
+  const coinMinCoins = Number(walletInfo?.coinRedemptionMinCoins) || 0;
+  const coinBalance  = Number(walletInfo?.balance) || 0;
+  const coinEligible = !!user && walletInfo !== null && coinRate > 0 && coinBalance >= coinMinCoins && !appliedCoupon;
+  const coinCoins    = useCoins && coinEligible
+    ? Math.min(coinBalance, Math.floor(pricing.grandTotal / coinRate))
+    : 0;
+  const coinValue    = Math.round(coinCoins * coinRate * 100) / 100;
+
   // Active step list (dynamic based on choices)
   const activeSteps = buildActiveSteps(isUrgent, withKit, hasKits);
   const currentIdx  = activeSteps.indexOf(stepId);
@@ -274,13 +303,40 @@ export default function BookingFlow() {
     userDetails, paymentMode, partialAmount, referralToken,
   });
 
+  const applyCoupon = async () => {
+    if (!couponInput.trim()) return;
+    setApplyingCoupon(true);
+    try {
+      const eligibleAmount = pricing?.grandTotal || 0;
+      const { data } = await API.post('/coupons/validate', {
+        code: couponInput.trim(),
+        cartValue: eligibleAmount,
+        cartType: 'POOJA',
+      });
+      setAppliedCoupon({
+        code: data.coupon.code,
+        discount: data.discount,
+        discountType: data.coupon.discountType,
+        discountValue: data.coupon.discountValue,
+        maxDiscount: data.coupon.maxDiscount,
+      });
+      setCouponInput('');
+      setUseCoins(false);
+      toast.success(`Coupon ${data.coupon.code} applied ✓`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Invalid coupon');
+    } finally {
+      setApplyingCoupon(false);
+    }
+  };
+
   const handlePay = async () => {
     if (paymentMode === 'PARTIAL') {
       if (!partialAmount || partialAmount < partialConfig.minAmount) {
         toast.error(`Minimum partial payment is ₹${partialConfig.minAmount}`);
         return;
       }
-      if (partialAmount >= pricing.grandTotal) {
+      if (partialAmount >= pricing.grandTotal - (appliedCoupon?.discount || 0)) {
         toast.error('Partial amount must be less than the grand total');
         return;
       }
@@ -305,6 +361,8 @@ export default function BookingFlow() {
         isUrgent,
         paymentMode,
         partialAmount: paymentMode === 'PARTIAL' ? partialAmount : undefined,
+        couponCode:    appliedCoupon?.code,
+        coinRedemptionCoins: coinCoins || undefined,
         userDetails: {
           name:     userDetails.name,
           phone:    userDetails.phone,
@@ -319,6 +377,11 @@ export default function BookingFlow() {
       });
       // Booking created — referral context consumed, clear the sessionStorage entry
       try { sessionStorage.removeItem('zutsav_referral'); } catch { /* non-fatal */ }
+      if (data.paidWithCoins) {
+        navigate(`/payment-callback/${data.merchantTransactionId}`);
+        setTimeout(() => setPaying(false), 200);
+        return;
+      }
       window.location.href = data.redirectUrl;
     } catch (err) {
       toast.error(err.response?.data?.message || 'Booking failed. Please try again.');
@@ -490,6 +553,15 @@ export default function BookingFlow() {
                   partialConfig={partialConfig} paymentMode={paymentMode} setPaymentMode={setPaymentMode}
                   partialAmount={partialAmount} setPartialAmount={setPartialAmount}
                   paying={paying} onBack={goBack} onPay={handlePay} onAddToCart={handleAddToCart}
+                  couponInput={couponInput} setCouponInput={setCouponInput}
+                  appliedCoupon={appliedCoupon} setAppliedCoupon={setAppliedCoupon}
+                  applyingCoupon={applyingCoupon}
+                  onApplyCoupon={applyCoupon} onRemoveCoupon={() => setAppliedCoupon(null)}
+                  walletInfo={walletInfo}
+                  useCoins={useCoins} setUseCoins={(v) => { if (v) setAppliedCoupon(null); setUseCoins(v); }}
+                  coinCoins={coinCoins} coinValue={coinValue}
+                  coinEligible={coinEligible}
+                  coinMinCoins={coinMinCoins} coinBalance={coinBalance}
                 />
               )}
             </div>

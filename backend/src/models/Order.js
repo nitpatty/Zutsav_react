@@ -71,7 +71,7 @@ const orderSchema = new mongoose.Schema({
   // Reference to the Shipment record created for this order (null = no shipment yet)
   shipmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Shipment', default: null },
 
-  // ── Delivery OTP (for Out-For-Delivery confirmation) ─────────
+  // Delivery OTP (for Out-For-Delivery confirmation) ─────────
   deliveryOTP: {
     hash:        { type: String,  default: null },   // bcrypt hash — never store plain OTP
     expiry:      { type: Date,    default: null },
@@ -82,6 +82,11 @@ const orderSchema = new mongoose.Schema({
     generatedAt: { type: Date,    default: null },
     sentAt:      { type: Date,    default: null },
   },
+
+  // Coupon applied at checkout (optional — null when no coupon used)
+  couponCode:     { type: String, default: null },
+  couponId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
+  couponDiscount: { type: Number, default: 0, min: 0 },
 }, { timestamps: true });
 
 orderSchema.pre('save', async function (next) {

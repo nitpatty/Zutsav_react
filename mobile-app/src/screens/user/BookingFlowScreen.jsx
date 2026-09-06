@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, FlatList, Image, Alert, Linking, Modal, ActivityIndicator
+  TextInput, FlatList, Image, Alert, Linking, Modal, ActivityIndicator, Switch
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
@@ -167,6 +167,10 @@ export default function BookingFlowScreen({ navigation, route }) {
   const [paymentMode,   setPaymentMode]   = useState('FULL');
   const [partialAmount, setPartialAmount] = useState(0);
 
+  // Coins (Wallet redemption context + toggle)
+  const [walletInfo, setWalletInfo] = useState(null);
+  const [useCoins,   setUseCoins]   = useState(false);
+
   // User details
   const [userDetails, setUserDetails] = useState({
     name:     user?.name     || '',
@@ -219,6 +223,14 @@ export default function BookingFlowScreen({ navigation, route }) {
     if (pooja.languages?.length === 1) setLanguage(pooja.languages[0]);
   }, [pooja?._id]);
 
+  // Load wallet redemption context (coin value + minimum threshold + balance)
+  useEffect(() => {
+    if (!user?._id) return;
+    api.get('/wallet')
+      .then(({ data }) => setWalletInfo(data.wallet))
+      .catch(() => {});
+  }, [user?._id]);
+
   if (loading) return <LoadingSpinner fullScreen />;
   if (!pooja) return null;
 
@@ -242,6 +254,18 @@ export default function BookingFlowScreen({ navigation, route }) {
     gstPercent:        rates.gstPercent,
   });
   const { grandTotal } = pricing;
+
+  // Coins: derived redemption state (mirrors server-side rules in
+  // coinRedemptionService — eligibility threshold, balance cap, payable cap)
+  const coinRate     = Number(walletInfo?.coinMonetaryValue) > 0 ? Number(walletInfo.coinMonetaryValue) : 0;
+  const coinMinCoins = Math.floor(Number(walletInfo?.coinRedemptionMinCoins) || 0);
+  const coinBalance  = Math.floor(Number(walletInfo?.balance) || 0);
+  const coinEligible = coinRate > 0 && coinBalance >= coinMinCoins && grandTotal > 0;
+  const coinCoins    = useCoins && coinEligible
+    ? Math.min(coinBalance, Math.floor(grandTotal / coinRate))
+    : 0;
+  const coinValue    = roundToPaise(Math.min(coinCoins * coinRate, grandTotal));
+  const payableTotal = Math.max(0, roundToPaise(grandTotal - coinValue));
 
   const goNext = () => {
     const next = activeSteps[currentIdx + 1];
@@ -287,6 +311,7 @@ export default function BookingFlowScreen({ navigation, route }) {
         isUrgent,
         paymentMode,
         partialAmount: paymentMode === 'PARTIAL' ? partialAmount : undefined,
+        coinRedemptionCoins: coinCoins > 0 ? coinCoins : undefined,
         userDetails:  ud,
       });
 
@@ -650,15 +675,57 @@ export default function BookingFlowScreen({ navigation, route }) {
                   : <PriceRow label={`Samagri Kit — ${selectedKits[0]?.name}`} amount={pricing.kitAmount} C={C} muted sub="Delivered to ceremony address" />
                 )}
                 {pricing.kitGST > 0 && <PriceRow label={`GST on Kit (${rates.gstPercent}%)`} amount={pricing.kitGST} C={C} muted />}
+                {coinCoins > 0 && (
+                  <PriceRow label={`Coins Applied (${coinCoins} coins)`} amount={-coinValue} C={C} color="#16A34A" />
+                )}
               </View>
 
               <View style={[styles.pbDivider, { backgroundColor: C.border }]} />
 
               <View style={[styles.pbTotalWrap, { backgroundColor: (C.success || '#16A34A') + '0F' }]}>
-                <Text style={[styles.pbTotalLabel, { color: C.text }]}>Grand Total</Text>
-                <Text style={[styles.pbTotalAmount, { color: C.success || '#16A34A' }]}>{formatCurrency(pricing.grandTotal)}</Text>
+                <Text style={[styles.pbTotalLabel, { color: C.text }]}>{(coinCoins > 0 ? 'Amount to Pay' : 'Grand Total')}</Text>
+                <Text style={[styles.pbTotalAmount, { color: C.success || '#16A34A' }]}>{formatCurrency(coinCoins > 0 ? payableTotal : grandTotal)}</Text>
               </View>
             </View>
+
+            {/* Use Coins */}
+            {coinRate > 0 && (
+              <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border, padding: 16 }]}>
+                <View style={styles.coinToggleRow}>
+                  <View style={styles.coinToggleInfo}>
+                    <Text style={[styles.cardTitle, { color: C.text }]}>Use Coins</Text>
+                    <Text style={[styles.coinToggleSub, { color: C.textSecondary }]}>
+                      {coinBalance} coins · ₹{coinRate} each
+                    </Text>
+                  </View>
+                  <Switch
+                    value={useCoins && coinEligible}
+                    onValueChange={setUseCoins}
+                    disabled={!coinEligible}
+                    trackColor={{ false: C.border, true: C.primary }}
+                    thumbColor={coinEligible ? '#fff' : C.textLight || C.border}
+                  />
+                </View>
+                {coinMinCoins > 0 && coinBalance < coinMinCoins && (
+                  <Text style={styles.coinThresholdText}>Redemption requires at least {coinMinCoins} coins in your wallet</Text>
+                )}
+                {coinEligible && (
+                  <>
+                    <Text style={[styles.coinHint, { color: C.textSecondary }]}>
+                      Pay up to {formatCurrency(coinValue)} with your coins — the rest is payable via PhonePe
+                    </Text>
+                    {coinCoins > 0 && (
+                      <View style={[styles.coinSummary, { borderColor: (C.success || '#16A34A') + '40', backgroundColor: (C.success || '#16A34A') + '0D' }]}>
+                        <Text style={[styles.coinSummaryText, { color: C.success || '#16A34A' }]}>
+                          Coins applied: {coinCoins} (− {formatCurrency(coinValue)})
+                        </Text>
+                        <Text style={[styles.coinSummaryText, { color: C.success || '#16A34A' }]}>To pay: {formatCurrency(payableTotal)}</Text>
+                      </View>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
 
             {/* Payment option */}
             {partialConfig.enabled && (
@@ -680,9 +747,9 @@ export default function BookingFlowScreen({ navigation, route }) {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.payModeTitle, { color: C.text }]}>Pay Full Amount</Text>
-                      <Text style={[styles.payModeSub, { color: C.textSecondary }]}>Pay {formatCurrency(pricing.grandTotal)} now · No pending balance</Text>
+                      <Text style={[styles.payModeSub, { color: C.textSecondary }]}>Pay {formatCurrency(coinCoins > 0 ? payableTotal : grandTotal)} now · No pending balance</Text>
                     </View>
-                    <Text style={[styles.payModeAmt, { color: C.primaryDark || C.primary }]}>{formatCurrency(pricing.grandTotal)}</Text>
+                    <Text style={[styles.payModeAmt, { color: C.primaryDark || C.primary }]}>{formatCurrency(coinCoins > 0 ? payableTotal : grandTotal)}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -797,7 +864,7 @@ export default function BookingFlowScreen({ navigation, route }) {
                 : <Text style={styles.payBtnText}>
                     {paymentMode === 'PARTIAL' && partialAmount >= partialConfig.minAmount
                       ? `Pay ${formatCurrency(partialAmount)} Now 🙏`
-                      : `Pay ${formatCurrency(pricing.grandTotal)} 🙏`}
+                      : `Pay ${formatCurrency(coinCoins > 0 ? payableTotal : grandTotal)} 🙏`}
                   </Text>
               }
             </TouchableOpacity>
@@ -888,14 +955,15 @@ function KitPrefCard({ selected, onPress, icon, title, sub, badge, C }) {
   );
 }
 
-function PriceRow({ label, amount, C, muted = false, sub }) {
+function PriceRow({ label, amount, C, muted = false, sub, color }) {
+  const accent = color || (muted ? C.textSecondary : C.text);
   return (
     <View style={styles.pbRow}>
       <View style={styles.pbRowLeft}>
         <Text style={[styles.pbRowLabel, { color: muted ? C.textSecondary : C.text }]}>{label}</Text>
         {sub && <Text style={[styles.pbRowSub, { color: C.textLight || C.textSecondary }]}>{sub}</Text>}
       </View>
-      <Text style={[styles.pbRowAmount, { color: muted ? C.textSecondary : C.text }]}>{formatCurrency(amount)}</Text>
+      <Text style={[styles.pbRowAmount, { color: accent }]}>{formatCurrency(amount)}</Text>
     </View>
   );
 }
@@ -992,6 +1060,13 @@ const styles = StyleSheet.create({
   reviewItemVal:  { flex: 1, fontSize: 12, fontWeight: '500' },
   priceLineRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   divider:        { height: 1 },
+  coinToggleRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  coinToggleInfo: { flex: 1 },
+  coinToggleSub:  { fontSize: 12, marginTop: 3 },
+  coinThresholdText: { fontSize: 12, color: '#D97706', marginTop: 8 },
+  coinHint:       { fontSize: 12, marginTop: 10 },
+  coinSummary:    { flexDirection: 'row', justifyContent: 'space-between', borderRadius: 12, borderWidth: 1, padding: 12, marginTop: 10, gap: 8 },
+  coinSummaryText: { fontSize: 13, fontWeight: '700' },
 
   // ── Price Breakdown card (dedicated — do not reuse elsewhere) ──────────
   pbCard: {

@@ -5,12 +5,21 @@ const settingsCtrl = require('../controllers/systemSettings.controller');
 const invoiceCtrl  = require('../controllers/invoice.controller');
 const logMgmt      = require('../controllers/logManagement.controller');
 const configCenterRoutes = require('./configCenter.routes');
+const { userReferralRouter, bookingRewardRouter } = require('./adminUserReferral.routes');
+const adminWalletRoutes = require('./adminWallet.routes');
+const adminCouponRoutes = require('./adminCoupon.routes');
+const adminCampaignRoutes = require('./adminCampaign.routes');
 const { protect, authorize } = require('../middleware/auth');
 const { uploadLogo } = require('../middleware/upload');
 
 router.use(protect, authorize('admin'));
 
 router.use('/config-center', configCenterRoutes);
+router.use('/user-referrals', userReferralRouter);
+router.use('/booking-rewards', bookingRewardRouter);
+router.use('/wallet', adminWalletRoutes);
+router.use('/coupons', adminCouponRoutes);
+router.use('/campaigns', adminCampaignRoutes);
 router.use('/documents', require('./legalDocumentAdmin.routes'));
 
 router.get('/dashboard',                    ctrl.getDashboard);

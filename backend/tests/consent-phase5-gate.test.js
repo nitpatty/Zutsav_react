@@ -340,12 +340,13 @@ describe('bootstrap v1.2.0 fresh database', () => {
     for (const entry of bootstrap.VERIFIED_EMAIL_MAPPINGS) results.push(await bootstrap.applyEmailEntry(entry));
     for (const entry of bootstrap.VERIFIED_INAPP_MAPPINGS) results.push(await bootstrap.applyInAppEntry(entry));
 
-    assert.equal(results.length, 51);
-    assert.equal(results.filter((r) => r.action === 'created').length, 51);
-    assert.equal(results.filter((r) => r.purposeAction === 'purpose-created').length, 51);
+    const expectedTotal = bootstrap.VERIFIED_MAPPINGS.length + bootstrap.VERIFIED_EMAIL_MAPPINGS.length + bootstrap.VERIFIED_INAPP_MAPPINGS.length;
+    assert.equal(results.length, expectedTotal);
+    assert.equal(results.filter((r) => r.action === 'created').length, expectedTotal);
+    assert.equal(results.filter((r) => r.purposeAction === 'purpose-created').length, expectedTotal);
 
     const total = await NotificationMapping.countDocuments({});
-    assert.equal(total, 51);
+    assert.equal(total, expectedTotal);
 
     const all = await NotificationMapping.find({}).lean();
     assert.ok(all.every((m) => m.purpose), 'every created mapping must carry a purpose');
@@ -372,7 +373,8 @@ describe('bootstrap v1.2.0 fresh database', () => {
     assert.equal(results.filter((r) => r.action === 'created').length, 0);
     assert.equal(results.filter((r) => r.action === 'configured').length, 0);
     assert.equal(results.filter((r) => r.purposeAction === 'purpose-set').length, 0);
-    assert.equal(results.filter((r) => r.purposeAction === 'purpose-matches').length, 51);
+    const expectedTotal = bootstrap.VERIFIED_MAPPINGS.length + bootstrap.VERIFIED_EMAIL_MAPPINGS.length + bootstrap.VERIFIED_INAPP_MAPPINGS.length;
+    assert.equal(results.filter((r) => r.purposeAction === 'purpose-matches').length, expectedTotal);
     assert.ok(results.every((r) => ['already-correct', 'preserved-custom'].includes(r.action)));
   });
 });

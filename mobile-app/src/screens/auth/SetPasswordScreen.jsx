@@ -22,7 +22,7 @@ const CONSENT_VERSION = 'v1.0';
 
 export default function SetPasswordScreen({ navigation, route }) {
   // Params passed from OTPScreen after successful verification
-  const { phone, email, name, role, channel = 'whatsapp' } = route.params || {};
+  const { phone, email, name, role, channel = 'whatsapp', referralCode } = route.params || {};
   const insets = useSafeAreaInsets();
   const { setSession } = useAuthStore();
 
@@ -55,6 +55,7 @@ export default function SetPasswordScreen({ navigation, route }) {
         password,
         role: role || 'user',
         channel,
+        referralCode: referralCode || undefined,
         // WhatsApp communication consent (separate from OTP verification)
         serviceConsent,
         marketingConsent,

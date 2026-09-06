@@ -44,12 +44,12 @@ export default function JourneyPicker({ featuredPoojas, handleAiSubmit }) {
         <div className="text-center mb-14">
           <EyebrowTag>{t('home.journeyEyebrow', 'Personalized for You')}</EyebrowTag>
           <h2 className="section-title">{t('home.journeyTitle', 'Why Are You Here Today?')}</h2>
-          <p className="section-subtitle mx-auto text-center">
+          <p className="mx-auto text-center section-subtitle">
             {t('home.journeySubtitle', "Select your intent and we'll guide you to the right puja, products, and wisdom.")}
           </p>
         </div>
 
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-9 gap-3 mb-10">
+        <div className="grid grid-cols-3 gap-3 mb-10 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-9">
           {JOURNEY_INTENTS.map((intent, i) => (
             <button
               key={intent.id}
@@ -60,8 +60,8 @@ export default function JourneyPicker({ featuredPoojas, handleAiSubmit }) {
                   : `bg-white border-gray-100 hover:${intent.bdr}`}`}
               style={{ transitionDelay: `${i * 50}ms` }}
             >
-              <span className="text-2xl mb-2 group-hover:scale-110 transition-transform duration-200">{intent.emoji}</span>
-              <span className="text-xs font-bold text-gray-700 font-sans">{t(intent.i18nLabel, intent.label)}</span>
+              <span className="mb-2 text-2xl transition-transform duration-200 group-hover:scale-110">{intent.emoji}</span>
+              <span className="font-sans text-xs font-bold text-gray-700">{t(intent.i18nLabel, intent.label)}</span>
               <span className="text-[10px] text-gray-400 font-sans mt-0.5 hidden sm:block">{t(intent.i18nDesc, intent.desc)}</span>
             </button>
           ))}
@@ -69,32 +69,32 @@ export default function JourneyPicker({ featuredPoojas, handleAiSubmit }) {
 
         <div className={`transition-all duration-500 ${activeJourney ? 'opacity-100 max-h-[600px]' : 'opacity-0 max-h-0 overflow-hidden'}`}>
           {selectedIntent && (
-            <div className="bg-white rounded-3xl p-8 shadow-card border border-gray-100">
+            <div className="p-8 bg-white border border-gray-100 rounded-3xl shadow-card">
               <div className="flex items-center gap-3 mb-6">
                 <span className="text-3xl">{selectedIntent.emoji}</span>
                 <div>
-                  <h3 className="font-display font-bold text-xl text-gray-900" style={{ letterSpacing: '-0.01em' }}>
+                  <h3 className="text-xl font-bold text-gray-900 font-display" style={{ letterSpacing: '-0.01em' }}>
                     {t('home.recommendedFor', 'Recommended for {{intent}}', { intent: t(selectedIntent.i18nLabel, selectedIntent.label) })}
                   </h3>
-                  <p className="text-sm text-gray-400 font-sans">{t(selectedIntent.i18nDesc, selectedIntent.desc)}</p>
+                  <p className="font-sans text-sm text-gray-400">{t(selectedIntent.i18nDesc, selectedIntent.desc)}</p>
                 </div>
               </div>
 
               {recsToShow.length > 0 && (
-                <div className="grid sm:grid-cols-3 gap-4 mb-6">
+                <div className="grid gap-4 mb-6 sm:grid-cols-3">
                   {recsToShow.map((p) => (
                     <Link key={p._id} to={p.slug && !p._id.startsWith('static') ? `/book/${p.slug}` : '/poojas'}
-                      className="group flex items-center gap-3 p-4 rounded-2xl border border-gray-100 hover:border-saffron-200 hover:bg-saffron-50/30 transition-all duration-200">
-                      <div className="w-12 h-12 bg-gradient-to-br from-saffron-50 to-orange-50 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
+                      className="flex items-center gap-3 p-4 transition-all duration-200 border border-gray-100 group rounded-2xl hover:border-saffron-200 hover:bg-saffron-50/30">
+                      <div className="flex items-center justify-center w-12 h-12 overflow-hidden bg-gradient-to-br from-saffron-50 to-orange-50 rounded-xl shrink-0">
                         {IMG(p.image)
-                          ? <img src={IMG(p.image)} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
+                          ? <img src={IMG(p.image)} alt={p.name} className="object-cover w-full h-full" loading="lazy" />
                           : <span className="text-xl">🙏</span>}
                       </div>
                       <div className="min-w-0">
-                        <p className="font-semibold text-gray-800 text-sm font-sans truncate group-hover:text-saffron-700 transition-colors">{p.name}</p>
-                        {p.salePrice && <p className="text-xs text-saffron-600 font-sans">₹{p.salePrice.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</p>}
+                        <p className="font-sans text-sm font-semibold text-gray-800 truncate transition-colors group-hover:text-saffron-700">{p.name}</p>
+                        {p.salePrice && <p className="font-sans text-xs text-saffron-600">₹{p.salePrice.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</p>}
                       </div>
-                      <ArrowRight size={14} className="text-gray-300 group-hover:text-saffron-500 transition-colors shrink-0 ml-auto" />
+                      <ArrowRight size={14} className="ml-auto text-gray-300 transition-colors group-hover:text-saffron-500 shrink-0" />
                     </Link>
                   ))}
                 </div>

@@ -11,6 +11,8 @@ const { NotificationEngine } = require('../../notification-engine');
 const { urls } = require('../config');
 const { calculatePricing, calculateItemTax } = require('../utils/financeUtils');
 const { normalizeBookingPayload } = require('../../notification-engine/variables/PayloadNormalizer');
+const couponService = require('../services/couponService');
+const { resolveCoinRedemption, settleCoinRedemption } = require('../services/coinRedemptionService');
 
 // Delegates to the centralized financeUtils engine — accepts Pooja document or plain number
 async function computePricing(pooja, kitPrice = 0) {
@@ -38,7 +40,10 @@ async function computePricing(pooja, kitPrice = 0) {
 //   products: [{ productId, variantId, quantity }]  (optional)
 exports.cartCheckout = async (req, res, next) => {
   try {
-    const { bookings: bookingItems = [], products: productItems = [], shippingAddress } = req.body;
+    const { bookings: bookingItems = [], products: productItems = [], shippingAddress, couponCode } = req.body;
+    // Coins + coupons are mutually exclusive — resolve coin redemption first so
+    // a conflicting request is rejected before any pricing/coupon work happens.
+    const hasCoupon = !!(couponCode && typeof couponCode === 'string' && couponCode.trim());
 
     if (bookingItems.length === 0 && productItems.length === 0) {
       return res.status(400).json({ success: false, message: 'Cart is empty' });
@@ -174,9 +179,177 @@ exports.cartCheckout = async (req, res, next) => {
     }
 
     // ── 3. Single PhonePe payment for combined total ───────────
-    const combinedTotal = bookingTotal + productTotal;
+    let combinedTotal = bookingTotal + productTotal;
     if (combinedTotal === 0) {
       return res.status(400).json({ success: false, message: 'Combined cart total is zero' });
+    }
+
+    // ── Coupon validation (server-authoritative) ──────────────
+    let couponDiscount = 0;
+    let resolvedCoupon = null;
+    if (hasCoupon) {
+      // Determine eligible amount: only the portions whose category the coupon covers
+      let eligibleAmount = 0;
+      let eligibleType = null;
+      if (bookingTotal > 0) eligibleAmount += bookingTotal;
+      if (productTotal > 0) eligibleAmount += productTotal;
+      // Determine applicability-eligible portion
+      const coupon = await couponService.getCouponByCode(couponCode);
+      if (!coupon) {
+        return res.status(400).json({ success: false, message: 'Invalid coupon code' });
+      }
+      let eligibleBooking = 0, eligibleProduct = 0;
+      if (coupon.applicability.includes('POOJA')) eligibleBooking += bookingTotal;
+      if (coupon.applicability.some(a => ['PRODUCTS', 'MARKETPLACE'].includes(a))) eligibleProduct += productTotal;
+      eligibleAmount = eligibleBooking + eligibleProduct;
+      if (eligibleAmount <= 0) {
+        return res.status(400).json({ success: false, message: 'This coupon is not applicable to any item in your cart' });
+      }
+      eligibleType = coupon.applicability.includes('POOJA') && eligibleBooking > 0
+        ? 'POOJA'
+        : (coupon.applicability.find(a => a === 'PRODUCTS') || coupon.applicability.find(a => a === 'MARKETPLACE') || 'PRODUCTS');
+
+      const couponResult = await couponService.validateCoupon({
+        code: couponCode,
+        userId: req.user._id,
+        cartValue: eligibleAmount,
+        cartType: eligibleType,
+      });
+      if (!couponResult.valid) {
+        return res.status(400).json({ success: false, message: couponResult.error });
+      }
+      couponDiscount = couponResult.discount;
+      resolvedCoupon = couponResult.coupon;
+      combinedTotal = Math.max(0, Math.round((combinedTotal - couponDiscount) * 100) / 100);
+    }
+
+    // Apply discount to created bookings/order records proportionally where possible
+    // (simple approach: store the discount on the booking/order that carries it)
+    if (resolvedCoupon && couponDiscount > 0) {
+      // Distribute discount to bookings and order
+      let remaining = couponDiscount;
+      const totalBeforeDiscount = bookingTotal + productTotal;
+      for (const { booking } of createdBookings) {
+        if (remaining <= 0) break;
+        const share = totalBeforeDiscount > 0
+          ? Math.round((booking.grandTotal / totalBeforeDiscount) * couponDiscount * 100) / 100
+          : 0;
+        booking.couponCode = resolvedCoupon.code;
+        booking.couponId = resolvedCoupon._id;
+        booking.couponDiscount = Math.min(share, remaining, booking.grandTotal);
+        booking.grandTotal = Math.max(0, Math.round((booking.grandTotal - booking.couponDiscount) * 100) / 100);
+        booking.amount = booking.grandTotal;
+        booking.remainingAmount = booking.grandTotal;
+        remaining -= booking.couponDiscount;
+        await booking.save();
+      }
+      if (createdOrder && remaining > 0) {
+        const share = Math.min(remaining, createdOrder.totalAmount);
+        createdOrder.couponCode = resolvedCoupon.code;
+        createdOrder.couponId = resolvedCoupon._id;
+        createdOrder.couponDiscount = share;
+        createdOrder.totalAmount = Math.max(0, Math.round((createdOrder.totalAmount - share) * 100) / 100);
+        remaining -= share;
+        await createdOrder.save();
+      }
+
+      // Record redemptions (one per booking + one for the order)
+      for (const { booking } of createdBookings) {
+        if (booking.couponDiscount > 0) {
+          await couponService.recordRedemption({
+            couponId: resolvedCoupon._id,
+            userId: req.user._id,
+            bookingId: booking._id,
+            purchaseType: 'POOJA',
+            discountType: resolvedCoupon.discountType,
+            discountApplied: booking.couponDiscount,
+            cartValue: (booking.grandTotal || 0) + (booking.couponDiscount || 0),
+            finalPayable: booking.grandTotal || 0,
+          }).catch(() => {});
+        }
+      }
+      if (createdOrder && createdOrder.couponDiscount > 0) {
+        await couponService.recordRedemption({
+          couponId: resolvedCoupon._id,
+          userId: req.user._id,
+          orderId: createdOrder._id,
+          purchaseType: 'MARKETPLACE',
+          discountType: resolvedCoupon.discountType,
+          discountApplied: createdOrder.couponDiscount,
+          cartValue: (createdOrder.totalAmount || 0) + (createdOrder.couponDiscount || 0),
+          finalPayable: createdOrder.totalAmount || 0,
+        }).catch(() => {});
+      }
+    }
+
+    // ── Coin redemption (global Wallet / Coins, server-authoritative) ──────
+    // Pooja-only, mutually exclusive with coupons, wallet balance must meet the
+    // admin-configured minimum threshold, and redeemed coins never exceed the
+    // balance or the payable. The wallet debit itself happens only AFTER the
+    // payment succeeds (see settleCoinRedemption below/verify/webhook).
+    const coinResolution = await resolveCoinRedemption({
+      userId: req.user._id,
+      coinCoins: req.body.coinRedemptionCoins,
+      hasCoupon,
+      productItems,
+      payable: combinedTotal,
+    });
+    const { coinCoinsUsed, coinValueUsed } = coinResolution;
+
+    if (coinValueUsed > 0 && createdBookings.length > 0) {
+      // Distribute the reduction across bookings; the LAST booking absorbs the
+      // rounding remainder so the sums exactly equal the applied totals.
+      const totalBefore = bookingTotal;
+      let valueAlloc = 0;
+      let coinAlloc = 0;
+      for (let i = 0; i < createdBookings.length; i++) {
+        const booking = createdBookings[i].booking;
+        const isLast = i === createdBookings.length - 1;
+        const share = isLast
+          ? Math.round((coinValueUsed - valueAlloc) * 100) / 100
+          : Math.round((booking.grandTotal / totalBefore) * coinValueUsed * 100) / 100;
+        const shareCoins = isLast
+          ? coinCoinsUsed - coinAlloc
+          : Math.min(coinCoinsUsed - coinAlloc, Math.max(0, Math.round((share / coinValueUsed) * coinCoinsUsed)));
+        booking.coinCoins = shareCoins;
+        booking.coinValue = share;
+        booking.grandTotal = Math.max(0, Math.round((booking.grandTotal - share) * 100) / 100);
+        booking.amount = booking.grandTotal;
+        booking.remainingAmount = booking.grandTotal;
+        await booking.save();
+        valueAlloc += share;
+        coinAlloc += shareCoins;
+      }
+      combinedTotal = Math.max(0, Math.round((combinedTotal - coinValueUsed) * 100) / 100);
+    }
+
+    // If coins fully covered the payable, skip the payment gateway entirely —
+    // settle the wallet debit and mark everything paid inline.
+    if (coinValueUsed > 0 && combinedTotal <= 0) {
+      await settleCoinRedemption(createdBookings.map((x) => x.booking));
+      for (const { booking, poojaName } of createdBookings) {
+        booking.status = 'paid';
+        booking.paymentStatus = 'FULLY_PAID';
+        booking.amountPaid = 0;
+        booking.remainingAmount = 0;
+        await recordAttemptResult(booking, merchantTransactionId, { status: 'SUCCESS' }, poojaName || '');
+        await booking.save();
+        await Pooja.findByIdAndUpdate(booking.poojaId, { $inc: { totalBookings: 1 } });
+        NotificationEngine.emit(
+          'BOOKING_CONFIRMED',
+          normalizeBookingPayload({ booking, poojaName: poojaName || '' })
+        ).catch(() => {});
+      }
+      return res.status(201).json({
+        success: true,
+        paidWithCoins: true,
+        merchantTransactionId,
+        bookings: createdBookings.map((b) => b.booking),
+        order: createdOrder,
+        totals: { bookingTotal, productTotal, combinedTotal },
+        coinCoinsUsed,
+        coinValueUsed,
+      });
     }
 
     const { redirectUrl } = await createPhonePeOrder({
@@ -194,6 +367,9 @@ exports.cartCheckout = async (req, res, next) => {
       bookings: createdBookings.map((b) => b.booking),
       order:    createdOrder,
       totals: { bookingTotal, productTotal, combinedTotal },
+      couponDiscount: couponDiscount || undefined,
+      coinCoinsUsed: coinCoinsUsed || undefined,
+      coinValueUsed: coinValueUsed || undefined,
     });
   } catch (err) { next(err); }
 };
@@ -235,6 +411,10 @@ exports.verifyCartPayment = async (req, res, next) => {
         await order.save();
         await deductStock(order.items, order._id);
       }
+
+      // Coin redemption settlement (idempotent per merchant transaction —
+      // safe even if the webhook also fires for the same checkout).
+      await settleCoinRedemption(bookings);
       return res.json({ success: true, bookings, order });
     }
 
@@ -302,6 +482,10 @@ exports.cartWebhook = async (req, res) => {
         await order.save();
         deductStock(order.items, order._id).catch(() => {});
       }
+
+      // Coin redemption settlement (idempotent per merchant transaction —
+      // safe even if the verify endpoint also settled it).
+      if (isSuccess) await settleCoinRedemption(bookings);
     }
 
     res.json({ success: true });

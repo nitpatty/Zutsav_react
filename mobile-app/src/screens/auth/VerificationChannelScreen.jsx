@@ -44,7 +44,7 @@ function maskEmail(email) {
 }
 
 export default function VerificationChannelScreen({ navigation, route }) {
-  const { name, phone, email, role } = route.params || {};
+  const { name, phone, email, role, referralCode } = route.params || {};
   const insets = useSafeAreaInsets();
 
   const [channel, setChannel] = useState('whatsapp');
@@ -81,6 +81,7 @@ export default function VerificationChannelScreen({ navigation, route }) {
         role,
         purpose: 'registration',
         channel,
+        referralCode,
       });
     } catch (err) {
       Toast.show({

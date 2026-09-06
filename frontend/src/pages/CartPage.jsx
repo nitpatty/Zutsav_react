@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Trash2, ShoppingBag, Calendar, Clock, MapPin, Package, ArrowRight, Shield, Minus, Plus, Zap, Truck } from 'lucide-react';
+import { Trash2, ShoppingBag, Calendar, Clock, MapPin, Package, ArrowRight, Shield, Minus, Plus, Zap, Truck, Tag, X, Coins } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +23,74 @@ export default function CartPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [paying, setPaying] = useState(false);
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null); // { code, discount, finalPayable }
+  const [applying, setApplying] = useState(false);
+
+  // Coin redemption state — wallet info comes from GET /api/wallet which now
+  // also returns the redemption context (coin value + minimum threshold).
+  const [walletInfo, setWalletInfo] = useState(null);
+  const [useCoins, setUseCoins] = useState(false);
+
+  useEffect(() => {
+    if (!user) { setWalletInfo(null); setUseCoins(false); return; }
+    API.get('/wallet')
+      .then(({ data }) => setWalletInfo((data.wallet) || null))
+      .catch(() => setWalletInfo(null));
+  }, [user]);
+
+  // Determine cart purchase type for coupon applicability
+  const cartCouponType = poojaItems.length > 0 && productItems.length > 0
+    ? 'POOJA'
+    : poojaItems.length > 0 ? 'POOJA' : (productItems.length > 0 ? 'PRODUCTS' : 'POOJA');
+
+  const applyCoupon = async () => {
+    if (!couponInput.trim()) return;
+    setApplying(true);
+    try {
+      const { data } = await API.post('/coupons/validate', {
+        code: couponInput.trim(),
+        cartValue: grandTotal,
+        cartType: cartCouponType,
+      });
+      setAppliedCoupon({
+        code: data.coupon.code,
+        discount: data.discount,
+        discountType: data.coupon.discountType,
+        discountValue: data.coupon.discountValue,
+        maxDiscount: data.coupon.maxDiscount,
+      });
+      setCouponInput('');
+      setUseCoins(false);
+      toast.success(`Coupon ${data.coupon.code} applied ✓`);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Invalid coupon');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const discount = appliedCoupon?.discount || 0;
+
+  // ── Coin redemption derived values ──────────────────────────
+  // Mutually exclusive with coupons: enabling coins clears any applied coupon
+  // and applying a coupon turns coins off (the backend enforces this too).
+  const coinRate     = Number(walletInfo?.coinMonetaryValue) || 0;
+  const coinMinCoins = Number(walletInfo?.coinRedemptionMinCoins) || 0;
+  const coinBalance  = Number(walletInfo?.balance) || 0;
+  const coinEligible = !!user && walletInfo !== null && coinRate > 0 && coinBalance >= coinMinCoins
+    && productItems.length === 0 && !appliedCoupon;
+  const coinCoins    = useCoins && coinEligible
+    ? Math.min(coinBalance, Math.floor(grandTotal / coinRate))
+    : 0;
+  const coinValue    = Math.round(coinCoins * coinRate * 100) / 100;
+
+  const finalGrandTotal = Math.max(0, grandTotal - discount - coinValue);
+
+  const toggleCoins = (v) => {
+    if (v) setAppliedCoupon(null);
+    setUseCoins(v);
+  };
 
   // name/phone: pre-filled from profile; address fields managed by AddressPicker
   const [shipping, setShipping] = useState({
@@ -92,9 +160,16 @@ export default function CartPage() {
         bookings: bookingPayload,
         products: productPayload,
         shippingAddress: hasProducts ? shipping : undefined,
+        couponCode: appliedCoupon?.code,
+        coinRedemptionCoins: coinCoins || undefined,
       });
 
       clearCart();
+      if (data.paidWithCoins) {
+        navigate(`/payment-callback/${data.merchantTransactionId}`);
+        setTimeout(() => setPaying(false), 200);
+        return;
+      }
       window.location.href = data.redirectUrl;
     } catch (err) {
       toast.error(err.response?.data?.message || 'Checkout failed. Please try again.');
@@ -340,35 +415,132 @@ export default function CartPage() {
               </div>
             )}
 
+            {discount > 0 && (
+              <div className="pt-2 flex justify-between items-center">
+                <span className="font-semibold text-green-600">Coupon Discount</span>
+                <span className="font-semibold text-green-600">−{formatINR(discount)}</span>
+              </div>
+            )}
+
+            {coinValue > 0 && (
+              <div className="pt-2 flex justify-between items-center">
+                <span className="font-semibold text-saffron-600">Coins Applied ({coinCoins} coins)</span>
+                <span className="font-semibold text-saffron-600">−{formatINR(coinValue)}</span>
+              </div>
+            )}
+
             {/* Grand total */}
             <div className="pt-2 flex justify-between items-center">
               <span className="font-bold text-gray-800">Grand Total</span>
               <span className="font-bold text-orange-600 text-xl" style={{ fontFamily: "'Cormorant Garamond',serif" }}>
-                {formatINR(grandTotal)}
+                {formatINR(finalGrandTotal)}
               </span>
             </div>
           </div>
         </motion.div>
 
-        {/* ── Trust + checkout ─────────────────────── */}
-        <motion.div {...fadeUp(0.2)} className="space-y-3">
-          <div className="flex items-center gap-2 py-2.5 px-4 rounded-xl border border-blue-100 bg-blue-50">
-            <Shield size={13} className="text-blue-500 shrink-0" />
-            <p className="text-xs text-blue-700">All payments are secured via PhonePe · UPI, Cards & Net Banking supported</p>
-          </div>
+            {/* ── Coupon input ─────────────────────────── */}
+            <motion.div {...fadeUp(0.17)} className="mb-4">
+              <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
+                {!appliedCoupon ? (
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2 focus-within:border-saffron-400">
+                      <Tag size={14} className="text-gray-400 shrink-0" />
+                      <input
+                        type="text"
+                        value={couponInput}
+                        onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                        placeholder="Enter coupon code"
+                        disabled={useCoins}
+                        className="flex-1 text-sm outline-none bg-transparent uppercase placeholder:normal-case disabled:opacity-50"
+                        onKeyDown={(e) => e.key === 'Enter' && applyCoupon()}
+                      />
+                    </div>
+                    <button onClick={applyCoupon} disabled={useCoins || applying || !couponInput.trim()}
+                      className="px-4 py-2 bg-saffron-500 text-white text-sm font-semibold rounded-xl hover:bg-saffron-600 disabled:opacity-50">
+                      {applying ? '…' : 'Apply'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Tag size={14} className="text-green-600" />
+                      <span className="font-mono font-bold text-sm text-green-700">{appliedCoupon.code}</span>
+                      <span className="text-xs text-gray-500">
+                        {appliedCoupon.discountType === 'PERCENTAGE'
+                          ? `${appliedCoupon.discountValue}% off${appliedCoupon.maxDiscount != null ? ` (max ₹${appliedCoupon.maxDiscount})` : ''}`
+                          : `₹${appliedCoupon.discountValue} off`}
+                      </span>
+                    </div>
+                    <button onClick={() => setAppliedCoupon(null)} className="text-gray-400 hover:text-red-500">
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+                {useCoins && !appliedCoupon && (
+                  <p className="text-[11px] text-gray-400 mt-1.5">Remove coins to apply a coupon — they cannot be combined.</p>
+                )}
+              </div>
+            </motion.div>
 
-          <button
-            onClick={handleCheckout}
-            disabled={paying}
-            className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2"
-          >
-            {paying ? 'Creating order…' : `Checkout · ${formatINR(grandTotal)} 🙏`}
-          </button>
+            {/* ── Use Coins (redemption) ──────────────────── */}
+            {walletInfo && !hasProducts && (
+              <motion.div {...fadeUp(0.18)} className="mb-4">
+                <div className="bg-white rounded-2xl border border-saffron-200 p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-gray-600 uppercase tracking-wide flex items-center gap-1.5">
+                      <Coins size={13} className="text-saffron-500" /> Use Coins
+                    </p>
+                    <span className="text-xs text-gray-500">{coinBalance} coins balance</span>
+                  </div>
 
-          <p className="text-center text-xs text-gray-400">
-            You'll be redirected to PhonePe for secure payment
-          </p>
-        </motion.div>
+                  {coinEligible ? (
+                    <label className={`flex items-center justify-between gap-3 mt-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                      useCoins ? 'border-saffron-500 bg-saffron-50' : 'border-gray-200 hover:border-saffron-200'
+                    }`}>
+                      <div className="flex-1">
+                        <p className="font-semibold text-sm text-gray-800">
+                          Apply {Math.max(0, coinCoins)} coins
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Redeem {formatINR(coinValue)} off this order
+                        </p>
+                      </div>
+                      <input type="checkbox" checked={useCoins} onChange={(e) => toggleCoins(e.target.checked)} className="w-4 h-4 accent-amber-500" />
+                    </label>
+                  ) : (
+                    <p className="text-xs text-gray-500 mt-2">
+                      {coinRate <= 0
+                        ? 'Coin value is not configured yet — redemption is unavailable.'
+                        : coinBalance < coinMinCoins
+                          ? `Redemption needs a minimum balance of ${coinMinCoins} coins. You have ${coinBalance}.`
+                          : 'Coins cannot be combined with a coupon — remove the coupon to use coins.'}
+                    </p>
+                  )}
+                  {useCoins && <p className="text-[11px] text-gray-400 mt-1.5">Coins are debited only after the payment succeeds.</p>}
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── Trust + checkout ─────────────────────── */}
+            <motion.div {...fadeUp(0.2)} className="space-y-3">
+              <div className="flex items-center gap-2 py-2.5 px-4 rounded-xl border border-blue-100 bg-blue-50">
+                <Shield size={13} className="text-blue-500 shrink-0" />
+                <p className="text-xs text-blue-700">All payments are secured via PhonePe · UPI, Cards & Net Banking supported</p>
+              </div>
+
+              <button
+                onClick={handleCheckout}
+                disabled={paying}
+                className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2"
+              >
+                {paying ? 'Creating order…' : `Checkout · ${formatINR(finalGrandTotal)} 🙏`}
+              </button>
+
+              <p className="text-center text-xs text-gray-400">
+                You'll be redirected to PhonePe for secure payment
+              </p>
+            </motion.div>
       </div>
     </div>
   );

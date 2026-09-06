@@ -20,7 +20,7 @@ export default function OTPScreen({ navigation, route }) {
   // Account deletion params: phone, purpose='account_deletion', channel
   // Password reset params: emailOrPhone, channel, masked, purpose='password_reset'
   const {
-    phone, email, name, role, emailOrPhone, masked,
+    phone, email, name, role, emailOrPhone, masked, referralCode,
     purpose = 'registration',
     channel = 'whatsapp',
   } = route.params || {};
@@ -95,7 +95,7 @@ export default function OTPScreen({ navigation, route }) {
 
       if (purpose === 'registration') {
         // Pass all registration data to SetPassword screen
-        navigation.navigate('SetPassword', { phone, email, name, role, channel });
+        navigation.navigate('SetPassword', { phone, email, name, role, channel, referralCode });
       } else if (purpose === 'account_deletion') {
         navigation.goBack();
       } else {
@@ -131,7 +131,7 @@ export default function OTPScreen({ navigation, route }) {
 
   const handleChangeChannel = () => {
     if (purpose === 'registration' && name && phone && email) {
-      navigation.navigate('VerificationChannel', { name, phone, email, role });
+      navigation.navigate('VerificationChannel', { name, phone, email, role, referralCode });
     }
   };
 

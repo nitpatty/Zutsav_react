@@ -154,6 +154,8 @@ app.use('/api/livestreams',      require('./routes/livestream.routes'));
 app.use('/api/ai',               require('./routes/ai.routes'));
 app.use('/api/panchang',         require('./routes/panchang.routes'));
 app.use('/api/referral',         require('./routes/referral.routes'));
+app.use('/api/user-referrals',   require('./routes/userReferral.routes'));
+app.use('/api/wallet',           require('./routes/wallet.routes'));
 app.use('/api/notifications',    require('./routes/notification.routes'));
 app.use('/api/comm',             require('./routes/comm.routes'));
 app.use('/api/webhooks/whatsapp', require('./routes/whatsappWebhook.routes'));
@@ -161,6 +163,7 @@ app.use('/api/settings',         require('./routes/settings.routes'));
 app.use('/api/blogs',            require('./routes/blog.routes'));
 app.use('/api/invoices',         require('./routes/invoice.routes'));
 app.use('/api/documents',        require('./routes/legalDocument.routes'));
+app.use('/api/coupons',          require('./routes/coupon.routes'));
 
 // ✅ ✅ Error handler (improved)
 app.use((err, req, res, next) => {

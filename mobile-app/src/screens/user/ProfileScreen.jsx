@@ -65,6 +65,8 @@ export default function ProfileScreen() {
       items: [
         { icon: 'receipt-outline',       label: 'My Orders',      onPress: () => navigation.navigate('ShopTab', { screen: 'Orders' }) },
         { icon: 'calendar-outline',      label: 'My Bookings',    onPress: () => navigation.navigate('BookingsTab') },
+        { icon: 'gift-outline',          label: 'My Referrals',   onPress: () => navigation.navigate('MyReferrals') },
+        { icon: 'wallet-outline',        label: 'Wallet',         onPress: () => navigation.navigate('Wallet') },
         { icon: 'notifications-outline', label: 'Notifications', onPress: () => navigation.navigate('Notifications') },
       ],
     },

@@ -295,6 +295,16 @@ const VERIFIED_MAPPINGS = [
   { eventName: 'PAYOUT_RELEASED', recipientType: 'pandit', enabled: true, purpose: 'SERVICE',
     whatsappTemplateName: 'payout_released',
     whatsappVariables: withPositions([v('pandit.name', 'Pandit name'), v('payment.amount', 'Amount')]) },
+  // Coupon Campaign — Meta template coupon_campaign (APPROVED, MARKETING).
+  // The 2-variable body: {{1}} = coupon code, {{2}} = human-readable label.
+  // The payload contract is established by campaignService.buildCampaignPayload:
+  // coupon.code is always non-empty for valid coupons; coupon.label is always
+  // computed (e.g. "₹100 off" / "20% off"). whatsappLanguage uses en_US
+  // (the Meta template's approved locale code, not the short 'en').
+  { eventName: 'CAMPAIGN_COUPON', recipientType: 'user', enabled: true, purpose: 'MARKETING',
+    whatsappTemplateName: 'coupon_campaign',
+    whatsappLanguage: 'en_US',
+    whatsappVariables: withPositions([v('coupon.code', 'Coupon code'), v('coupon.label', 'Coupon label')]) },
 ];
 
 // ── Email mappings, verified against the working database in the 2026-07-28

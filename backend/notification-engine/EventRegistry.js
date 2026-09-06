@@ -100,6 +100,14 @@ const EVENTS = {
   ADMIN_PASSWORD_RESET:          'ADMIN_PASSWORD_RESET',
   ADMIN_LOGIN:                   'ADMIN_LOGIN',
   ADMIN_LOGOUT:                  'ADMIN_LOGOUT',
+
+  // ── Coupon Marketing & Campaigns (Phase: Coupon Campaign Foundation) ─
+  // A coupon marketing campaign broadcast. The intended recipientType for
+  // campaign mappings is 'user'; the mapping MUST be classified purpose
+  // 'MARKETING' so the WhatsApp outbound consent gate stays active (a
+  // campaign only ever reaches users who are opted-in to WhatsApp
+  // marketing — see WhatsAppChannel.send + campaignService).
+  CAMPAIGN_COUPON:               'CAMPAIGN_COUPON',
 };
 
 // Category metadata for admin UI grouping
@@ -180,6 +188,7 @@ const EVENT_CATEGORIES = {
   ADMIN_PASSWORD_RESET:          { label: 'Admin Password Reset',       category: 'Admin Management' },
   ADMIN_LOGIN:                   { label: 'Admin Login',                category: 'Admin Management' },
   ADMIN_LOGOUT:                  { label: 'Admin Logout',               category: 'Admin Management' },
+  CAMPAIGN_COUPON:               { label: 'Coupon Campaign',            category: 'Marketing'   },
 };
 
 module.exports = { EVENTS, EVENT_CATEGORIES };

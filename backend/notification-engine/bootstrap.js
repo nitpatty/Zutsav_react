@@ -14,6 +14,10 @@ const Worker = require('./queue/Worker');
 const NotificationMapping = require('../src/models/NotificationMapping');
 const WhatsAppTemplate = require('../src/models/WhatsAppTemplate');
 const WhatsAppProvider = require('./providers/WhatsAppProvider');
+// Coupon-campaign ledger sync — reconciles per-recipient delivery outcomes
+// (delivered/skipped/failed) when a campaign job settles. No-op for non-
+// campaign jobs, so registering it is harmless extra safety here.
+const campaignService = require('../src/services/campaignService');
 
 function registerChannels() {
   ChannelRegistry.register('email', EmailChannel);
@@ -111,6 +115,7 @@ async function init() {
   console.log('[NotificationEngine] Bootstrapping...');
   registerChannels();
   Worker.setProcessor(processJob);
+  Worker.setOnJobSettled((job, status, error) => campaignService.settleJob(job, status, error));
   console.log(`[NotificationEngine] Channels registered: ${['email', 'whatsapp', 'inapp'].filter((c) => ChannelRegistry.has(c)).join(', ')}`);
 
   try {
