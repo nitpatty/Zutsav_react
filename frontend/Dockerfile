@@ -9,7 +9,7 @@ COPY frontend/ .
 
 # CRA inlines REACT_APP_* vars at build time — pass them via --build-arg to
 # point this image at a different backend/domain without editing source.
-# Example: docker build --build-arg REACT_APP_API_URL=https://api.zutsav.com/api ...
+# Example: docker build --build-arg REACT_APP_API_URL=https://zutsav.com/api ...
 ARG REACT_APP_API_URL
 ARG REACT_APP_WEB_URL
 ARG REACT_APP_ADMIN_URL
