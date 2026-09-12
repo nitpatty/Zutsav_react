@@ -57,6 +57,7 @@ function resolvePricing(b) {
       kitGST,
       platformFee:  platFee,
       platformGST:  platGST,
+      urgentSurcharge: b.urgentSurcharge || 0,
       totalTax:     kitGST + platGST,
       grandTotal:   b.grandTotal || b.amount || 0,
     };
@@ -68,6 +69,7 @@ function resolvePricing(b) {
     kitGST:       0,
     platformFee:  b.commissionAmount || 0,
     platformGST:  b.gstAmount || 0,
+    urgentSurcharge: b.urgentSurcharge || 0,
     totalTax:     b.gstAmount || 0,
     grandTotal:   b.amount || 0,
   };
@@ -241,6 +243,17 @@ function buildLineItems(b, pricing) {
       qty:  1,
       rate: pricing.platformFee,
       amt:  pricing.platformFee,
+    });
+  }
+  if (pricing.urgentSurcharge > 0) {
+    items.push({
+      desc: 'Urgent Booking Surcharge',
+      sub:  b.urgentHikeType === 'fixed'
+        ? `Flat hike of ₹${b.urgentHikeFixed || 0} on booking total`
+        : `${b.urgentHikePercent || 0}% hike on booking total`,
+      qty:  1,
+      rate: pricing.urgentSurcharge,
+      amt:  pricing.urgentSurcharge,
     });
   }
   // Fallback: old booking with only `amount`

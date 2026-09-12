@@ -12,7 +12,7 @@ export default function LoginCard({
   remember, onToggleRemember,
   onForgotPassword,
   onLogin, loading,
-  onRegister,
+  onRegister, onOtpLogin,
 }) {
   return (
     <View style={styles.card}>
@@ -46,6 +46,16 @@ export default function LoginCard({
       </View>
 
       <GradientButton title={loading ? 'Logging in…' : 'Login'} onPress={onLogin} loading={loading} disabled={loading} />
+
+      <View style={styles.dividerRow}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>or</Text>
+        <View style={styles.dividerLine} />
+      </View>
+
+      <TouchableOpacity style={styles.otpBtn} onPress={onOtpLogin} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Text style={styles.otpBtnText}>Continue with OTP</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity style={styles.registerRow} onPress={onRegister} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
         <Text style={styles.registerText}>
@@ -81,4 +91,21 @@ const styles = StyleSheet.create({
   registerRow: { alignItems: 'center', marginTop: 16 },
   registerText: { fontSize: 13.5, color: AUTH_COLORS.subtitle },
   registerLink: { color: AUTH_COLORS.link, fontWeight: '700' },
+
+  dividerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 20,
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: AUTH_COLORS.inputBorder },
+  dividerText: { fontSize: 12, color: AUTH_COLORS.placeholder, textTransform: 'uppercase' },
+
+  otpBtn: {
+    marginTop: 16,
+    borderWidth: 1.5,
+    borderColor: AUTH_COLORS.forgotText,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    backgroundColor: 'rgba(184,134,59,0.06)',
+  },
+  otpBtnText: { color: AUTH_COLORS.forgotText, fontSize: 14, fontWeight: '700' },
 });

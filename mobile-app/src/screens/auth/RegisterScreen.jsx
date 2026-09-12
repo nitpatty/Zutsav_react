@@ -60,8 +60,8 @@ export default function RegisterScreen({ navigation, route }) {
   if (global.__zutsav_referral_code) delete global.__zutsav_referral_code;
 
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState(route?.params?.phone || '');
+  const [email, setEmail] = useState(route?.params?.email || '');
   const [role, setRole] = useState('user');
   const [referralCode, setReferralCode] = useState(initialRef);
 

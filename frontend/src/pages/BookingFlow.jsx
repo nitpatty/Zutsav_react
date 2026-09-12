@@ -43,7 +43,7 @@ export default function BookingFlow() {
   const [paying,  setPaying]  = useState(false);
   const [resuming, setResuming] = useState(false); // restoring + auto-paying after a login/register checkpoint
 
-  const [rates, setRates] = useState({ commissionPercent: 0, commissionFixed: 0, commissionType: 'percent', gstPercent: 0 });
+  const [rates, setRates] = useState({ commissionPercent: 0, commissionFixed: 0, commissionType: 'percent', gstPercent: 0, urgentHikeType: 'percent', urgentHikePercent: 0, urgentHikeFixed: 0 });
   const [partialConfig, setPartialConfig] = useState({ enabled: false, minAmount: 500, mode: 'fixed', options: [] });
   const [paymentMode, setPaymentMode] = useState('FULL');
   const [partialAmount, setPartialAmount] = useState(0);
@@ -163,7 +163,10 @@ export default function BookingFlow() {
   useEffect(() => {
     if (!pooja?._id) return;
 
-    API.get(`/bookings/pricing-preview?poojaId=${pooja._id}`)
+    // `isUrgent=1` always — the backend returns the authoritative urgent-hike
+    // config regardless of the user's current toggle, so the display mirror
+    // below can apply it the moment the user switches to an urgent booking.
+    API.get(`/bookings/pricing-preview?poojaId=${pooja._id}&isUrgent=1`)
       .then(({ data }) => {
         if (data.pricing) {
           setRates({
@@ -171,6 +174,9 @@ export default function BookingFlow() {
             commissionFixed:   data.pricing.commissionFixed   || 0,
             commissionType:    data.pricing.commissionType    || 'percent',
             gstPercent:        data.pricing.gstPercent        || 0,
+            urgentHikeType:    data.pricing.urgentHikeType    || 'percent',
+            urgentHikePercent: data.pricing.urgentHikePercent || 0,
+            urgentHikeFixed:   data.pricing.urgentHikeFixed   || 0,
           });
         }
         if (data.partialPayment) {
@@ -227,6 +233,10 @@ export default function BookingFlow() {
     commissionFixed:   rates.commissionFixed,
     commissionType:    rates.commissionType,
     gstPercent:        rates.gstPercent,
+    urgent:            isUrgent,
+    urgentHikeType:    rates.urgentHikeType,
+    urgentHikePercent: rates.urgentHikePercent,
+    urgentHikeFixed:   rates.urgentHikeFixed,
   });
 
   // ── Coin redemption derived values ──────────────────────────

@@ -44,6 +44,29 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const sendLoginOtp = useCallback(async (emailOrPhone) => {
+    setLoading(true);
+    try {
+      const { data } = await API.post('/auth/login/otp/send', { emailOrPhone });
+      return data;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loginWithOtp = useCallback(async (emailOrPhone, otp, rememberMe = false) => {
+    setLoading(true);
+    try {
+      const { data } = await API.post('/auth/login/otp/verify', { emailOrPhone, otp, rememberMe });
+      // deletion_pending accounts resume the 30-day grace period — no token
+      // is issued and auth state must not be persisted (mirrors password login)
+      if (!data.deletionPending) saveAuth(data.token, data.user, rememberMe);
+      return data;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const register = useCallback(async (payload) => {
     setLoading(true);
     try {
@@ -82,7 +105,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={{
-      user, setUser, login, register, registerPandit,
+      user, setUser, login, loginWithOtp, sendLoginOtp, register, registerPandit,
       logout, refreshUser, loading, isAuthenticated: !!user,
     }}>
       {children}

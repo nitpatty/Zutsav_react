@@ -37,6 +37,7 @@ exports.updateSettings = async (req, res) => {
     // Coerce numeric fields
     ['emailSmtpPort', 'platformCommissionPercent', 'platformCommissionFixed', 'platformGstPercent',
      'partialPaymentMinAmount', 'poojaBookingCoinRewardPercent', 'coinRedemptionMinCoins',
+     'urgentBookingHikePercent', 'urgentBookingHikeFixed',
     ].forEach((f) => {
       if (update[f] !== undefined) update[f] = Number(update[f]);
     });
@@ -90,10 +91,13 @@ exports.updateSettings = async (req, res) => {
       delete update.partialPaymentMode;
     if (update.platformCommissionType !== undefined && !['percent', 'fixed'].includes(String(update.platformCommissionType)))
       delete update.platformCommissionType;
+    if (update.urgentBookingHikeType !== undefined && !['percent', 'fixed'].includes(String(update.urgentBookingHikeType)))
+      delete update.urgentBookingHikeType;
 
     // Sanitize NaN numerics — remove rather than fail runValidators
     ['emailSmtpPort','platformCommissionPercent','platformCommissionFixed','platformGstPercent','partialPaymentMinAmount',
      'poojaBookingCoinRewardPercent','coinRedemptionMinCoins',
+     'urgentBookingHikePercent','urgentBookingHikeFixed',
      'sessionTimeoutMinutes','otpExpiryMinutes','passwordMinLength'].forEach((f) => {
       if (update[f] !== undefined && isNaN(update[f])) delete update[f];
     });

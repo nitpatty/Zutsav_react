@@ -15,11 +15,14 @@ const couponService = require('../services/couponService');
 const { resolveCoinRedemption, settleCoinRedemption } = require('../services/coinRedemptionService');
 
 // Delegates to the centralized financeUtils engine — accepts Pooja document or plain number
-async function computePricing(pooja, kitPrice = 0) {
+async function computePricing(pooja, kitPrice = 0, urgent = false) {
   const commissionType  = await settings.get('platformCommissionType', 'percent');
   const commissionPct   = await settings.get('platformCommissionPercent', 0);
   const commissionFixed = await settings.get('platformCommissionFixed', 0);
   const gstPct          = await settings.get('platformGstPercent', 0);
+  const hikeType        = await settings.get('urgentBookingHikeType', 'percent');
+  const hikePct         = await settings.get('urgentBookingHikePercent', 0);
+  const hikeFixed       = await settings.get('urgentBookingHikeFixed', 0);
 
   const poojaPrice = typeof pooja === 'number' ? pooja : (pooja.salePrice || pooja.price || 0);
 
@@ -30,6 +33,10 @@ async function computePricing(pooja, kitPrice = 0) {
     commissionFixed,
     commissionType,
     gstPercent: gstPct,
+    urgent,
+    urgentHikeType:    hikeType,
+    urgentHikePercent: hikePct,
+    urgentHikeFixed:   hikeFixed,
   });
 }
 
@@ -77,7 +84,7 @@ exports.cartCheckout = async (req, res, next) => {
         resolvedKitIds = kits.map((k) => k._id);
       }
 
-      const pricing = await computePricing(pooja, kitPrice);
+      const pricing = await computePricing(pooja, kitPrice, urgent);
 
       let booking = new Booking({
         userId:        req.user._id,
@@ -94,6 +101,10 @@ exports.cartCheckout = async (req, res, next) => {
         platformGST:      pricing.platformGST,
         taxAmount:        pricing.kitGST,
         grandTotal:       pricing.grandTotal,
+        urgentSurcharge:  pricing.urgentSurcharge,
+        urgentHikeType:   pricing.urgentHikeType,
+        urgentHikePercent: pricing.urgentHikePercent,
+        urgentHikeFixed:  pricing.urgentHikeFixed,
         baseAmount:        pricing.poojaAmount,
         commissionPercent: pricing.commissionPercent,
         commissionAmount:  pricing.platformFee,

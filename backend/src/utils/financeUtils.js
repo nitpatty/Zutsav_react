@@ -31,6 +31,16 @@ function calculatePercentage(base, percent) {
  *   kitGST       = kitAmount × gstPercent / 100
  *   grandTotal   = poojaAmount + platformFee + platformGST + kitAmount + kitGST
  * Pooja service itself is always GST-exempt (no tax on poojaAmount).
+ *
+ * URGENT HIKE (optional; applied only when `urgent` is true):
+ *   The surcharge is added to the EXISTING gross `grandTotal` AFTER the tax/fee
+ *   calculations above and BEFORE any coupon / coin deduction — it never
+ *   re-taxes the fee/kit components and never re-runs the base pricing.
+ *     percent mode → urgentSurcharge = calculatePercentage(grandTotal, urgentHikePercent)
+ *     fixed mode   → urgentSurcharge = roundToPaise(urgentHikeFixed)
+ *   With no hike configured (0 in the active mode) the output — including
+ *   `grandTotal`, `finalAmount` and every component — is IDENTICAL to a normal
+ *   booking, so normal bookings are untouched.
  */
 function calculatePricing({
   poojaPrice        = 0,
@@ -39,6 +49,10 @@ function calculatePricing({
   commissionFixed   = 0,
   commissionType    = 'percent',
   gstPercent        = 0,
+  urgent            = false,
+  urgentHikeType    = 'percent',
+  urgentHikePercent = 0,
+  urgentHikeFixed   = 0,
 }) {
   const poojaAmount = roundToPaise(poojaPrice);
   const platformFee = commissionType === 'fixed'
@@ -49,13 +63,32 @@ function calculatePricing({
   const kitGST       = calculatePercentage(kitAmount, gstPercent);
   const grandTotal   = roundToPaise(poojaAmount + platformFee + platformGST + kitAmount + kitGST);
 
+  // Urgent booking surcharge — computed on the EXISTING gross total only when
+  // the booking is urgent AND the active mode's rate is greater than 0.
+  let urgentSurcharge = 0;
+  const hikeType = urgent ? (urgentHikeType || 'percent') : 'percent';
+  const hikePercent = Number(urgentHikePercent) || 0;
+  const hikeFixed = Number(urgentHikeFixed) || 0;
+  if (urgent) {
+    if (hikeType === 'fixed') {
+      urgentSurcharge = hikeFixed > 0 ? roundToPaise(hikeFixed) : 0;
+    } else {
+      urgentSurcharge = hikePercent > 0 ? calculatePercentage(grandTotal, hikePercent) : 0;
+    }
+  }
+  const grandTotalWithHike = roundToPaise(grandTotal + urgentSurcharge);
+
   return {
     poojaAmount,
     platformFee,
     platformGST,
     kitAmount,
     kitGST,
-    grandTotal,
+    grandTotal:          grandTotalWithHike,
+    urgentSurcharge,
+    urgentHikeType:      urgent ? hikeType : null,
+    urgentHikePercent:   urgent ? hikePercent : 0,
+    urgentHikeFixed:     urgent ? hikeFixed : 0,
     commissionType,
     commissionPercent,
     commissionFixed,
@@ -65,7 +98,7 @@ function calculatePricing({
     taxAmount:        kitGST,
     gstAmount:        roundToPaise(platformGST + kitGST),
     kitGstPercent:    gstPercent,
-    finalAmount:      grandTotal,
+    finalAmount:      grandTotalWithHike,
   };
 }
 

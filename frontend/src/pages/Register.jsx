@@ -528,6 +528,8 @@ function PanditAccountCreated() {
 export default function Register() {
   const [searchParams] = useSearchParams();
   const initialRef     = searchParams.get('ref') || '';
+  const initialEmail   = searchParams.get('email') || '';
+  const initialPhone   = searchParams.get('phone') || '';
   const next            = searchParams.get('next') || '/';
   const navigate       = useNavigate();
   const { login }      = useAuth();
@@ -536,7 +538,7 @@ export default function Register() {
   const { logoUrl, platformName } = useSettings();
   const [role, setRole]     = useState(null);                // 'devotee' | 'pandit'
   const [step, setStep]     = useState('role');              // role | info | channel | otp | password | profile | done
-  const [basicForm, setBasicForm] = useState({ name:'', email:'', phone:'' });
+  const [basicForm, setBasicForm] = useState({ name:'', email: initialEmail, phone: initialPhone });
   const [channel, setChannel]     = useState('');
   const [loading, setLoading]     = useState(false);
   const [otpErrors, setOtpErrors] = useState({});

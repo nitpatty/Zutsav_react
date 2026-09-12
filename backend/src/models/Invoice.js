@@ -45,6 +45,7 @@ const invoiceSchema = new mongoose.Schema({
   kitGST:        { type: Number, default: 0 },
   platformFee:   { type: Number, default: 0 },
   platformGST:   { type: Number, default: 0 },
+  urgentSurcharge: { type: Number, default: 0 }, // urgent booking price hike line item
   totalGST:      { type: Number, default: 0 },
 
   // ── GST breakdown (computed at generation time, immutable) ──────────────────

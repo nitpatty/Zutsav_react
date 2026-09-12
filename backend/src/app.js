@@ -136,6 +136,7 @@ app.use('/uploads', express.static(path.join(__dirname, '..', config.constants.u
 // ✅ Routes
 app.use('/api/auth',             require('./routes/auth.routes'));
 app.use('/api/auth/forgot-password', require('./routes/passwordReset.routes'));
+app.use('/api/auth/login/otp',       require('./routes/otpLogin.routes'));
 app.use('/api/users',            require('./routes/user.routes'));
 app.use('/api/pandits',          require('./routes/pandit.routes'));
 app.use('/api/pandit/pooja-requests', require('./routes/poojaRequest.routes'));

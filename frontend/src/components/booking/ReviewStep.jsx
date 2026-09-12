@@ -119,6 +119,15 @@ export default function ReviewStep({
           {pricing.kitGST > 0 && (
             <PriceLine label={`GST on Kit (${rates.gstPercent}%)`} amount={pricing.kitGST} muted />
           )}
+          {pricing.urgentSurcharge > 0 && (
+            <PriceLine
+              label="Urgent Booking Surcharge"
+              amount={pricing.urgentSurcharge}
+              sub={rates.urgentHikeType === 'fixed'
+                ? `₹${rates.urgentHikeFixed} fixed on booking total`
+                : `${rates.urgentHikePercent}% of booking total`}
+            />
+          )}
 
           <div className="border-t border-orange-100 pt-2.5 flex justify-between items-center">
             <span className="font-bold text-gray-800 text-sm">Grand Total</span>

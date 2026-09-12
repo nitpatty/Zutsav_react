@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, ScrollView, Platform, StatusBar
@@ -14,7 +14,7 @@ import ZutsavLogoMark from '../../components/auth/ZutsavLogoMark';
 import LoginCard from '../../components/auth/LoginCard';
 import { AUTH_COLORS } from '../../components/auth/colors';
 
-export default function LoginScreen({ navigation }) {
+export default function LoginScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { login, setSession } = useAuthStore();
 
@@ -27,6 +27,15 @@ export default function LoginScreen({ navigation }) {
   // Deletion-pending restore flow
   const [deletionData, setDeletionData] = useState(null);
   const [restoring,    setRestoring]    = useState(false);
+
+  // OTP-login verification can land on this screen with the deletion-pending
+  // payload (see OTPScreen purpose='login') so the restore UI is shared
+  useEffect(() => {
+    if (route.params?.deletionPending) {
+      setDeletionData(route.params.deletionPending);
+      navigation.setParams({ deletionPending: undefined });
+    }
+  }, [route.params?.deletionPending]);
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password) {
@@ -123,6 +132,7 @@ export default function LoginScreen({ navigation }) {
               onLogin={handleLogin}
               loading={loading}
               onRegister={() => navigation.navigate('Register')}
+              onOtpLogin={() => navigation.navigate('LoginOtp')}
             />
           </Animated.View>
         </ScrollView>

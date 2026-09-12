@@ -130,6 +130,16 @@ const systemSettingsSchema = new mongoose.Schema({
   //    bookings; percentage of the PRE-TAX pooja service amount credited to
   //    the user's wallet when the booking reaches COMPLETED) ──────────────
   poojaBookingCoinRewardPercent: { type: Number, default: 5, min: 0, max: 100 },
+
+  // ── Urgent Booking Price Hike (global) ───────────────────────────────────
+  // Applied ONLY to urgent bookings (bookingType === 'urgent'). The surcharge
+  // is added to the EXISTING gross booking total AFTER tax/fee calculations
+  // and BEFORE coupon / coin deductions. Normal bookings are never affected.
+  //   percent mode → surcharge = calculatePercentage(grandTotal, hikePercent)
+  //   fixed mode   → surcharge = roundToPaise(hikeFixed)
+  urgentBookingHikeType:    { type: String, enum: ['percent', 'fixed'], default: 'percent' },
+  urgentBookingHikePercent: { type: Number, default: 0, min: 0, max: 100 },
+  urgentBookingHikeFixed:   { type: Number, default: 0, min: 0 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('SystemSettings', systemSettingsSchema);

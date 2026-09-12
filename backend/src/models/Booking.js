@@ -38,6 +38,14 @@ const bookingSchema = new mongoose.Schema({
   taxAmount:    { type: Number, default: 0 },  // alias for kitGST (backward compat)
   grandTotal:   { type: Number, default: 0 },  // total charged to user
 
+  // Urgent booking price hike — surcharge added on top of the EXISTING gross
+  // grandTotal after tax/fee calculation and before coupon/coin deduction.
+  // Zero for all normal bookings. Stored for invoice/reporting transparency.
+  urgentSurcharge:  { type: Number, default: 0 },
+  urgentHikeType:   { type: String, default: 'percent' },
+  urgentHikePercent:{ type: Number, default: 0 },
+  urgentHikeFixed:  { type: Number, default: 0 },
+
   // Legacy pricing fields (kept for backward compatibility)
   baseAmount:        { type: Number, default: 0 },
   commissionPercent: { type: Number, default: 0 },

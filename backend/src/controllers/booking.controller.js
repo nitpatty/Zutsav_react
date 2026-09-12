@@ -29,11 +29,14 @@ const { resolveApprovedPayoutAmount } = require('../utils/payoutUtils');
 const OtpService = require('../../notification-engine/otp/OtpService');
 
 // ── Pricing engine (delegates to the centralized financeUtils engine) ─────────
-async function calculatePricing(pooja, kitPrice = 0) {
+async function calculatePricing(pooja, kitPrice = 0, urgent = false) {
   const commissionType  = await settings.get('platformCommissionType', 'percent');
   const commissionPct   = await settings.get('platformCommissionPercent', 0);
   const commissionFixed = await settings.get('platformCommissionFixed', 0);
   const gstPct          = await settings.get('platformGstPercent', 0);
+  const hikeType        = await settings.get('urgentBookingHikeType', 'percent');
+  const hikePct         = await settings.get('urgentBookingHikePercent', 0);
+  const hikeFixed       = await settings.get('urgentBookingHikeFixed', 0);
 
   const poojaPrice = typeof pooja === 'number' ? pooja : (pooja.salePrice || pooja.price || 0);
 
@@ -44,6 +47,10 @@ async function calculatePricing(pooja, kitPrice = 0) {
     commissionFixed,
     commissionType,
     gstPercent: gstPct,
+    urgent,
+    urgentHikeType:    hikeType,
+    urgentHikePercent: hikePct,
+    urgentHikeFixed:   hikeFixed,
   });
 }
 
@@ -144,8 +151,9 @@ exports.createBookingOrder = async (req, res, next) => {
     const pooja = await Pooja.findById(poojaId);
     if (!pooja || !pooja.isActive) return res.status(404).json({ success: false, message: 'Pooja not found' });
 
-    const pricing   = await calculatePricing(pooja);
-    const rpOrder   = await createOrder(pricing.finalAmount, 'INR', `booking_${Date.now()}`);
+    const urgent  = isUrgent === true || isUrgent === 'true';
+    const pricing = await calculatePricing(pooja, 0, urgent);
+    const rpOrder = await createOrder(pricing.finalAmount, 'INR', `booking_${Date.now()}`);
 
     const booking = await Booking.create({
       userId: req.user._id,
@@ -229,7 +237,7 @@ exports.createPhonePeBooking = async (req, res, next) => {
     // the single-selection alias for older clients.
     const requestedKitIds = kitIds ?? (kitId ? [kitId] : []);
     const { kitPrice, resolvedKitIds } = await resolveKitsPrice(requestedKitIds, urgent);
-    const pricing               = await calculatePricing(pooja, kitPrice);
+    const pricing               = await calculatePricing(pooja, kitPrice, urgent);
     const merchantTransactionId = `ZUT_${Date.now()}_${req.user._id.toString().slice(-6)}`;
     const clientUrl             = urls.clientUrl;
 
@@ -344,6 +352,10 @@ exports.createPhonePeBooking = async (req, res, next) => {
       platformGST:      pricing.platformGST,
       taxAmount:        pricing.kitGST,
       grandTotal:       payableTotal,
+      urgentSurcharge:   pricing.urgentSurcharge,
+      urgentHikeType:    pricing.urgentHikeType,
+      urgentHikePercent: pricing.urgentHikePercent,
+      urgentHikeFixed:   pricing.urgentHikeFixed,
       baseAmount:       pricing.baseAmount,
       commissionPercent:pricing.commissionPercent,
       commissionAmount: pricing.commissionAmount,
@@ -775,13 +787,15 @@ exports.phonePeWebhook = async (req, res) => {
 // GET /api/bookings/pricing-preview?poojaId=xxx[&kitId=yyy | &kitIds=a,b,c]
 exports.getPricingPreview = async (req, res, next) => {
   try {
-    const { poojaId, kitId, kitIds } = req.query;
+    const { poojaId, kitId, kitIds, isUrgent } = req.query;
+    const urgentParam = String(isUrgent || '').toLowerCase();
+    const urgent = urgentParam === 'true' || urgentParam === '1';
     const pooja = await Pooja.findById(poojaId).select('name price salePrice mrp taxEnabled taxRate');
     if (!pooja) return res.status(404).json({ success: false, message: 'Pooja not found' });
 
     const requestedKitIds = kitIds ? String(kitIds).split(',').filter(Boolean) : (kitId ? [kitId] : []);
-    const { kitPrice } = await resolveKitsPrice(requestedKitIds, false);
-    const pricing      = await calculatePricing(pooja, kitPrice);
+    const { kitPrice } = await resolveKitsPrice(requestedKitIds, urgent);
+    const pricing      = await calculatePricing(pooja, kitPrice, urgent);
     const ppConfig     = await getPartialPaymentConfig();
 
     res.json({ success: true, pricing, poojaName: pooja.name, partialPayment: ppConfig });

@@ -8,6 +8,7 @@ import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import api from '../../api/axios';
+import { useAuthStore } from '../../store/authStore';
 import BackgroundDecorations from '../../components/auth/BackgroundDecorations';
 import ZutsavLogoMark from '../../components/auth/ZutsavLogoMark';
 import GradientButton from '../../components/auth/GradientButton';
@@ -19,6 +20,7 @@ export default function OTPScreen({ navigation, route }) {
   // Registration params: phone, email, name, role, purpose, channel
   // Account deletion params: phone, purpose='account_deletion', channel
   // Password reset params: emailOrPhone, channel, masked, purpose='password_reset'
+  // OTP login params: emailOrPhone, channel, masked, purpose='login'
   const {
     phone, email, name, role, emailOrPhone, masked, referralCode,
     purpose = 'registration',
@@ -26,11 +28,12 @@ export default function OTPScreen({ navigation, route }) {
   } = route.params || {};
 
   const insets = useSafeAreaInsets();
+  const { loginWithOtp, sendLoginOtp } = useAuthStore();
 
-  // Password-reset OTPs share the backend's 60s resend cooldown
-  // (RESEND_COOLDOWN_MS in passwordReset.controller.js); registration/
-  // account-deletion keep their existing 30s pacing.
-  const RESEND_TIMER = purpose === 'password_reset' ? 60 : 30;
+  // Password-reset and OTP-login OTPs share the backend's 60s resend cooldown
+  // (RESEND_COOLDOWN_MS in passwordReset.controller.js / otpLogin.controller.js);
+  // registration/account-deletion keep their existing 30s pacing.
+  const RESEND_TIMER = (purpose === 'password_reset' || purpose === 'login') ? 60 : 30;
 
   const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
   const [loading, setLoading] = useState(false);
@@ -73,7 +76,7 @@ export default function OTPScreen({ navigation, route }) {
   // deletion. identifier = phone (for whatsapp) or email (for email channel).
   const identifier = channel === 'email' ? email : phone;
 
-  const displayTarget = purpose === 'password_reset'
+  const displayTarget = (purpose === 'password_reset' || purpose === 'login')
     ? masked
     : (channel === 'email' ? email : `WhatsApp +91 ${phone}`);
 
@@ -88,6 +91,17 @@ export default function OTPScreen({ navigation, route }) {
       if (purpose === 'password_reset') {
         await api.post('/auth/forgot-password/verify-otp', { emailOrPhone, channel, otp: otpString });
         navigation.navigate('ResetPassword', { emailOrPhone, channel });
+        return;
+      }
+
+      if (purpose === 'login') {
+        const data = await loginWithOtp(emailOrPhone, otpString);
+        // Account in the 30-day deletion grace period — surface the restore
+        // prompt on the Login screen (same flow as password login)
+        if (data?.deletionPending) {
+          navigation.navigate('Login', { deletionPending: data });
+        }
+        // Otherwise the session is stored and RootNavigator re-renders
         return;
       }
 
@@ -114,6 +128,8 @@ export default function OTPScreen({ navigation, route }) {
       setResending(true);
       if (purpose === 'password_reset') {
         await api.post('/auth/forgot-password/send-otp', { emailOrPhone, channel });
+      } else if (purpose === 'login') {
+        await sendLoginOtp(emailOrPhone);
       } else {
         // Re-send via the same send-otp endpoint
         await api.post('/auth/send-otp', { name, phone, email, channel });

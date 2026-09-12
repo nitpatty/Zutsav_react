@@ -8148,6 +8148,7 @@ const SETTING_SECTIONS = [
   { key: 'payment',       label: 'PhonePe',       icon: CreditCard },
   { key: 'payment_rules', label: 'Payment Rules', icon: IndianRupee },
   { key: 'commission',    label: 'Platform Fees', icon: IndianRupee },
+  { key: 'urgent',        label: 'Urgent Booking', icon: Zap },
   { key: 'loyalty',       label: 'Wallet / Coins', icon: Coins },
   { key: 'whatsapp',      label: 'WhatsApp',      icon: MessageSquare },
   { key: 'email',         label: 'Email',         icon: Mail },
@@ -8533,6 +8534,97 @@ function SystemSettingsTab() {
               </div>
             </div>
           </div>
+        </SectionForm>
+      );
+    })(),
+    urgent: (() => {
+      const hikeType = form.urgentBookingHikeType || 'percent';
+      const exampleGross = 1677; // 1500 pooja + 150 platform fee + 27 GST
+      const previewHike = hikeType === 'fixed'
+        ? roundToPaise(form.urgentBookingHikeFixed || 0)
+        : roundToPaise(exampleGross * (form.urgentBookingHikePercent || 0) / 100);
+      const disabled = hikeType === 'fixed'
+        ? !(Number(form.urgentBookingHikeFixed) > 0)
+        : !(Number(form.urgentBookingHikePercent) > 0);
+      return (
+        <SectionForm title="Urgent Booking Price Hike" onSave={() => save(['urgentBookingHikeType','urgentBookingHikePercent','urgentBookingHikeFixed'])} saving={saving}>
+          <InfoBox>
+            An optional surcharge added on top of the EXISTING booking total (after tax / fee calculation) for <b>urgent bookings only</b> —
+            always before coupon or coin discounts. Normal bookings are never affected, even with a hike configured. Set the active value to <b>0 to disable</b> the surcharge.
+          </InfoBox>
+
+          <div>
+            <label className="label">Surcharge Type</label>
+            <div className="flex gap-2 mt-1">
+              {[
+                { value: 'percent', label: '% Percentage', icon: '%' },
+                { value: 'fixed',   label: '₹ Fixed Amount', icon: '₹' },
+              ].map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => set({ target: { name: 'urgentBookingHikeType', value } })}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
+                    hikeType === value
+                      ? 'text-white border-transparent'
+                      : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}
+                  style={hikeType === value ? { background: '#1B1F3B' } : {}}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {hikeType === 'percent' ? (
+              <div>
+                <label className="label">Surcharge Percent (%)</label>
+                <div className="relative">
+                  <input type="number" name="urgentBookingHikePercent" min="0" max="100" step="0.5"
+                    value={form.urgentBookingHikePercent ?? 0} onChange={set} className="input pr-8" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Percentage of the gross booking total, rounded to the nearest paisa.</p>
+              </div>
+            ) : (
+              <div>
+                <label className="label">Fixed Surcharge (₹)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
+                  <input type="number" name="urgentBookingHikeFixed" min="0" step="1"
+                    value={form.urgentBookingHikeFixed ?? 0} onChange={set} className="input pl-7" />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Flat amount added to every urgent booking.</p>
+              </div>
+            )}
+            <div className="rounded-xl border p-4" style={{ background: '#f8f9fa', borderColor: 'var(--t-border)' }}>
+              <p className="text-xs font-semibold text-gray-600 mb-2">Preview (example ₹1,500 pooja):</p>
+              <div className="space-y-1 text-xs text-gray-600">
+                <div className="flex justify-between"><span>Existing Gross Total</span><span>₹1,677</span></div>
+                <div className="flex justify-between">
+                  <span>
+                    Urgent Surcharge {hikeType === 'percent'
+                      ? `(${form.urgentBookingHikePercent || 0}%)`
+                      : `(₹${form.urgentBookingHikeFixed || 0} fixed)`}
+                  </span>
+                  <span>₹{previewHike}</span>
+                </div>
+                <div className="flex justify-between font-bold border-t pt-1 mt-1" style={{ borderColor: 'var(--t-border)' }}>
+                  <span>Urgent Grand Total</span>
+                  <span style={{ color: '#B91C1C' }}>₹{roundToPaise(1677 + previewHike)}</span>
+                </div>
+                <div className="flex justify-between"><span className="text-green-600">Normal bookings</span><span className="text-green-600">Unaffected</span></div>
+              </div>
+            </div>
+          </div>
+
+          {disabled && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700 flex items-center gap-2">
+              <Zap size={13} /> Surcharge disabled — urgent bookings are currently priced exactly like normal bookings.
+            </div>
+          )}
         </SectionForm>
       );
     })(),

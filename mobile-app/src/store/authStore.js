@@ -46,6 +46,23 @@ export const useAuthStore = create((set, get) => ({
     set({ user, token });
   },
 
+  sendLoginOtp: async (emailOrPhone) => {
+    const { data } = await api.post('/auth/login/otp/send', { emailOrPhone });
+    return data;
+  },
+
+  loginWithOtp: async (emailOrPhone, otp) => {
+    const { data } = await api.post('/auth/login/otp/verify', { emailOrPhone, otp });
+    // deletion_pending accounts resume the 30-day grace period — no token is
+    // issued and no session is persisted (mirrors password login)
+    if (!data.deletionPending) {
+      await SecureStore.setItemAsync('zutsav_token', data.token);
+      await SecureStore.setItemAsync('zutsav_user', JSON.stringify(data.user));
+      set({ user: data.user, token: data.token });
+    }
+    return data;
+  },
+
   logout: async () => {
     try {
       await api.post('/auth/logout');

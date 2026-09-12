@@ -46,6 +46,14 @@ const sendToken = (user, statusCode, res, rememberMe = true) => {
   res.status(statusCode).json({ success: true, token, user, rememberMe });
 };
 
+// Token/session helpers are shared with the OTP-login controller
+// (controllers/otpLogin.controller.js) so OTP login issues the EXACT same
+// token/session as password login — no second JWT format, no separate session.
+exports.signToken      = signToken;
+exports.signAdminToken = signAdminToken;
+exports.sendToken      = sendToken;
+exports.parseExpiryMs  = parseExpiryMs;
+
 const generateOTP = () => OtpService.generate();
 
 // ── POST /api/auth/send-otp ──────────────────────────────────────────────────
