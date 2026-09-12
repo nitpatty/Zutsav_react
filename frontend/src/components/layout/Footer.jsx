@@ -96,14 +96,12 @@ export default function Footer() {
               ))}
               {legalDocs.map((doc) => (
                 <li key={doc.documentType}>
-                  <a
-                    href={resolveViewUrl(doc)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <Link
+                    to={resolveViewUrl(doc)}
                     className="text-gray-400 text-sm hover:text-saffron-400 transition-colors"
                   >
                     {doc.label}
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>

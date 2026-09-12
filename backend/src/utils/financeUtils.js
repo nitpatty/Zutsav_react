@@ -33,11 +33,14 @@ function calculatePercentage(base, percent) {
  * Pooja service itself is always GST-exempt (no tax on poojaAmount).
  *
  * URGENT HIKE (optional; applied only when `urgent` is true):
- *   The surcharge is added to the EXISTING gross `grandTotal` AFTER the tax/fee
- *   calculations above and BEFORE any coupon / coin deduction — it never
- *   re-taxes the fee/kit components and never re-runs the base pricing.
- *     percent mode → urgentSurcharge = calculatePercentage(grandTotal, urgentHikePercent)
- *     fixed mode   → urgentSurcharge = roundToPaise(urgentHikeFixed)
+ *   The surcharge is a SEPARATE component added to the EXISTING gross
+ *   `grandTotal` AFTER the tax/fee calculations above and BEFORE any coupon /
+ *   coin deduction. It is calculated ONLY from the ORIGINAL Pooja base price
+ *   (poojaAmount) — NEVER from platform fee/GST, kit amount/GST, the gross
+ *   total, coupon, coins, or the final payable. It never re-taxes the
+ *   fee/kit components and never re-runs the base pricing.
+ *     percent mode → urgentSurcharge = calculatePercentage(poojaAmount, urgentHikePercent)
+ *     fixed mode   → urgentSurcharge = roundToPaise(urgentHikeFixed)  (not multiplied)
  *   With no hike configured (0 in the active mode) the output — including
  *   `grandTotal`, `finalAmount` and every component — is IDENTICAL to a normal
  *   booking, so normal bookings are untouched.
@@ -63,8 +66,10 @@ function calculatePricing({
   const kitGST       = calculatePercentage(kitAmount, gstPercent);
   const grandTotal   = roundToPaise(poojaAmount + platformFee + platformGST + kitAmount + kitGST);
 
-  // Urgent booking surcharge — computed on the EXISTING gross total only when
-  // the booking is urgent AND the active mode's rate is greater than 0.
+  // Urgent booking surcharge — a SEPARATE component based ONLY on the original
+  // Pooja base price, added to the existing gross. Never scales fee/GST/kit and
+  // never re-derives the base pricing. Applies only when the booking is urgent
+  // AND the active mode's rate is greater than 0.
   let urgentSurcharge = 0;
   const hikeType = urgent ? (urgentHikeType || 'percent') : 'percent';
   const hikePercent = Number(urgentHikePercent) || 0;
@@ -73,7 +78,7 @@ function calculatePricing({
     if (hikeType === 'fixed') {
       urgentSurcharge = hikeFixed > 0 ? roundToPaise(hikeFixed) : 0;
     } else {
-      urgentSurcharge = hikePercent > 0 ? calculatePercentage(grandTotal, hikePercent) : 0;
+      urgentSurcharge = hikePercent > 0 ? calculatePercentage(poojaAmount, hikePercent) : 0;
     }
   }
   const grandTotalWithHike = roundToPaise(grandTotal + urgentSurcharge);

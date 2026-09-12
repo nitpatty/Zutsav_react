@@ -54,6 +54,7 @@ import Settings         from './pages/Settings';
 import FamilyMembers    from './pages/FamilyMembers';
 import MyReferrals      from './pages/MyReferrals';
 import Wallet            from './pages/Wallet';
+import LegalDocumentViewerPage from './pages/LegalDocumentViewerPage';
 
 /* ── Auth guard ─────────────────────────────────────── */
 const ProtectedRoute = ({ children, roles }) => {
@@ -111,6 +112,7 @@ const AppRoutes = () => {
           <Route path="/poojas"    element={<PublicLayout><PoojaCategories /></PublicLayout>} />
           <Route path="/poojas/:categorySlug" element={<PublicLayout><PoojaList /></PublicLayout>} />
           <Route path="/festivals"   element={<PublicLayout><Festivals /></PublicLayout>} />
+          <Route path="/legal/:type" element={<PublicLayout><LegalDocumentViewerPage /></PublicLayout>} />
           <Route path="/marketplace" element={<PublicLayout><Marketplace /></PublicLayout>} />
           <Route path="/marketplace/product/:slug" element={<PublicLayout><ProductDetail /></PublicLayout>} />
           <Route path="/temples"     element={<PublicLayout><TempleDirectory /></PublicLayout>} />

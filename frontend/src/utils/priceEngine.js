@@ -54,8 +54,10 @@ export function calculatePrice({
   const kitGST      = calculatePercentage(kitAmount, gstPercent);
   const grandTotal  = roundToPaise(poojaAmount + platformFee + platformGST + kitAmount + kitGST);
 
-  // Urgent booking surcharge — added on the EXISTING grand total AFTER the
-  // tax/fee math above and BEFORE coupon/coin deduction (mirrors financeUtils).
+  // Urgent booking surcharge — a SEPARATE component based ONLY on the original
+  // Pooja base price and added to the existing grand total AFTER the tax/fee
+  // math above and BEFORE coupon/coin deduction (mirrors financeUtils). It
+  // never scales the platform fee/GST/kit components.
   let urgentSurcharge = 0;
   const hikeType = urgent ? (urgentHikeType || 'percent') : 'percent';
   const hikePercent = Number(urgentHikePercent) || 0;
@@ -63,7 +65,7 @@ export function calculatePrice({
   if (urgent) {
     urgentSurcharge = hikeType === 'fixed'
       ? (hikeFixed > 0 ? roundToPaise(hikeFixed) : 0)
-      : (hikePercent > 0 ? calculatePercentage(grandTotal, hikePercent) : 0);
+      : (hikePercent > 0 ? calculatePercentage(poojaAmount, hikePercent) : 0);
   }
   const grandTotalWithHike = roundToPaise(grandTotal + urgentSurcharge);
 

@@ -8539,18 +8539,17 @@ function SystemSettingsTab() {
     })(),
     urgent: (() => {
       const hikeType = form.urgentBookingHikeType || 'percent';
-      const exampleGross = 1677; // 1500 pooja + 150 platform fee + 27 GST
+      const exampleBase = 1500; // the ORIGINAL Pooja base — the only surcharge base
       const previewHike = hikeType === 'fixed'
         ? roundToPaise(form.urgentBookingHikeFixed || 0)
-        : roundToPaise(exampleGross * (form.urgentBookingHikePercent || 0) / 100);
+        : roundToPaise(exampleBase * (form.urgentBookingHikePercent || 0) / 100);
       const disabled = hikeType === 'fixed'
         ? !(Number(form.urgentBookingHikeFixed) > 0)
         : !(Number(form.urgentBookingHikePercent) > 0);
       return (
         <SectionForm title="Urgent Booking Price Hike" onSave={() => save(['urgentBookingHikeType','urgentBookingHikePercent','urgentBookingHikeFixed'])} saving={saving}>
           <InfoBox>
-            An optional surcharge added on top of the EXISTING booking total (after tax / fee calculation) for <b>urgent bookings only</b> —
-            always before coupon or coin discounts. Normal bookings are never affected, even with a hike configured. Set the active value to <b>0 to disable</b> the surcharge.
+            An optional surcharge for <b>urgent bookings only</b>, calculated from the <b>original Pooja price</b> (never platform fee/GST, kit, gross, coupon or coins) and added on top of the existing booking gross — always before coupon or coin discounts. Normal bookings are never affected, even with a hike configured. Set the active value to <b>0 to disable</b> the surcharge.
           </InfoBox>
 
           <div>
@@ -8586,7 +8585,7 @@ function SystemSettingsTab() {
                     value={form.urgentBookingHikePercent ?? 0} onChange={set} className="input pr-8" />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Percentage of the gross booking total, rounded to the nearest paisa.</p>
+                <p className="text-xs text-gray-400 mt-1">Percentage of the original Pooja price, rounded to the nearest paisa.</p>
               </div>
             ) : (
               <div>

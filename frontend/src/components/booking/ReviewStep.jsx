@@ -124,8 +124,8 @@ export default function ReviewStep({
               label="Urgent Booking Surcharge"
               amount={pricing.urgentSurcharge}
               sub={rates.urgentHikeType === 'fixed'
-                ? `₹${rates.urgentHikeFixed} fixed on booking total`
-                : `${rates.urgentHikePercent}% of booking total`}
+                ? `₹${rates.urgentHikeFixed} fixed on the Pooja price`
+                : `${rates.urgentHikePercent}% of the Pooja price`}
             />
           )}
 

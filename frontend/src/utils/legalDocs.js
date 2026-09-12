@@ -1,10 +1,8 @@
-import { serverOrigin } from '../config/urls.config';
-
-// Builds the URL to open a legal document in a new tab. PDFs are served
-// inline directly by the backend; DOC/DOCX have no native browser renderer,
-// so they're wrapped in Google's public online viewer instead.
+// Resolves a legal document to the in-app Zutsav viewer route. The raw
+// /api/documents/:type/view URL is never exposed as a navigation target —
+// the viewer page fetches the public metadata and renders the PDF through
+// the view endpoint internally, so users stay inside the Zutsav experience
+// (no raw-PDF browser tab, no browser-native PDF toolbar).
 export function resolveViewUrl(doc) {
-  const absoluteViewUrl = `${serverOrigin}${doc.viewUrl}`;
-  if (doc.mimeType === 'application/pdf') return absoluteViewUrl;
-  return `https://docs.google.com/viewer?url=${encodeURIComponent(absoluteViewUrl)}&embedded=true`;
+  return `/legal/${doc.documentType}`;
 }

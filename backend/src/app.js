@@ -128,7 +128,11 @@ app.use('/api/', (req, res, next) => {
 // static files — they're only served through the authenticated controllers
 // in pandit.routes.js (self, OTP-gated after approval) and admin.routes.js
 // (admin review). This must be mounted before the static handler below.
-app.use(['/uploads/kycdocs', '/uploads/govtids'], (req, res) => {
+// Legal documents are likewise only delivered through the public view
+// controller (/api/documents/:type/view) so the branded viewer can consume
+// the bytes — the raw uploads/legaldocs path is not directly accessible,
+// mirroring the kyc/govt-id guard.
+app.use(['/uploads/kycdocs', '/uploads/govtids', '/uploads/legaldocs'], (req, res) => {
   res.status(403).json({ success: false, message: 'Direct access to this resource is not permitted' });
 });
 app.use('/uploads', express.static(path.join(__dirname, '..', config.constants.uploadDir)));

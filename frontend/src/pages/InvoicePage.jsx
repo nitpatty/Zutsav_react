@@ -249,8 +249,8 @@ function buildLineItems(b, pricing) {
     items.push({
       desc: 'Urgent Booking Surcharge',
       sub:  b.urgentHikeType === 'fixed'
-        ? `Flat hike of ₹${b.urgentHikeFixed || 0} on booking total`
-        : `${b.urgentHikePercent || 0}% hike on booking total`,
+        ? `Flat hike of ₹${b.urgentHikeFixed || 0} on the Pooja price`
+        : `${b.urgentHikePercent || 0}% of the Pooja price`,
       qty:  1,
       rate: pricing.urgentSurcharge,
       amt:  pricing.urgentSurcharge,
