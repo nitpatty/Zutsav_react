@@ -660,7 +660,7 @@ export default function BookingFlowScreen({ navigation, route }) {
             <View style={[styles.pbCard, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
               <Text style={[styles.cardTitle, styles.pbTitle, { color: C.text }]}>Price Breakdown</Text>
               <View style={styles.pbRowsWrap}>
-                <PriceRow label="Pooja Service" amount={pricing.poojaAmount} C={C} sub="Religious services are GST-exempt" />
+                <PriceRow label="Pooja Service" amount={roundToPaise((pricing.poojaAmount || 0) + (pricing.urgentSurcharge || 0))} C={C} sub="Religious services are GST-exempt" />
                 {pricing.platformFee > 0 && (
                   <PriceRow
                     label={rates.commissionType === 'fixed' ? `Platform Fee (₹${rates.commissionFixed} fixed)` : `Platform Fee (${rates.commissionPercent}%)`}

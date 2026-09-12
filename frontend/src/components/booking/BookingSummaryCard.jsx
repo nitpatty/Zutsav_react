@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock, Star, UserCheck, ShieldCheck, Package, BadgeCheck, MessageCircle, Phone } from 'lucide-react';
 import { formatDuration } from '../../utils/durationFormatter';
-import { formatINR } from '../../utils/priceEngine';
+import { formatINR, roundToPaise } from '../../utils/priceEngine';
 import { getImageUrl } from '../../config';
 import { useSettings } from '../../context/SettingsContext';
 
@@ -26,6 +26,9 @@ export default function BookingSummaryCard({ pooja, pricing, reviewsSummary, var
   const rating = reviewsSummary?.averageRating ?? pooja.rating ?? 0;
   const reviewCount = reviewsSummary?.totalReviews ?? 0;
   const hasDiscount = pooja.mrp && pooja.mrp > (pooja.salePrice || pooja.price);
+  const effectivePoojaAmount = roundToPaise(
+    (pricing?.poojaAmount ?? pooja.salePrice ?? pooja.price) + (pricing?.urgentSurcharge || 0)
+  );
 
   return (
     <div className="card-premium rounded-3xl p-5 sticky top-6">
@@ -58,7 +61,7 @@ export default function BookingSummaryCard({ pooja, pricing, reviewsSummary, var
         <p className="text-xs text-gray-400">{variant === 'details' ? 'Starting From' : 'Starting From'}</p>
         <div className="flex items-baseline gap-2 mt-1">
           <span className="text-3xl font-bold text-orange-600" style={{ fontFamily:"'Cormorant Garamond',serif" }}>
-            {formatINR(pricing?.poojaAmount ?? pooja.salePrice ?? pooja.price)}
+            {formatINR(effectivePoojaAmount)}
           </span>
           {hasDiscount && <span className="text-sm text-gray-400 line-through">{formatINR(pooja.mrp)}</span>}
         </div>

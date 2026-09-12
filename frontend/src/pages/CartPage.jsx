@@ -260,7 +260,7 @@ export default function CartPage() {
                   {/* Price for this item */}
                   <div className="px-5 py-3 bg-orange-50 border-t border-orange-100 flex items-center justify-between">
                     <div className="text-xs text-gray-500 space-y-0.5">
-                      <p>Pooja: {formatINR(item.pricing?.poojaAmount)}</p>
+                      <p>Pooja: {formatINR((item.pricing?.poojaAmount || 0) + (item.pricing?.urgentSurcharge || 0))}</p>
                       {item.pricing?.platformFee > 0 && <p>Platform fee: {formatINR(item.pricing?.platformFee)}</p>}
                       {item.pricing?.platformGST > 0 && <p>GST on fee: {formatINR(item.pricing?.platformGST)}</p>}
                       {item.pricing?.kitAmount > 0 && <p>Kit: {formatINR(item.pricing?.kitAmount)}</p>}
@@ -361,7 +361,7 @@ export default function CartPage() {
                 </div>
                 <div className="pl-4 space-y-0.5">
                   <div className="flex justify-between text-xs text-gray-400">
-                    <span>Pooja service</span><span>{formatINR(item.pricing?.poojaAmount)}</span>
+                    <span>Pooja service</span><span>{formatINR((item.pricing?.poojaAmount || 0) + (item.pricing?.urgentSurcharge || 0))}</span>
                   </div>
                   {(item.pricing?.platformFee || 0) > 0 && (
                     <div className="flex justify-between text-xs text-gray-400">

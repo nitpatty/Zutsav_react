@@ -99,7 +99,11 @@ export default function ReviewStep({
           <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">Price Breakdown</p>
         </div>
         <div className="px-4 py-3 space-y-2.5">
-          <PriceLine label="Pooja Service" amount={pricing.poojaAmount} sub="Religious services are GST-exempt" />
+          <PriceLine
+            label="Pooja Service"
+            amount={roundToPaise((pricing.poojaAmount || 0) + (pricing.urgentSurcharge || 0))}
+            sub="Religious services are GST-exempt"
+          />
           {pricing.platformFee > 0 && (
             <PriceLine
               label={rates.commissionType === 'fixed' ? `Platform Fee (₹${rates.commissionFixed} fixed)` : `Platform Fee (${rates.commissionPercent}%)`}
@@ -118,15 +122,6 @@ export default function ReviewStep({
           )}
           {pricing.kitGST > 0 && (
             <PriceLine label={`GST on Kit (${rates.gstPercent}%)`} amount={pricing.kitGST} muted />
-          )}
-          {pricing.urgentSurcharge > 0 && (
-            <PriceLine
-              label="Urgent Booking Surcharge"
-              amount={pricing.urgentSurcharge}
-              sub={rates.urgentHikeType === 'fixed'
-                ? `₹${rates.urgentHikeFixed} fixed on the Pooja price`
-                : `${rates.urgentHikePercent}% of the Pooja price`}
-            />
           )}
 
           <div className="border-t border-orange-100 pt-2.5 flex justify-between items-center">
