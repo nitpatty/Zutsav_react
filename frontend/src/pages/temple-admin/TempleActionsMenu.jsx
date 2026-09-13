@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreVertical, Eye, Edit3, Copy, EyeOff, Trash2 } from 'lucide-react';
 
-const MENU_WIDTH = 175; // w-44
+const MENU_WIDTH = 176; // w-44
 
 // Click-to-open "..." action menu for a temple card/row — five actions don't
 // fit as inline icon buttons the way Pooja/Marketplace's 3-action rows do.
@@ -68,7 +68,7 @@ export default function TempleActionsMenu({ temple, onView, onEdit, onDuplicate,
         ref={buttonRef}
         type="button"
         onClick={toggleOpen}
-        className="w-8 h-8 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors"
+        className="flex items-center justify-center w-8 h-8 text-gray-500 transition-colors rounded-full hover:bg-gray-100"
         title="Actions"
       >
         <MoreVertical size={16} />
@@ -76,7 +76,7 @@ export default function TempleActionsMenu({ temple, onView, onEdit, onDuplicate,
       {open && createPortal(
         <div
           ref={menuRef}
-          className="fixed z-50 w-44 bg-white rounded-xl shadow-xl border overflow-hidden py-1"
+          className="fixed z-50 py-1 overflow-hidden bg-white border shadow-xl w-44 rounded-xl"
           style={{ borderColor: 'var(--t-border)', top: coords.top, left: coords.left }}
         >
           {item(Eye, 'View Details', () => onView(temple))}
