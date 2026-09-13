@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreVertical, Eye, Edit3, Copy, EyeOff, Trash2 } from 'lucide-react';
 
-const MENU_WIDTH = 176; // w-44
+const MENU_WIDTH = 175; // w-44
 
 // Click-to-open "..." action menu for a temple card/row — five actions don't
 // fit as inline icon buttons the way Pooja/Marketplace's 3-action rows do.
