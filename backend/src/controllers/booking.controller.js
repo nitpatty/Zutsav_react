@@ -27,6 +27,7 @@ const { calculatePricing: calcPricing, roundToPaise } = require('../utils/financ
 const { normalizeBookingPayload } = require('../../notification-engine/variables/PayloadNormalizer');
 const { resolveApprovedPayoutAmount } = require('../utils/payoutUtils');
 const OtpService = require('../../notification-engine/otp/OtpService');
+const bookingDateRules = require('../utils/bookingDateRules');
 
 // ── Pricing engine (delegates to the centralized financeUtils engine) ─────────
 async function calculatePricing(pooja, kitPrice = 0, urgent = false) {
@@ -148,10 +149,19 @@ exports.createBookingOrder = async (req, res, next) => {
   try {
     const { poojaId, scheduledDate, scheduledTime, language, specialNote, userDetails, isUrgent, withKit, kitId } = req.body;
 
+    const urgent = isUrgent === true || isUrgent === 'true';
+
+    // Urgent date eligibility — validate before any pooja/order work.
+    if (urgent) {
+      const verdict = await bookingDateRules.validateUrgentDate(scheduledDate);
+      if (!verdict.valid) {
+        return res.status(400).json({ success: false, message: verdict.message });
+      }
+    }
+
     const pooja = await Pooja.findById(poojaId);
     if (!pooja || !pooja.isActive) return res.status(404).json({ success: false, message: 'Pooja not found' });
 
-    const urgent  = isUrgent === true || isUrgent === 'true';
     const pricing = await calculatePricing(pooja, 0, urgent);
     const rpOrder = await createOrder(pricing.finalAmount, 'INR', `booking_${Date.now()}`);
 
@@ -229,6 +239,16 @@ exports.createPhonePeBooking = async (req, res, next) => {
     const coinRedemptionCoins = req.body.coinRedemptionCoins;
 
     const urgent = isUrgent === true || isUrgent === 'true';
+
+    // Urgent date eligibility — today is never allowed; tomorrow only before
+    // the admin-configured cutoff in IST (see bookingDateRules for the
+    // authoritative window).
+    if (urgent) {
+      const verdict = await bookingDateRules.validateUrgentDate(scheduledDate);
+      if (!verdict.valid) {
+        return res.status(400).json({ success: false, message: verdict.message });
+      }
+    }
 
     const pooja = await Pooja.findById(poojaId);
     if (!pooja || !pooja.isActive) return res.status(404).json({ success: false, message: 'Pooja not found' });

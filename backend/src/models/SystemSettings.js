@@ -140,6 +140,22 @@ const systemSettingsSchema = new mongoose.Schema({
   urgentBookingHikeType:    { type: String, enum: ['percent', 'fixed'], default: 'percent' },
   urgentBookingHikePercent: { type: Number, default: 0, min: 0, max: 100 },
   urgentBookingHikeFixed:   { type: Number, default: 0, min: 0 },
+
+  // ── Urgent Booking Cutoff Time (global) ───────────────────────────────────
+  // Daily business-time (Asia/Kolkata) cutoff for URGENT bookings only. Before
+  // this time tomorrow is eligible; at/after this time the earliest eligible
+  // date moves to the day after tomorrow. One single global value drives the
+  // backend rule, the web date picker and the mobile date picker. Normal
+  // bookings are never affected.
+  //   format: 'HH:mm' (00:00–23:59), default '18:30' preserves legacy behavior.
+  urgentBookingCutoffTime: {
+    type: String,
+    default: '18:30',
+    validate: {
+      validator: (v) => /^([01]\d|2[0-3]):([0-5]\d)$/.test(v),
+      message:   'Invalid cutoff time format',
+    },
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('SystemSettings', systemSettingsSchema);

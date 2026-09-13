@@ -94,6 +94,18 @@ exports.updateSettings = async (req, res) => {
     if (update.urgentBookingHikeType !== undefined && !['percent', 'fixed'].includes(String(update.urgentBookingHikeType)))
       delete update.urgentBookingHikeType;
 
+    // Urgent Booking Cutoff Time — STRING time value ('HH:mm', 00:00–23:59).
+    // Explicitly NOT a number, so it must never enter the numeric coercion
+    // arrays. Invalid values are rejected with a 400 rather than silently
+    // coerced, so a typo can never silently change the business cutoff.
+    if (update.urgentBookingCutoffTime !== undefined) {
+      const cutoffTime = String(update.urgentBookingCutoffTime || '');
+      if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(cutoffTime)) {
+        return res.status(400).json({ success: false, message: 'Urgent booking cutoff time must be a valid HH:mm time between 00:00 and 23:59' });
+      }
+      update.urgentBookingCutoffTime = cutoffTime;
+    }
+
     // Sanitize NaN numerics — remove rather than fail runValidators
     ['emailSmtpPort','platformCommissionPercent','platformCommissionFixed','platformGstPercent','partialPaymentMinAmount',
      'poojaBookingCoinRewardPercent','coinRedemptionMinCoins',

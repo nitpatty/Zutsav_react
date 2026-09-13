@@ -295,6 +295,7 @@ export default function BookingFlow() {
     if (urgent) {
       setWithKit(false);
       setKitIds([]);
+      setScheduledDate('');
     } else if (scheduledDate) {
       // If switching back to Normal, clear date if it falls within the 3-day block
       const t = new Date(); t.setHours(0,0,0,0);

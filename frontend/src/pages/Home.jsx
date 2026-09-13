@@ -50,6 +50,15 @@ const SPIRITUAL_QUOTES = [
   { text: 'Your soul is a temple. Keep it pure, keep it lit.', src: 'Vedic Proverb' },
 ];
 
+// ─── "Why Are You Here Today?" section — TEMPORARILY DISABLED ───────────────
+// Per client requirement, the JourneyPicker intent section is HIDDEN on the live
+// site (desktop, tablet and mobile). The component, its JOURNEY_INTENTS data,
+// i18n keys and styles are PRESERVED for future reactivation.
+// To restore: set JOURNEY_PICKER_ENABLED to true (or render <JourneyPicker/>
+// directly). No other changes required — component is unchanged and intact.
+// ─────────────────────────────────────────────────────────────────────────────
+const JOURNEY_PICKER_ENABLED = false;
+
 export default function Home() {
   const { t } = useTranslation();
   const { user, isAuthenticated } = useAuth();
@@ -275,7 +284,9 @@ export default function Home() {
 
       <PersonalizedSection isAuthenticated={isAuthenticated} user={user} />
 
-      <JourneyPicker featuredPoojas={featuredPoojas} handleAiSubmit={handleAiSubmit} />
+      {JOURNEY_PICKER_ENABLED && (
+        <JourneyPicker featuredPoojas={featuredPoojas} handleAiSubmit={handleAiSubmit} />
+      )}
 
       <FestivalsSection festivals={festivals} loading={festivalLoading} />
 

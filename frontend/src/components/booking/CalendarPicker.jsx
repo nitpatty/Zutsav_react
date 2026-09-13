@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-export default function CalendarPicker({ value, onChange, minDaysFromNow = 0, maxDaysFromNow = null }) {
+export default function CalendarPicker({ value, onChange, minDaysFromNow = 0, maxDaysFromNow = null, minDate: minDateProp = null, maxDate: maxDateProp = null }) {
   const today = new Date(); today.setHours(0,0,0,0);
   const [vy, setVY] = useState(today.getFullYear());
   const [vm, setVM] = useState(today.getMonth());
@@ -17,9 +17,23 @@ export default function CalendarPicker({ value, onChange, minDaysFromNow = 0, ma
   const daysInMon = new Date(vy, vm+1, 0).getDate();
   const cells = Array.from({ length: firstDay + daysInMon }, (_, i) => i < firstDay ? null : i - firstDay + 1);
 
-  const minDate = new Date(today); minDate.setDate(minDate.getDate() + minDaysFromNow);
-  const maxDate = maxDaysFromNow !== null ? new Date(today.getFullYear(), today.getMonth(), today.getDate() + maxDaysFromNow) : null;
-  const isDisabled = (d) => { const date = new Date(vy, vm, d); return date < minDate || (maxDate !== null && date > maxDate); };
+  const toStr = (d) => `${vy}-${String(vm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+  // Resolve effective min/max — explicit YYYY-MM-DD strings take priority; fall back to offset-based Date objects.
+  const effMinDate = minDateProp
+    || (() => { const d = new Date(today); d.setDate(d.getDate() + minDaysFromNow); return d; })();
+  const effMaxDate = (maxDateProp !== null && maxDateProp !== undefined)
+    ? maxDateProp
+    : (maxDaysFromNow !== null ? new Date(today.getFullYear(), today.getMonth(), today.getDate() + maxDaysFromNow) : null);
+
+  const isDisabled = (d) => {
+    const str = toStr(d);
+    if (effMinDate instanceof Date) { const date = new Date(vy, vm, d); if (date < effMinDate) return true; }
+    else if (str < effMinDate) return true;
+    if (effMaxDate instanceof Date) { const date = new Date(vy, vm, d); if (date > effMaxDate) return true; }
+    else if (effMaxDate !== null && str > effMaxDate) return true;
+    return false;
+  };
   const isSelected = (d) => sel && sel.getFullYear()===vy && sel.getMonth()===vm && sel.getDate()===d;
   const isToday = (d) => today.getFullYear()===vy && today.getMonth()===vm && today.getDate()===d;
 

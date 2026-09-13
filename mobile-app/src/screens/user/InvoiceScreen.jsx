@@ -202,11 +202,8 @@ function InvoiceHeader({ b, invoice, pmtStatus, displayInvNumber, paymentTypeLab
     <View style={{ borderRadius: 16, overflow: 'hidden', backgroundColor: '#1B1F3B' }}>
       <View style={{ padding: 20 }}>
         <View style={{ marginBottom: 16 }}>
-          <Text style={{ fontFamily: SERIF_FONT, fontSize: 26, fontWeight: '900', color: '#D4AF37'}}>
-            Zutsav{' '}
-            <Text style={{ fontFamily: SERIF_FONT, fontSize: 26, fontWeight: '900', color: '#FF7043' }}>
-              Enterprises
-            </Text>
+          <Text style={{ fontFamily: SERIF_FONT, fontSize: 22, fontWeight: '900', color: '#D4AF37' }}>
+            ZUTSAV PVT. LTD.
           </Text>
         </View>
         <View style={{ gap: 3 }}>
@@ -603,7 +600,7 @@ function OrderInvoice({ data, C }) {
   return (
     <>
       <View style={{ backgroundColor: '#1B1F3B', borderRadius: 16, padding: 20 }}>
-        <Text style={{ fontFamily: SERIF_FONT, fontSize: 26, fontWeight: '900', color: '#D4AF37'}}>Zutsav Enterprises</Text>
+        <Text style={{ fontFamily: SERIF_FONT, fontSize: 22, fontWeight: '900', color: '#D4AF37'}}>ZUTSAV PVT. LTD.</Text>
         <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10, letterSpacing: 1.5, marginTop: 2 }}>Tax Invoice</Text>
         <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 8 }}>Order #{displayInvNumber}</Text>
         <View style={{ marginTop: 8 }}>
@@ -656,7 +653,7 @@ function buildBookingHtml({ booking, paymentLedger = [] }) {
   const isInterState = !['uttarpradesh', 'up'].includes((ud.state || '').toLowerCase().replace(/\s+/g, ''));
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="font-family:Helvetica,Arial,sans-serif;padding:0;margin:0;color:#1C1917">
     <div style="background:#1B1F3B;padding:32px 36px">
-      <h1 style="color:#D4AF37;margin:0;font-size:26px">Zutsav Enterprises</h1>
+      <h1 style="color:#D4AF37;margin:0;font-size:26px">ZUTSAV PVT. LTD.</h1>
       <p style="color:rgba(255,255,255,0.45);margin:4px 0 0;font-size:11px">${company.addr1}<br/>${company.addr2}<br/>GSTIN: ${company.gstin} · PAN: ${company.pan}</p>
     </div>
     <div style="padding:24px 36px;border-bottom:1px solid #e5e7eb">
@@ -711,7 +708,7 @@ function buildOrderHtml({ order }) {
   const itemRows = (order.items || []).map((it) => `<tr><td>${esc(it.name)}${it.variantLabel ? ' (' + esc(it.variantLabel) + ')' : ''}</td><td>${it.quantity}</td><td style="text-align:right">${formatCurrency(it.total ?? it.price * it.quantity)}</td></tr>`).join('');
   return `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body style="font-family:Helvetica,Arial,sans-serif;padding:0;margin:0;color:#1C1917">
     <div style="background:#1B1F3B;padding:32px 36px">
-      <h1 style="color:#D4AF37;margin:0;font-size:26px">Zutsav Enterprises</h1>
+      <h1 style="color:#D4AF37;margin:0;font-size:26px">ZUTSAV PVT. LTD.</h1>
       <p style="color:rgba(255,255,255,0.45);margin:4px 0 0;font-size:11px">${company.addr1}<br/>${company.addr2}<br/>GSTIN: ${company.gstin} · PAN: ${company.pan}</p>
     </div>
     <div style="padding:24px 36px;border-bottom:1px solid #e5e7eb">

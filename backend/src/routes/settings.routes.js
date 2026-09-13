@@ -2,11 +2,12 @@ const router = require('express').Router();
 const SystemSettings = require('../models/SystemSettings');
 
 const PUBLIC_FIELDS = 'platformName logo contactEmail supportPhone supportAddress ' +
-  'whatsappNumber customerCareNumber deployWebsiteUrl';
+  'whatsappNumber customerCareNumber deployWebsiteUrl urgentBookingCutoffTime';
 
 const DEFAULTS = {
   platformName: 'Zutsav', logo: '', contactEmail: '', supportPhone: '', supportAddress: '',
   whatsappNumber: '', customerCareNumber: '', deployWebsiteUrl: '',
+  urgentBookingCutoffTime: '18:30',
 };
 
 // GET /api/settings/public — no auth required

@@ -10,6 +10,7 @@ import { useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import { formatCurrency, formatSlotTime } from '../../utils/helpers';
 import { calculatePrice, roundToPaise } from '../../utils/priceEngine';
+import { getUrgentWindow, formatDateLabel, formatTimeLabel } from '../../utils/bookingDateRules';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import AddressPicker from '../../components/shared/AddressPicker';
@@ -28,7 +29,7 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 const FULL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 
-function CalendarPicker({ value, onChange, minDaysFromNow = 0, maxDaysFromNow = null, C }) {
+function CalendarPicker({ value, onChange, minDaysFromNow = 0, maxDaysFromNow = null, minDate: minDateProp = null, maxDate: maxDateProp = null, C }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const [vy, setVY] = useState(today.getFullYear());
   const [vm, setVM] = useState(today.getMonth());
@@ -37,17 +38,25 @@ function CalendarPicker({ value, onChange, minDaysFromNow = 0, maxDaysFromNow = 
   const daysInMon = new Date(vy, vm + 1, 0).getDate();
   const cells = Array.from({ length: firstDay + daysInMon }, (_, i) => i < firstDay ? null : i - firstDay + 1);
 
-  const minDate = new Date(today); minDate.setDate(minDate.getDate() + minDaysFromNow);
-  const maxDate = maxDaysFromNow !== null ? new Date(today.getFullYear(), today.getMonth(), today.getDate() + maxDaysFromNow) : null;
-
-  const isDisabled = (d) => {
-    const date = new Date(vy, vm, d);
-    return date < minDate || (maxDate !== null && date > maxDate);
-  };
-
   const toStr = (d) => {
     const date = new Date(vy, vm, d);
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
+  // Resolve effective min/max — explicit YYYY-MM-DD strings take priority; fall back to offset-based Date objects.
+  const effMinDate = minDateProp
+    || (() => { const m = new Date(today); m.setDate(m.getDate() + minDaysFromNow); return m; })();
+  const effMaxDate = (maxDateProp !== null && maxDateProp !== undefined)
+    ? maxDateProp
+    : (maxDaysFromNow !== null ? new Date(today.getFullYear(), today.getMonth(), today.getDate() + maxDaysFromNow) : null);
+
+  const isDisabled = (d) => {
+    const str = toStr(d);
+    if (effMinDate instanceof Date) { const date = new Date(vy, vm, d); if (date < effMinDate) return true; }
+    else if (str < effMinDate) return true;
+    if (effMaxDate instanceof Date) { const date = new Date(vy, vm, d); if (date > effMaxDate) return true; }
+    else if (effMaxDate !== null && str > effMaxDate) return true;
+    return false;
   };
 
   const isSelected = (d) => value === toStr(d);
@@ -151,6 +160,9 @@ export default function BookingFlowScreen({ navigation, route }) {
   const [rates,         setRates]         = useState({ commissionPercent: 0, commissionFixed: 0, commissionType: 'percent', gstPercent: 0 });
   const [partialConfig, setPartialConfig] = useState({ enabled: false, minAmount: 500, mode: 'fixed', options: [] });
 
+  // Urgent booking cutoff time (global admin setting) — default keeps legacy 18:30
+  const [urgentCutoffTime, setUrgentCutoffTime] = useState('18:30');
+
   // Kits
   const [kits,        setKits]        = useState([]);
   const [kitsLoading, setKitsLoading] = useState(false);
@@ -183,6 +195,22 @@ export default function BookingFlowScreen({ navigation, route }) {
     district: user?.district || '',
   });
   const [specialNote, setSpecialNote] = useState('');
+
+  // Fetch the global admin-controlled urgent cutoff time from the public
+  // settings endpoint. Falls back to the legacy '18:30' default when the
+  // response is missing/invalid, so a stale or partial server response can
+  // never alter behavior unexpectedly.
+  useEffect(() => {
+    let active = true;
+    api.get('/settings/public')
+      .then(({ data }) => {
+        if (!active) return;
+        const cut = data?.settings?.urgentBookingCutoffTime;
+        if (typeof cut === 'string' && /^([01]\d|2[0-3]):([0-5]\d)$/.test(cut)) setUrgentCutoffTime(cut);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   // Load pooja
   useEffect(() => {
@@ -240,6 +268,7 @@ export default function BookingFlowScreen({ navigation, route }) {
   const currentIdx = activeSteps.indexOf(stepId);
   const barSteps = activeSteps.filter(s => s !== STEP.OVERVIEW);
   const barIdx = barSteps.indexOf(stepId);
+  const urgentWindow = isUrgent ? getUrgentWindow(new Date(), urgentCutoffTime) : null;
 
   const poojaPrice = pooja.salePrice || pooja.price || 0;
   const kitPrice = withKit && !isUrgent
@@ -278,7 +307,7 @@ export default function BookingFlowScreen({ navigation, route }) {
 
   const handleSetUrgent = (urgent) => {
     setIsUrgent(urgent);
-    if (urgent) { setWithKit(false); setKitIds([]); }
+    if (urgent) { setWithKit(false); setKitIds([]); setScheduledDate(''); }
   };
 
   const handleSubmit = async () => {
@@ -526,15 +555,25 @@ export default function BookingFlowScreen({ navigation, route }) {
         {/* ── DATE ─────────────────────────────────────────────── */}
         {stepId === STEP.DATE && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="📅" title="Select Ceremony Date" sub={isUrgent ? 'Today, tomorrow or day after only' : 'Minimum 3 days in advance'} C={C} />
+            <StepHeader icon="📅" title="Select Ceremony Date" sub={isUrgent ? (urgentWindow?.cutoffReached ? 'Day after tomorrow only' : 'Tomorrow or day after only') : 'Minimum 3 days in advance'} C={C} />
             <View style={[styles.infoBox, { backgroundColor: isUrgent ? '#FEE2E220' : '#FEF3C720', borderColor: isUrgent ? '#DC2626' : '#D97706' }]}>
               <Text style={{ color: isUrgent ? '#991B1B' : '#92400E', fontSize: 12 }}>
                 {isUrgent
-                  ? '⚡ Urgent bookings available for today, tomorrow, or day after tomorrow only.'
+                  ? (urgentWindow?.cutoffReached
+                      ? `⚡ Urgent bookings available for ${formatDateLabel(urgentWindow.earliestDate)} (day after tomorrow) only — same-day and next-day booking has closed for today.`
+                      : `⚡ Urgent bookings available for tomorrow and the day after only. Same-day booking closes at ${formatTimeLabel(urgentWindow.cutoffTime)} IST.`)
                   : 'ℹ️ Normal bookings require at least 3 days advance notice.'}
               </Text>
             </View>
-            <CalendarPicker value={scheduledDate} onChange={setScheduledDate} minDaysFromNow={isUrgent ? 0 : 3} maxDaysFromNow={isUrgent ? 2 : null} C={C} />
+            <CalendarPicker
+              value={scheduledDate}
+              onChange={setScheduledDate}
+              minDate={urgentWindow ? urgentWindow.earliestDate : undefined}
+              maxDate={urgentWindow ? urgentWindow.latestDate : undefined}
+              minDaysFromNow={isUrgent ? undefined : 3}
+              maxDaysFromNow={isUrgent ? undefined : null}
+              C={C}
+            />
             <NavRow onBack={goBack} onNext={() => { if (!scheduledDate) { Toast.show({ type: 'error', text1: 'Please select a date' }); return; } goNext(); }} C={C} />
           </View>
         )}

@@ -13,6 +13,7 @@ const { calculatePricing, calculateItemTax } = require('../utils/financeUtils');
 const { normalizeBookingPayload } = require('../../notification-engine/variables/PayloadNormalizer');
 const couponService = require('../services/couponService');
 const { resolveCoinRedemption, settleCoinRedemption } = require('../services/coinRedemptionService');
+const bookingDateRules = require('../utils/bookingDateRules');
 
 // Delegates to the centralized financeUtils engine — accepts Pooja document or plain number
 async function computePricing(pooja, kitPrice = 0, urgent = false) {
@@ -67,6 +68,14 @@ exports.cartCheckout = async (req, res, next) => {
     for (const item of bookingItems) {
       const { poojaId, scheduledDate, scheduledTime, language, specialNote, userDetails, isUrgent, withKit, kitId, kitIds } = item;
       const urgent = isUrgent === true || isUrgent === 'true';
+
+      // Urgent date eligibility — validate before the phonepe order is created.
+      if (urgent) {
+        const verdict = await bookingDateRules.validateUrgentDate(scheduledDate);
+        if (!verdict.valid) {
+          return res.status(400).json({ success: false, message: verdict.message });
+        }
+      }
 
       const pooja = await Pooja.findById(poojaId).select('name price salePrice taxEnabled taxRate isActive');
       if (!pooja || !pooja.isActive) continue;

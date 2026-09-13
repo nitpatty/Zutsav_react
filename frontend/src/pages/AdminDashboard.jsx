@@ -14,7 +14,9 @@ import ZutsavLoader, { ZutsavLoaderInline } from '../components/shared/ZutsavLoa
 import toast from 'react-hot-toast';
 import API from '../api/axios';
 import { roundToPaise } from '../utils/priceEngine';
+import { formatTimeLabel } from '../utils/bookingDateRules';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import ProfilePhoto from '../components/shared/ProfilePhoto';
 import MapPicker from '../components/shared/MapPicker';
 import { geocodeLocation } from '../services/geocodingService';
@@ -4745,7 +4747,7 @@ const STATUS_TRANSITIONS = {
 };
 
 // ── Invoice print helper ──────────────────────────────────────
-function _openInvoiceWindow(order, shipment) {
+function _openInvoiceWindow(order, shipment, logoSrc) {
   const addr      = order.shippingAddress || {};
   const user      = order.userId || {};
   const fmtINR    = (n) => `₹${(+(n || 0)).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -4775,6 +4777,8 @@ function _openInvoiceWindow(order, shipment) {
     .header{background:#1B1F3B;color:white;padding:24px 28px;border-radius:8px 8px 0 0;display:flex;justify-content:space-between;align-items:flex-start}
     .brand{font-size:22px;font-weight:900;font-family:Georgia,serif;color:#D4AF37}
     .brand small{font-size:11px;font-weight:400;color:rgba(255,255,255,0.7);letter-spacing:2px;vertical-align:middle}
+    .brand-logo{height:36px;width:auto;max-width:200px;object-fit:contain;display:inline-block;background:transparent}
+    .brand-legal{color:#D4AF37;font-weight:700;font-size:11px;letter-spacing:2px;margin-top:6px}
     .inv-title{text-align:right;color:#D4AF37;font-size:16px;font-weight:900;font-family:Georgia,serif;letter-spacing:2px}
     .inv-sub{color:rgba(255,255,255,0.6);font-size:11px;margin-top:3px}
     .parties{display:flex;gap:24px;padding:16px 28px;border:1px solid #e5e7eb;border-top:none;background:#f9fafb}
@@ -4799,7 +4803,9 @@ function _openInvoiceWindow(order, shipment) {
   <div class="page">
     <div class="header">
       <div>
-        <div class="brand">🪔 Zutsav <small>ENTERPRISES</small></div>
+        <div class="brand">${logoSrc
+          ? `<span class="brand-logo"><img src="${logoSrc}" alt="Zutsav" onerror="this.parentNode.style.display='none'"></span><span class="brand-legal" style="display:block">PVT. LTD.</span>`
+          : '🪔 ZUTSAV PVT. LTD.'}</div>
         <div class="inv-sub" style="margin-top:6px">GSTIN: ${company.gstin} | PAN: ${company.pan}</div>
         <div class="inv-sub">${company.email} | ${company.phone}</div>
       </div>
@@ -4898,6 +4904,7 @@ const MANUAL_SHIPMENT_STATUS_OPTIONS = [
 
 // ── Manage Order Modal ────────────────────────────────────────
 function ManageOrderModal({ order, onClose, onRefresh }) {
+  const { logoUrl } = useSettings();
   // Shipment state
   const [shipment,        setShipment]        = useState(null);
   const [shipmentLoading, setShipmentLoading] = useState(true);
@@ -5175,7 +5182,7 @@ function ManageOrderModal({ order, onClose, onRefresh }) {
   const handleViewInvoice = async () => {
     try {
       const { data } = await API.get(`/admin/orders/${order._id}/invoice`);
-      _openInvoiceWindow(data.order, data.shipment);
+      _openInvoiceWindow(data.order, data.shipment, logoUrl);
     } catch (err) { toast.error('Could not load invoice'); }
   };
 
@@ -8274,6 +8281,7 @@ function SystemSettingsTab() {
         partialPaymentMinAmount: 500,
         partialPaymentMode:      'fixed',
         partialPaymentOptions:   [500, 1000, 1500],
+        urgentBookingCutoffTime: '18:30',
         ...(data.settings || {}),
       }))
       .catch(() => toast.error('Could not load settings'))
@@ -8547,6 +8555,7 @@ function SystemSettingsTab() {
         ? !(Number(form.urgentBookingHikeFixed) > 0)
         : !(Number(form.urgentBookingHikePercent) > 0);
       return (
+        <>
         <SectionForm title="Urgent Booking Price Hike" onSave={() => save(['urgentBookingHikeType','urgentBookingHikePercent','urgentBookingHikeFixed'])} saving={saving}>
           <InfoBox>
             An optional surcharge for <b>urgent bookings only</b>, calculated from the <b>original Pooja price</b> (never platform fee/GST, kit, gross, coupon or coins) and added on top of the existing booking gross — always before coupon or coin discounts. Normal bookings are never affected, even with a hike configured. Set the active value to <b>0 to disable</b> the surcharge.
@@ -8625,6 +8634,27 @@ function SystemSettingsTab() {
             </div>
           )}
         </SectionForm>
+
+        <SectionForm title="Urgent Booking Cutoff Time" onSave={() => save(['urgentBookingCutoffTime'])} saving={saving}>
+          <InfoBox>
+            Daily cutoff time for <b>tomorrow's urgent bookings</b>. Before this time, tomorrow is eligible for urgent booking; at or after this time, the earliest eligible urgent date moves to the <b>day after tomorrow</b>. Applied in IST (Asia/Kolkata) across web, mobile and backend. Normal bookings are never affected.
+          </InfoBox>
+          <div>
+            <label className="label">Cutoff Time (HH:mm)</label>
+            <input
+              type="time"
+              name="urgentBookingCutoffTime"
+              step="300"
+              value={form.urgentBookingCutoffTime ?? '18:30'}
+              onChange={set}
+              className="input"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Current: {form.urgentBookingCutoffTime ?? '18:30'} ({formatTimeLabel(form.urgentBookingCutoffTime ?? '18:30')} IST).
+            </p>
+          </div>
+        </SectionForm>
+        </>
       );
     })(),
     loyalty: (() => {

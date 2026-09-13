@@ -55,7 +55,7 @@ function _openCustomerInvoice(order, shipment) {
   </style>
   </head><body><div class="page">
     <div class="hdr">
-      <div><div class="brand">🪔 Zutsav</div><div class="sub">GSTIN: ${company.gstin} | ${company.email}</div></div>
+      <div><div class="brand">🪔 ZUTSAV PVT. LTD.</div><div class="sub">GSTIN: ${company.gstin} | ${company.email}</div></div>
       <div><div class="ititle">TAX INVOICE</div><div class="sub" style="color:rgba(255,255,255,0.6)">INV-${order.orderNumber}<br>Order: #${order.orderNumber}<br>${date}</div></div>
     </div>
     <div class="parties">
