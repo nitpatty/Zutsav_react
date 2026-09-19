@@ -5,12 +5,18 @@
  * one VariableResolver — no channel has its own ad hoc rendering logic.
  */
 
-const { interpolate, buildWhatsAppComponents } = require('../variables/VariableResolver');
+const {
+  interpolate, interpolateHtml, interpolateSubject, buildWhatsAppComponents,
+} = require('../variables/VariableResolver');
 
 function renderEmail(mapping, payload) {
+  // Email is the one HTML channel: the body interpolates with per-value HTML
+  // escaping (payload values are user/admin data), and the subject strips
+  // CR/LF to prevent header injection. WhatsApp/In-App substitute the same
+  // values unescaped — escaping is not a universal rule, only an HTML concern.
   return {
-    subject: interpolate(mapping.emailSubject || '', payload),
-    html:    interpolate(mapping.emailHtml || '', payload),
+    subject: interpolateSubject(mapping.emailSubject || '', payload),
+    html:    interpolateHtml(mapping.emailHtml || '', payload),
   };
 }
 

@@ -20,6 +20,9 @@
 
 const JobQueue = require('./JobQueue');
 const NotificationLogger = require('../logging/NotificationLogger');
+const {
+  redactSensitivePayload, rehydrateSensitivePayload, collectSensitiveValues, scrubText, scrubDeep,
+} = require('../security/otpPayload');
 
 const POLL_INTERVAL_MS = 5000;
 const BATCH_SIZE = 20;
@@ -41,12 +44,19 @@ function setOnJobSettled(fn) {
 }
 
 async function processOne(job) {
+  // job.normalizedPayload is stored with OTP fields encrypted (JobQueue.
+  // enqueue). Build a safe snapshot for logging, and collect the plaintext
+  // sensitive values so any rendered content/error text that echoes them is
+  // scrubbed before NotificationLogger persists it.
+  const safePayload = redactSensitivePayload(job.normalizedPayload);
+  const secrets = collectSensitiveValues(rehydrateSensitivePayload(job.normalizedPayload));
+
   await NotificationLogger.log({
     jobId: job._id,
     type: job.channel,
     event: job.eventName,
     status: 'processing',
-    payload: job.normalizedPayload,
+    payload: safePayload,
     retryCount: job.attempts,
   });
 
@@ -54,8 +64,9 @@ async function processOne(job) {
     const result = (await _processor(job)) || {};
 
     if (result.skip) {
-      await JobQueue.markSkipped(job._id, result.reason || 'Required variable missing');
-      await _onJobSettled(job, 'skipped', result.reason || '', null);
+      const reason = scrubText(result.reason || 'Required variable missing', secrets);
+      await JobQueue.markSkipped(job._id, reason);
+      await _onJobSettled(job, 'skipped', reason, null);
       const checklist = result.checklist || null;
       await NotificationLogger.log({
         jobId: job._id, type: job.channel, event: job.eventName,
@@ -63,15 +74,15 @@ async function processOne(job) {
         recipientId: job.recipient?.userId || null,
         recipientPhone: job.recipient?.phone || '',
         recipientEmail: job.recipient?.email || '',
-        status: 'skipped', error: result.reason || '', retryCount: job.attempts,
-        payload: job.normalizedPayload,
-        metadata: {
+        status: 'skipped', error: reason, retryCount: job.attempts,
+        payload: safePayload,
+        metadata: scrubDeep({
           expectedVariableCount: checklist?.expectedCount ?? null,
           receivedVariableCount: checklist?.configuredCount ?? null,
           missingVariables: checklist
             ? checklist.rows.filter((r) => !r.ok).map((r) => r.payloadPath || `position ${r.position}`)
             : (result.missing || []),
-        },
+        }, secrets),
       });
       return;
     }
@@ -80,15 +91,19 @@ async function processOne(job) {
     await _onJobSettled(job, 'delivered', '', result.response || null);
     await NotificationLogger.log({
       jobId: job._id, type: job.channel, event: job.eventName,
-      status: 'delivered', response: result.response, variables: result.variables,
-      renderedContent: result.renderedContent, retryCount: job.attempts,
+      status: 'delivered',
+      response: scrubDeep(result.response, secrets),
+      variables: scrubDeep(result.variables, secrets),
+      renderedContent: scrubDeep(result.renderedContent, secrets),
+      retryCount: job.attempts,
     });
   } catch (err) {
-    const updated = await JobQueue.markFailed(job._id, err.message);
-    await _onJobSettled(job, updated ? updated.status : 'failed', err.message, null);
+    const safeError = scrubText(err.message, secrets);
+    const updated = await JobQueue.markFailed(job._id, safeError);
+    await _onJobSettled(job, updated ? updated.status : 'failed', safeError, null);
     await NotificationLogger.log({
       jobId: job._id, type: job.channel, event: job.eventName,
-      status: updated ? updated.status : 'failed', error: err.message, retryCount: job.attempts,
+      status: updated ? updated.status : 'failed', error: safeError, retryCount: job.attempts,
     });
   }
 }

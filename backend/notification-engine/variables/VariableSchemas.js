@@ -15,6 +15,13 @@ const DEFAULT_REQUIRED = ['customer.name'];
 const REQUIRED_VARIABLES = {
   // Auth
   OTP_CREATED:               ['customer.name', 'otp.code'],
+  // OTP_VERIFICATION is the live login/signup/kyc/document-view OTP send
+  // event emitted by otpLogin.controller / passwordReset.controller /
+  // pandit.controller; without otp.code declared here it fell back to
+  // DEFAULT_REQUIRED (customer.name only) and a template could render with a
+  // blank code. Kept explicit so a missing OTP skips the send, never
+  // delivers "your code is ."
+  OTP_VERIFICATION:          ['customer.name', 'otp.code'],
   OTP_VERIFIED:              ['customer.name'],
   LOGIN_SUCCESS:             ['customer.name'],
   LOGIN_FAILED:              ['customer.name'],

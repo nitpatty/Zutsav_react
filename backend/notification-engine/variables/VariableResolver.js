@@ -50,6 +50,45 @@ function interpolate(template, payload) {
 }
 
 /**
+ * Escape a resolved value for safe interpolation into an HTML email body.
+ * The payload is caller/admin-sourced data (a user can set their own display
+ * name, a pandit their business name, an address line, etc.) and email HTML
+ * is rendered by the recipient's mail client — without this, HTML/script in
+ * any payload value would be injected verbatim into the message. Applied to
+ * values only, never to the mapping's own authored template markup.
+ */
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Interpolate a template, HTML-escaping each resolved value (email body). */
+function interpolateHtml(template, payload) {
+  if (!template) return '';
+  return String(template).replace(/\{\{([\w.]+)\}\}/g, (_, path) => escapeHtml(resolve(path, payload)));
+}
+
+/**
+ * Strip CR/LF from a resolved value. Email subjects (and other header-bound
+ * values) must never contain raw newlines — a payload value containing them
+ * is classic SMTP header-injection (Bcc/extra headers). Subject text is not
+ * HTML, so it is not escaped, only header-sanitized.
+ */
+function sanitizeHeaderValue(value) {
+  return String(value).replace(/[\r\n\u2028\u2029]+/g, ' ');
+}
+
+/** Interpolate an email subject, sanitizing each resolved value for headers. */
+function interpolateSubject(template, payload) {
+  if (!template) return '';
+  return String(template).replace(/\{\{([\w.]+)\}\}/g, (_, path) => sanitizeHeaderValue(resolve(path, payload)));
+}
+
+/**
  * Build the button parameters the WhatsApp Cloud API needs for one URL
  * button. The mapping's `urlButtons` are reference data (text + display URL
  * + payload path); the ACTUAL button set comes from the Meta-synced
@@ -152,5 +191,6 @@ function buildWhatsAppComponents(variableMappings, payload, buttonConfig = null,
 
 module.exports = {
   resolve, existsPath, interpolate, extractPlaceholders,
+  escapeHtml, interpolateHtml, sanitizeHeaderValue, interpolateSubject,
   buildWhatsAppComponents, buildWhatsAppButtonComponents,
 };

@@ -14,6 +14,7 @@ const Worker = require('./queue/Worker');
 const NotificationMapping = require('../src/models/NotificationMapping');
 const WhatsAppTemplate = require('../src/models/WhatsAppTemplate');
 const WhatsAppProvider = require('./providers/WhatsAppProvider');
+const { rehydrateSensitivePayload } = require('./security/otpPayload');
 // Coupon-campaign ledger sync — reconciles per-recipient delivery outcomes
 // (delivered/skipped/failed) when a campaign job settles. No-op for non-
 // campaign jobs, so registering it is harmless extra safety here.
@@ -30,7 +31,10 @@ async function processJob(job) {
   if (!mapping || !mapping.enabled) {
     return { skip: true, reason: 'Mapping disabled or deleted since this job was enqueued' };
   }
-  const payload = { ...job.normalizedPayload, _eventName: job.eventName };
+  // The durable job stores OTP fields encrypted (JobQueue.enqueue); decrypt
+  // here, at the last moment before rendering — the only place plaintext is
+  // needed, and never a place that persists it.
+  const payload = { ...rehydrateSensitivePayload(job.normalizedPayload), _eventName: job.eventName };
   const channel = ChannelRegistry.get(job.channel);
   return channel.send(mapping, payload, job.recipient);
 }

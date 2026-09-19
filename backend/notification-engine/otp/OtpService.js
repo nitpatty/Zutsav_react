@@ -11,13 +11,20 @@
  * verify endpoint. Only generation, hashing, and comparison are shared.
  */
 
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 
-/** A random 6-digit numeric OTP, e.g. "042817". */
+/**
+ * A cryptographically random 6-digit numeric OTP, e.g. "042817" (leading
+ * zeros preserved — 000000..999999, not 100000..999999). Math.random() is
+ * not a CSPRNG and is seed-guessable; OTPs guard account login, password
+ * reset, booking completion and delivery confirmation, so generation goes
+ * through Node's CSPRNG.
+ */
 function generate() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
 }
 
 async function hash(otp) {

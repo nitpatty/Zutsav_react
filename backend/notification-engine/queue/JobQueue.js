@@ -9,6 +9,7 @@
  */
 
 const NotificationJob = require('../../src/models/NotificationJob');
+const { redactSensitivePayload } = require('../security/otpPayload');
 
 const BASE_DELAY_MS = 30 * 1000;       // 30s
 const MAX_DELAY_MS  = 30 * 60 * 1000;  // cap at 30 min
@@ -25,7 +26,9 @@ async function enqueue({ eventName, mappingId, channel, recipient, normalizedPay
     mappingId,
     channel,
     recipient,
-    normalizedPayload,
+    // The single choke point for every enqueue (EventDispatcher AND campaign
+    // sweeps): OTP-bearing payloads are stored encrypted, never plaintext.
+    normalizedPayload: redactSensitivePayload(normalizedPayload),
     maxAttempts,
     status: 'queued',
     nextAttemptAt: new Date(),
