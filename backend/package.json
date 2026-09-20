@@ -10,6 +10,8 @@
     "backfill:purpose": "node src/scripts/backfillNotificationMappingPurpose.js",
     "backfill:purpose:dry": "node src/scripts/backfillNotificationMappingPurpose.js --dry-run",
     "cleanup:dead-pandit-email": "node src/scripts/disableDeadPanditEmailMappings.js",
+    "bootstrap:emails": "node src/scripts/bootstrapAllTransactionalEmailTemplates.js --apply",
+    "bootstrap:emails:dry": "node src/scripts/bootstrapAllTransactionalEmailTemplates.js --dry-run",
     "test": "node --test"
   },
   "dependencies": {

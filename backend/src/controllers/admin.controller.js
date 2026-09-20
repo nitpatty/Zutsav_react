@@ -3563,8 +3563,10 @@ const { EVENTS, EVENT_CATEGORIES } = require('../../notification-engine');
 const WhatsAppTemplate     = require('../models/WhatsAppTemplate');
 const ChannelRegistry      = require('../../notification-engine/channels/ChannelRegistry');
 const TemplateEngine       = require('../../notification-engine/templates/TemplateEngine');
+const EmailRenderContext     = require('../../notification-engine/email/EmailRenderContext');
 const TemplateValidator    = require('../../notification-engine/templates/TemplateValidator');
 const WhatsAppChannel      = require('../../notification-engine/channels/WhatsAppChannel');
+const EmailChannel         = require('../../notification-engine/channels/EmailChannel');
 const { resolveRecipients } = require('../../notification-engine/core/EventDispatcher');
 
 const MAPPING_TRACKED_FIELDS = [
@@ -4081,9 +4083,23 @@ exports.testNotificationMapping = async (req, res, next) => {
       : null;
     // Render with the template's actually-declared URL buttons so the preview
     // mirrors a real send (undeclared buttons are omitted with warnings).
-    const rendered = TemplateEngine.render(mapping.channel, mapping, payload, {
+    let rendered = TemplateEngine.render(mapping.channel, mapping, payload, {
       declaredUrlButtons: whatsappChecklist?.declaredUrlButtons,
     });
+    // Part H/J parity: a real EmailChannel.send applies the footer/CTA render
+    // context AFTER rendering; the admin dry-run must preview EXACTLY what a
+    // real send delivers Tokyo. Reusing the same exported function the real
+    // send path uses makes "preview === real" hold by construction (it never
+    // throws and drops the markers on any context failure, email only — what
+    // providers internally do for WhatsApp is left untouched).
+    if (mapping.channel === 'email' && rendered && rendered.html) {
+      const parity = await EmailChannel.applyRenderContext(
+        rendered.html,
+        payload,
+        { production: process.env.NODE_ENV === 'production' },
+      );
+      rendered.html = parity.html;
+    }
     const valid = validation.valid && (whatsappChecklist ? whatsappChecklist.ok : true);
     const blockingReasons = [
       ...(validation.valid ? [] : [`Missing required variable(s): ${validation.missing.join(', ')}`]),
