@@ -12,6 +12,16 @@ const { normalizePanditPayload, normalizeBookingPayload, normalizeUserPayload } 
 const OtpService = require('../../notification-engine/otp/OtpService');
 const { getPanditPayoutStatusLabel, healPanditPendingPayouts, resolveApprovedPayoutAmount } = require('../utils/payoutUtils');
 const { KYC_FIELD_MAP, resolveStoredFile, deleteStoredFile } = require('../utils/kycFileStorage');
+const {
+  PANDIT_ACCEPTED_STATUS,
+  PANDIT_CANCELLATION_TARGET_STATUS,
+  PANDIT_CANCELLED_AUDIT_ACTION,
+  PANDIT_CANCELLATION_CODES,
+  PANDIT_CANCELLATION_MESSAGES,
+  assertPanditCancellationAllowed,
+  assertCancellationReason,
+  isValidBookingId,
+} = require('../services/panditCancellationService');
 
 const KYC_VIEW_SESSION_MS = 5 * 60 * 1000; // 5 minutes, per the retained-document viewing flow
 const KYC_OTP_PURPOSE     = 'kyc_document_view';
@@ -614,6 +624,131 @@ exports.rejectBooking = async (req, res, next) => {
     ).catch(() => {});
 
     res.json({ success: true, booking });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PATCH /api/pandits/me/bookings/:id/cancel — the assigned Pandit cancels a
+ * booking they have ALREADY ACCEPTED. Returns it to Admin for a replacement
+ * Pandit.
+ *
+ * Distinct from rejectBooking, which only applies BEFORE acceptance
+ * (status pandit_assigned). A cancellation is the post-acceptance action.
+ *
+ * Ordering guarantee (no partial state, no notification on failure):
+ *   1. reason validated                     — no writes yet
+ *   2. booking read, ownership + accepted   — no writes yet
+ *   3. date-window + lifecycle asserted     — no writes yet
+ *   4. ONE atomic conditional update        — status predicate is part of the
+ *      query filter, so exactly one concurrent request can win the transition
+ *   5. notification emitted only after step 4 returned a document
+ *
+ * The customer's booking is NOT cancelled and NOT refunded: the booking moves to
+ * pending_reassignment, which assignPandit already accepts as a source status,
+ * so the existing Admin reassignment flow picks it up. No automatic
+ * reassignment and no customer notification happen here.
+ */
+exports.cancelAcceptedBooking = async (req, res, next) => {
+  try {
+    const { reason } = req.body;
+    const trimmedReason = assertCancellationReason(reason);
+
+    if (!isValidBookingId(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Booking not found' });
+    }
+
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select('_id name phone');
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    // Ownership + accepted-state + date window, all validated BEFORE any write.
+    // A booking that is missing, owned by someone else, or not in an accepted
+    // state is a 404/403 here — indistinguishable from "not actionable", which
+    // is exactly what rejectBooking/acceptBooking already do.
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    if (!booking.panditId || String(booking.panditId._id || booking.panditId) !== String(pandit._id)) {
+      // A successful cancellation clears panditId, so a repeat request lands
+      // here. If the audit log shows THIS pandit already cancelled it, report
+      // that (409) rather than a misleading "not assigned to you" (403). Still
+      // 403 for anyone else's booking — the audit-log match is keyed on the
+      // authenticated user id, so no state is leaked to a stranger.
+      const ownPriorCancellation = (booking.auditLog || []).some(
+        (a) => a.action === PANDIT_CANCELLED_AUDIT_ACTION && String(a.performedBy) === String(req.user._id)
+      );
+      if (ownPriorCancellation) {
+        return res.status(409).json({
+          success: false,
+          code: PANDIT_CANCELLATION_CODES.ALREADY_CANCELLED,
+          message: PANDIT_CANCELLATION_MESSAGES[PANDIT_CANCELLATION_CODES.ALREADY_CANCELLED],
+        });
+      }
+      return res.status(403).json({ success: false, message: 'This booking is not assigned to you' });
+    }
+
+    assertPanditCancellationAllowed(booking);
+
+    // ── The single atomic write ────────────────────────────────────────────
+    // `status: 'pandit_accepted'` lives INSIDE the filter, so a second
+    // simultaneous request matches nothing and is reported as a conflict
+    // instead of double-cancelling and double-alerting Admin. This is the same
+    // single-document conditional-update pattern the notification JobQueue
+    // uses to claim work (notification-engine/queue/JobQueue.js).
+    const updated = await Booking.findOneAndUpdate(
+      { _id: booking._id, panditId: pandit._id, status: PANDIT_ACCEPTED_STATUS },
+      {
+        $set: {
+          status: PANDIT_CANCELLATION_TARGET_STATUS,
+          // Release the Pandit so the booking is immediately assignable again.
+          panditId: null,
+          cancelReason: trimmedReason,
+        },
+        $push: {
+          auditLog: {
+            action: PANDIT_CANCELLED_AUDIT_ACTION,
+            performedBy: req.user._id,
+            performedByName: pandit.name,
+            note:
+              `Pandit cancelled the ACCEPTED booking (reason: ${trimmedReason}). ` +
+              `Returned to Admin for replacement Pandit arrangement.`,
+            at: new Date(),
+          },
+        },
+      },
+      { new: true }
+    ).populate('poojaId', 'name');
+
+    if (!updated) {
+      // Lost the race — another request already moved this booking out of the
+      // accepted state. No state was written and no notification is emitted.
+      const current = await Booking.findById(req.params.id).select('status');
+      const isTerminal = ['cancelled', 'refunded', 'closed', 'completed', 'pending_reassignment']
+        .includes(current?.status);
+      return res.status(isTerminal ? 409 : 400).json({
+        success: false,
+        code: isTerminal
+          ? PANDIT_CANCELLATION_CODES.ALREADY_CANCELLED
+          : PANDIT_CANCELLATION_CODES.CONFLICT,
+        message: isTerminal
+          ? PANDIT_CANCELLATION_MESSAGES[PANDIT_CANCELLATION_CODES.ALREADY_CANCELLED]
+          : PANDIT_CANCELLATION_MESSAGES[PANDIT_CANCELLATION_CODES.CONFLICT],
+      });
+    }
+
+    // Emitted only after the cancellation state is durably persisted.
+    NotificationEngine.emit(
+      'PANDIT_CANCELLED',
+      normalizeBookingPayload({
+        booking: updated,
+        pandit: { userId: req.user._id, name: pandit.name, phone: pandit.phone },
+        poojaName: updated.poojaId?.name || '',
+        reason: trimmedReason,
+      })
+    ).catch(() => {});
+
+    res.json({ success: true, booking: updated });
   } catch (err) {
     next(err);
   }

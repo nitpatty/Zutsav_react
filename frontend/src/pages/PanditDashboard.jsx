@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import API from '../api/axios';
 import AvailabilityManager from '../components/availability/AvailabilityManager';
 import { formatDuration } from '../utils/durationFormatter';
+import { todayIST, addDays, toDateString } from '../utils/bookingDateRules';
 
 const KYC_STATUS_CONFIG = {
   not_submitted:     { label: 'Not Submitted',     color: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400'    },
@@ -620,10 +621,37 @@ function BookingsTab() {
   const [rejectModal,      setRejectModal]      = useState(null);
   const [rejectReason,     setRejectReason]     = useState('');
   const [submittingReject, setSubmittingReject] = useState(false);
+  const [cancelModal,      setCancelModal]      = useState(null);
+  const [cancelReason,     setCancelReason]     = useState('');
+  const [submittingCancel, setSubmittingCancel] = useState(false);
   const [otpValues,        setOtpValues]        = useState({});  // bookingId → otp string
   const [verifyingOtp,     setVerifyingOtp]     = useState(null);
 
   const QUICK_REASONS = ['Already booked on that date', 'Out of station', 'Medical emergency', 'Personal reason', 'Other'];
+
+  // Quick reasons for cancelling a booking we ALREADY accepted. Deliberately
+  // different set from QUICK_REASONS (which is for declining an unaccepted
+  // booking) so the two flows never read as the same action.
+  const CANCEL_QUICK_REASONS = [
+    'Unwell, cannot perform pooja',
+    'Family emergency',
+    'Not reachable on that date',
+    'Unable to arrange samagri',
+    'Double-booked that date',
+  ];
+
+  /**
+   * Client-side mirror of the server's 2-day rule so the button is hidden (not
+   * merely failing on click) once the restricted period starts. The server
+   * remains authoritative — this only decides what to render.
+   * Must stay in lockstep with backend/src/services/panditCancellationService.js.
+   */
+  const isWithinCancelWindow = (scheduledDate) => {
+    const scheduledDateStr = toDateString(scheduledDate);
+    if (!scheduledDateStr) return false;
+    const cutoff = addDays(scheduledDateStr, -2);
+    return todayIST() < cutoff;
+  };
 
   const load = useCallback(() => {
     setLoading(true);
@@ -660,6 +688,28 @@ function BookingsTab() {
     } catch (err) {
       toast.error(err.response?.data?.message || 'Could not reject booking');
     } finally { setSubmittingReject(false); }
+  };
+
+  /**
+   * Cancel a booking we ALREADY accepted. The server moves it to
+   * pending_reassignment and alerts Admin; the customer is not cancelled or
+   * refunded. Only offered while the 2-day window is still open.
+   */
+  const handleCancelAccepted = async () => {
+    if (!cancelReason.trim() || cancelReason.trim().length < 10) {
+      toast.error('Please provide a reason (minimum 10 characters)');
+      return;
+    }
+    setSubmittingCancel(true);
+    try {
+      await API.patch(`/pandits/me/bookings/${cancelModal.bookingId}/cancel`, { reason: cancelReason });
+      toast.success('Booking cancelled. Admin has been notified to arrange a replacement Pandit.');
+      setCancelModal(null);
+      setCancelReason('');
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not cancel booking');
+    } finally { setSubmittingCancel(false); }
   };
 
   const handleRequestCompletion = async (bookingId) => {
@@ -766,8 +816,6 @@ function BookingsTab() {
                     <div className="space-y-1">
                       <p className="font-bold text-gray-500 uppercase tracking-wide mb-1.5">Customer</p>
                       <p className="font-semibold text-gray-800">{addr?.name || customer.name || '—'}</p>
-                      <p className="text-gray-500">{addr?.phone || customer.phone || '—'}</p>
-                      {(addr?.email || customer.email) && <p className="text-gray-400">{addr?.email || customer.email}</p>}
                     </div>
                     <div className="space-y-1">
                       <p className="font-bold text-gray-500 uppercase tracking-wide mb-1.5">Schedule</p>
@@ -854,6 +902,18 @@ function BookingsTab() {
                           {completing === b._id ? 'Sending OTP…' : '🔐 Request OTP to Complete'}
                         </button>
                         <p className="text-[10px] text-gray-400 text-center mt-1.5">An OTP will be sent to the customer — ask them for the code</p>
+
+                        {/* Cancel an ACCEPTED booking — only while the 2-day window is open. */}
+                        {isWithinCancelWindow(b.scheduledDate) ? (
+                          <button onClick={() => { setCancelModal({ bookingId: b._id, bookingNumber: b.bookingNumber }); setCancelReason(''); }}
+                            className="w-full mt-2 py-2 rounded-xl text-xs font-semibold bg-white border border-red-200 text-red-600 hover:bg-red-50 transition-colors">
+                            Cancel this booking
+                          </button>
+                        ) : (
+                          <p className="text-[10px] text-gray-400 text-center mt-2">
+                            Cancellation closed — must be cancelled at least 2 days before the scheduled date
+                          </p>
+                        )}
                       </div>
                     )}
 
@@ -939,6 +999,45 @@ function BookingsTab() {
               <button onClick={handleReject} disabled={submittingReject || rejectReason.trim().length < 10}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors">
                 {submittingReject ? 'Submitting…' : 'Confirm Rejection'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center px-4">
+          <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-md">
+            <h3 className="font-bold text-gray-800 text-lg mb-0.5">Cancel Accepted Booking</h3>
+            <p className="text-xs text-gray-400 mb-3 font-mono">#{cancelModal.bookingNumber}</p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+              <p className="text-amber-800 text-xs leading-relaxed">
+                This booking was already accepted, so cancelling it sends it back to Admin to arrange a
+                <strong> replacement Pandit</strong>. The customer&rsquo;s booking is <strong>not</strong> cancelled
+                and <strong>no refund</strong> is raised.
+              </p>
+            </div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Quick reasons</p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {CANCEL_QUICK_REASONS.map((r) => (
+                <button key={r} type="button" onClick={() => setCancelReason(r)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${cancelReason === r ? 'bg-red-100 border-red-300 text-red-700' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                  {r}
+                </button>
+              ))}
+            </div>
+            <label className="label">Reason <span className="text-gray-400 font-normal">(min 10 characters)</span></label>
+            <textarea className="input min-h-[80px] resize-none text-sm mb-4"
+              placeholder="Explain why you must cancel this booking you had accepted…"
+              value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
+            {cancelReason.length > 0 && cancelReason.trim().length < 10 && (
+              <p className="text-xs text-red-500 -mt-3 mb-3">{10 - cancelReason.trim().length} more characters needed</p>
+            )}
+            <div className="flex gap-3">
+              <button onClick={() => { setCancelModal(null); setCancelReason(''); }} className="btn-outline flex-1">Keep booking</button>
+              <button onClick={handleCancelAccepted} disabled={submittingCancel || cancelReason.trim().length < 10}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors">
+                {submittingCancel ? 'Cancelling…' : 'Confirm Cancellation'}
               </button>
             </div>
           </div>

@@ -183,6 +183,10 @@ app.use((err, req, res, next) => {
 
   res.status(err.status || 500).json({
     success: false,
+    // Controlled business errors (e.g. PanditEligibilityError) carry a string
+    // `code` for machine-readable handling. Only strings are forwarded so
+    // driver-level numeric codes (e.g. Mongo duplicate-key) are not leaked.
+    ...(typeof err.code === 'string' ? { code: err.code } : {}),
     message: err.message || 'Internal Server Error',
   });
 });

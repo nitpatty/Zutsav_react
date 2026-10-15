@@ -33,6 +33,7 @@ router.patch('/me/pooja-charges',    ctrl.updatePoojaCharges);
 router.patch('/me/pooja-services',   ctrl.updatePoojaServices);
 router.patch('/me/bookings/:id/accept',                ctrl.acceptBooking);
 router.patch('/me/bookings/:id/reject',                ctrl.rejectBooking);
+router.patch('/me/bookings/:id/cancel',                ctrl.cancelAcceptedBooking);
 router.patch('/me/bookings/:id/request-completion',   ctrl.requestCompletion);
 router.post('/me/bookings/:id/verify-completion-otp', ctrl.verifyCompletionOtp);
 router.patch('/me/bank',             ctrl.updateBankDetails);

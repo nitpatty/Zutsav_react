@@ -10,7 +10,8 @@ import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import { COLORS, RADIUS, SPACING, SHADOW, FONT, ICON_SIZE, SIZES } from '../../theme/tokens';
 import { formatDateTime, formatCurrency, formatStatus, formatAuditAction, bookingStatusColor } from '../../utils/helpers';
-import { callPhone, openWhatsApp, openMaps } from '../../utils/quickActions';
+import { openMaps } from '../../utils/quickActions';
+import { todayIST, addDays, toDateString } from '../../utils/bookingDateRules';
 import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
@@ -36,6 +37,10 @@ export default function PanditBookingDetailScreen({ route }) {
   // Reject flow
   const [rejectModal, setRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+
+  // Cancel-accepted-booking flow (post-acceptance, 2-day window)
+  const [cancelModal, setCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
 
   // Completion OTP flow
   const [otpModal,   setOtpModal]   = useState(false);
@@ -82,6 +87,36 @@ export default function PanditBookingDetailScreen({ route }) {
       Toast.show({ type: 'success', text1: 'Booking rejected' });
       setRejectModal(false);
       setRejectReason('');
+      fetch(true);
+    } catch (err) {
+      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Failed' });
+    } finally { setActing(false); }
+  };
+
+  /**
+   * Cancel a booking we ALREADY accepted. The server moves it to
+   * pending_reassignment and alerts Admin; the devotee is not cancelled or
+   * refunded. Client-side mirror of the server 2-day rule, which stays
+   * authoritative (see backend/src/services/panditCancellationService.js).
+   */
+  const canCancelAccepted = booking
+    ? (() => {
+        const d = toDateString(booking.scheduledDate);
+        return !!d && todayIST() < addDays(d, -2);
+      })()
+    : false;
+
+  const handleCancelAccepted = async () => {
+    if (cancelReason.trim().length < 10) {
+      Toast.show({ type: 'error', text1: 'Reason must be at least 10 characters' });
+      return;
+    }
+    try {
+      setActing(true);
+      await api.patch(`/pandits/me/bookings/${bookingId}/cancel`, { reason: cancelReason.trim() });
+      Toast.show({ type: 'success', text1: 'Booking cancelled' });
+      setCancelModal(false);
+      setCancelReason('');
       fetch(true);
     } catch (err) {
       Toast.show({ type: 'error', text1: err.response?.data?.message || 'Failed' });
@@ -162,13 +197,9 @@ export default function PanditBookingDetailScreen({ route }) {
 
         <InfoCard title="Devotee" C={C}>
           <Row label="Name"    value={ud.name  || booking.userId?.name  || '—'} C={C} />
-          <Row label="Phone"   value={ud.phone || booking.userId?.phone || '—'} C={C} />
-          {ud.email && <Row label="Email"  value={ud.email} C={C} />}
         </InfoCard>
 
         <View style={styles.quickActionsRow}>
-          <QuickAction icon="call" label="Call" C={C} onPress={() => callPhone(ud.phone)} />
-          <QuickAction icon="logo-whatsapp" label="WhatsApp" C={C} onPress={() => openWhatsApp(ud.phone, `Regarding your ${booking.poojaId?.name || 'pooja'} booking (#${booking.bookingNumber})`)} />
           <QuickAction icon="location" label="Maps" C={C} onPress={() => openMaps(addressStr)} />
         </View>
 
@@ -218,6 +249,15 @@ export default function PanditBookingDetailScreen({ route }) {
 
       {booking.status === 'pandit_accepted' && (
         <StickyActionBar>
+          {canCancelAccepted && (
+            <TouchableOpacity
+              style={[styles.rejectBtn, { borderColor: '#DC2626' }]}
+              onPress={() => setCancelModal(true)}
+              disabled={acting}
+            >
+              <Text style={[styles.rejectBtnText, { color: '#DC2626' }]}>Cancel Booking</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[styles.acceptBtn, { backgroundColor: C.primary, flex: 1 }]}
             onPress={handleRequestCompletion}
@@ -262,6 +302,36 @@ export default function PanditBookingDetailScreen({ route }) {
               </TouchableOpacity>
               <TouchableOpacity style={[styles.submitBtn, { backgroundColor: '#DC2626' }]} onPress={handleReject} disabled={acting}>
                 <Text style={{ color: '#fff', fontWeight: '700' }}>{acting ? 'Please wait…' : 'Confirm Reject'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Cancel-accepted-booking Modal */}
+      <Modal visible={cancelModal} transparent animationType="slide" onRequestClose={() => setCancelModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: C.surface }]}>
+            <Text style={[styles.modalTitle, { color: C.text }]}>Cancel Accepted Booking</Text>
+            <Text style={[styles.modalSub, { color: C.textSecondary }]}>
+              You already accepted this booking, so cancelling returns it to admin to arrange a replacement
+              Pandit. The devotee&rsquo;s booking is not cancelled and no refund is raised.
+            </Text>
+            <TextInput
+              style={[styles.reasonInput, { borderColor: C.border, color: C.text, backgroundColor: C.background }]}
+              placeholder="Reason for cancelling (min 10 characters)…"
+              placeholderTextColor={C.textSecondary}
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              multiline
+              autoFocus
+            />
+            <View style={styles.modalBtns}>
+              <TouchableOpacity style={[styles.cancelBtn, { borderColor: C.border }]} onPress={() => setCancelModal(false)}>
+                <Text style={{ color: C.text, fontWeight: '600' }}>Keep Booking</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.submitBtn, { backgroundColor: '#DC2626' }]} onPress={handleCancelAccepted} disabled={acting}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>{acting ? 'Please wait…' : 'Confirm Cancel'}</Text>
               </TouchableOpacity>
             </View>
           </View>

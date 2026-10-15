@@ -38,6 +38,11 @@ const WhatsAppProvider = require('../../notification-engine/providers/WhatsAppPr
 const OtpService = require('../../notification-engine/otp/OtpService');
 const userReferralService = require('../services/userReferralService');
 const poojaLoyaltyService = require('../services/poojaLoyaltyService');
+const {
+  loadEligiblePanditForBooking,
+  PANDIT_BOOKING_ELIGIBILITY_FILTER,
+  withBookingEligibility,
+} = require('../services/panditEligibilityService');
 
 const BOOKING_STATUS_LABEL = {
   pending_payment:      'Pending Payment',
@@ -58,6 +63,7 @@ const BOOKING_AUDIT_META = {
   otp_verified_completion:     { title: 'Completion OTP Verified',  cat: 'bookings' },
   completion_otp_generated:    { title: 'Completion OTP Generated', cat: 'bookings' },
   pandit_assigned:             { title: 'Pandit Assigned',          cat: 'bookings' },
+  pandit_cancelled_accepted:    { title: 'Accepted Booking Cancelled by Pandit', cat: 'bookings' },
   completion_approved:         { title: 'Completion Approved',      cat: 'bookings' },
   completion_rejected:         { title: 'Completion Rejected',      cat: 'bookings' },
   payout_assigned:             { title: 'Payout Assigned',          cat: 'payments' },
@@ -1592,7 +1598,11 @@ exports.getAvailablePandits = async (req, res, next) => {
 
     // Annotate each pandit with distance and coverage eligibility
     const annotated = available.map((p) => {
-      const obj = p.toObject();
+      // Carries isEligibleForBooking so the admin UI can mark a KYC-unapproved
+      // pandit and disable the assign action. The listing query is left as-is
+      // (it carries a legacy back-compat branch); the authoritative rejection
+      // happens in assignPandit via assertPanditEligibleForBooking.
+      const obj = withBookingEligibility(p);
       const coverage = p.serviceCoverage || { type: 'city', radiusKm: 25 };
 
       let distanceKm = null;
@@ -1678,8 +1688,11 @@ exports.searchPandits = async (req, res, next) => {
     }
     const regex = new RegExp(q.trim(), 'i');
 
+    // Restrict to pandits the assignment gate will actually accept, so an
+    // admin cannot search out and select a KYC-unapproved pandit. This is UI
+    // convenience only — assignPandit re-validates authoritatively.
     const pandits = await Pandit.find({
-      status: 'approved',
+      ...PANDIT_BOOKING_ELIGIBILITY_FILTER,
       $or: [{ name: regex }, { phone: regex }, { email: regex }],
     })
       .populate('userId', 'name profilePhoto')
@@ -1698,7 +1711,10 @@ exports.searchPandits = async (req, res, next) => {
       { $group: { _id: '$panditId', count: { $sum: 1 } } },
     ]);
     const countMap = Object.fromEntries(activeCounts.map((r) => [r._id.toString(), r.count]));
-    pandits.forEach((p) => { p.activeBookings = countMap[p._id.toString()] || 0; });
+    pandits.forEach((p) => {
+      p.activeBookings = countMap[p._id.toString()] || 0;
+      p.isEligibleForBooking = true; // guaranteed by PANDIT_BOOKING_ELIGIBILITY_FILTER
+    });
 
     res.json({ success: true, pandits });
   } catch (err) {
@@ -1711,10 +1727,11 @@ exports.assignPandit = async (req, res, next) => {
   try {
     const { panditId } = req.body;
 
-    const pandit = await Pandit.findById(panditId);
-    if (!pandit || pandit.status !== 'approved') {
-      return res.status(400).json({ success: false, message: 'Pandit not found or not approved' });
-    }
+    // Authoritative KYC/approval eligibility gate. Resolves the pandit AND
+    // validates it in one call, throwing before ANY mutation (booking.panditId,
+    // status, timestamps, auditLog, notification) — so a rejected assignment
+    // can never leave partial state behind.
+    const pandit = await loadEligiblePanditForBooking(panditId);
 
     const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
@@ -1773,7 +1790,7 @@ const BOOKING_TRANSITIONS = {
   pending_payment:      ['paid', 'cancelled'],
   paid:                 ['pandit_assigned', 'cancelled'],
   pandit_assigned:      ['pandit_accepted', 'pending_reassignment', 'paid', 'cancelled'],
-  pandit_accepted:      ['completion_requested', 'pandit_assigned', 'cancelled'],
+  pandit_accepted:      ['completion_requested', 'pandit_assigned', 'pending_reassignment', 'cancelled'],
   pending_reassignment: ['pandit_assigned', 'cancelled'],
   completion_requested: ['completed', 'pandit_accepted', 'cancelled'],
   completed:            ['refunded', 'closed'],

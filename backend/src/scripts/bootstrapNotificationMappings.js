@@ -259,6 +259,33 @@ const VERIFIED_MAPPINGS = [
   { eventName: 'PANDIT_ASSIGNMENT_PENDING', recipientType: 'pandit', enabled: true, purpose: 'SERVICE',
     whatsappTemplateName: 'pandit_assignment_pending',
     whatsappVariables: withPositions([v('pandit.name', 'Pandit name'), v('booking.poojaName', 'Pooja name'), v('booking.date', 'Date'), v('booking.time', 'Time')]) },
+  // PANDIT_CANCELLED — an assigned Pandit cancelled a booking they had already
+  // ACCEPTED, so the booking went back to Admin for a replacement Pandit.
+  // Admin-tier recipients only (recipientType 'admin' resolves to both 'admin'
+  // and 'system_admin' via ADMIN_TIER_ROLES). No customer mapping: the
+  // customer's booking was NOT cancelled or refunded, it is pending
+  // reassignment, and that state change reaches the customer through the
+  // existing booking record and the admin's replacement assignment.
+  //
+  // purpose: 'BOOKING' — booking-lifecycle classification, matching
+  // BOOKING_CANCELLED / PANDIT_ACCEPTED. Not 'MARKETING', so this transactional
+  // admin alert is not consent-gated (see WhatsAppChannel.send).
+  //
+  // DEPLOYMENT PREREQUISITE: the Meta template `pandit_cancelled_admin` must be
+  // created and APPROVED in the Meta WhatsApp Manager and then synced into the
+  // WhatsAppTemplate collection, with EXACTLY 6 body placeholders in the order
+  // below. Until then this mapping skips safely with
+  // 'Template "pandit_cancelled_admin" not found in synced WhatsAppTemplate
+  // collection' (buildVariableChecklist) — it never sends a wrong-content
+  // message. The existing `admin_general_reminder` template is deliberately NOT
+  // reused: it is subscription-renewal marketing copy.
+  { eventName: 'PANDIT_CANCELLED', recipientType: 'admin', enabled: true, purpose: 'BOOKING',
+    whatsappTemplateName: 'pandit_cancelled_admin',
+    whatsappVariables: withPositions([
+      v('pandit.name', 'Pandit name'), v('booking.number', 'Booking number'),
+      v('booking.poojaName', 'Pooja name'), v('booking.date', 'Service date'),
+      v('booking.time', 'Service time'), v('reason', 'Cancellation reason'),
+    ]) },
   { eventName: 'REFERRAL_PENDING_REMARK', recipientType: 'pandit', enabled: true, purpose: 'SERVICE',
     whatsappTemplateName: 'referral_pending_remark',
     whatsappVariables: withPositions([v('pandit.name', 'Pandit name'), v('booking.number', 'Booking number')]) },
@@ -311,6 +338,27 @@ const VERIFIED_MAPPINGS = [
 // sync audit. Same rule as WhatsApp: this is real HTML a human wrote and
 // confirmed sends correctly, not template inference.
 const VERIFIED_EMAIL_MAPPINGS = [
+  // PANDIT_CANCELLED (admin) — a Pandit cancelled a booking they had already
+  // ACCEPTED. Tells the admin team a replacement Pandit must be arranged, and
+  // states plainly that the customer has NOT been refunded (the booking is
+  // pending_reassignment). Admin-tier recipients only; no customer email.
+  { eventName: 'PANDIT_CANCELLED', recipientType: 'admin', enabled: true, purpose: 'BOOKING',
+    emailSubject: 'Action required: Pandit cancelled an accepted booking (#{{booking.number}})',
+    emailHtml: `<div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px">
+          <h2 style="color:#b91c1c">Pandit cancelled an accepted booking</h2>
+          <p>An assigned Pandit has cancelled a booking they had already <strong>accepted</strong>. The booking is now <strong>pending reassignment</strong> and needs a replacement Pandit.</p>
+          <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:14px">
+            <tr><td style="padding:6px 0;color:#6b7280">Booking</td><td style="padding:6px 0;font-weight:bold">#{{booking.number}}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280">Pooja</td><td style="padding:6px 0;font-weight:bold">{{booking.poojaName}}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280">Scheduled</td><td style="padding:6px 0;font-weight:bold">{{booking.date}} at {{booking.time}}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280">Cancelled by</td><td style="padding:6px 0;font-weight:bold">{{pandit.name}}</td></tr>
+          </table>
+          <div style="padding:12px 16px;background:#fef3c7;border-radius:8px;margin:16px 0;font-size:14px">
+            <strong>Stated reason:</strong> {{reason}}
+          </div>
+          <p style="font-size:14px">The customer's booking was <strong>not</strong> cancelled and <strong>no refund</strong> has been raised. Please arrange a replacement Pandit in the Bookings section.</p>
+          <p style="color:#6b7280;font-size:12px">Team Zutsav</p>
+        </div>` },
   { eventName: 'OTP_VERIFICATION', recipientType: 'user', enabled: true, purpose: 'ACCOUNT',
     emailSubject: 'Your Zutsav OTP Code',
     emailHtml: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
@@ -368,6 +416,14 @@ const VERIFIED_INAPP_MAPPINGS = [
     inAppType: 'kit_delivered',
     inAppTitle: 'Samagri Kit Delivered!',
     inAppMessage: 'Your pooja samagri kit for booking #{{booking.number}} has been delivered. You are all set for your pooja!' },
+  // PANDIT_CANCELLED (admin in-app bell) — surfaces the reassignment task in
+  // the admin UI without waiting on email/WhatsApp delivery. Admin-tier
+  // recipients only; the customer is not notified through this mapping.
+  { eventName: 'PANDIT_CANCELLED', recipientType: 'admin', enabled: true, purpose: 'BOOKING',
+    label: 'Pandit Cancelled Accepted Booking (In-App)',
+    inAppType: 'pandit_cancelled',
+    inAppTitle: 'Pandit cancelled an accepted booking',
+    inAppMessage: 'Pandit {{pandit.name}} cancelled booking #{{booking.number}} ({{booking.poojaName}}, {{booking.date}} at {{booking.time}}). Reason: {{reason}}. The booking is pending reassignment and needs a replacement Pandit. No refund has been raised.' },
 ];
 
 const sameVariables = (a, b) => JSON.stringify(a || []) === JSON.stringify(b);

@@ -30,6 +30,7 @@ const EVENTS = {
   PANDIT_ASSIGNMENT_PENDING:    'PANDIT_ASSIGNMENT_PENDING', // notify pandit: new booking to accept
   PANDIT_ACCEPTED:              'PANDIT_ACCEPTED',         // notify user + admin: pandit accepted
   PANDIT_REJECTED:              'PANDIT_REJECTED',         // notify admin: pandit rejected
+  PANDIT_CANCELLED:             'PANDIT_CANCELLED',        // notify admin: pandit cancelled an ACCEPTED booking
 
   // ── Pandit Lifecycle ────────────────────────────────────────────────
   PANDIT_APPROVED:              'PANDIT_APPROVED',
@@ -130,6 +131,7 @@ const EVENT_CATEGORIES = {
   PANDIT_ASSIGNMENT_PENDING:    { label: 'New Booking (Pandit View)',   category: 'Pandit'      },
   PANDIT_ACCEPTED:              { label: 'Pandit Accepted Booking',     category: 'Pandit'      },
   PANDIT_REJECTED:              { label: 'Pandit Rejected Booking',     category: 'Pandit'      },
+  PANDIT_CANCELLED:             { label: 'Accepted Booking Cancelled by Pandit', category: 'Pandit' },
   PANDIT_APPROVED:              { label: 'Pandit Profile Approved',     category: 'Pandit'      },
   PANDIT_POOJA_REQUEST_CREATED: { label: 'Pooja Request Submitted',     category: 'Pandit'      },
   PANDIT_POOJA_APPROVED:        { label: 'Pooja Request Approved',      category: 'Pandit'      },

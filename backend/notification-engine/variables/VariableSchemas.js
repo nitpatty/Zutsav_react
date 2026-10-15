@@ -51,6 +51,7 @@ const REQUIRED_VARIABLES = {
   PANDIT_ASSIGNED:           ['customer.name', 'pandit.name', 'booking.number'],
   PANDIT_ASSIGNMENT_PENDING: ['pandit.name', 'booking.number'],
   PANDIT_ACCEPTED:           ['customer.name', 'pandit.name', 'booking.number'],
+  PANDIT_CANCELLED:          ['pandit.name', 'booking.number'],
   PANDIT_REGISTERED:         ['pandit.name'],
   PANDIT_APPROVED:           ['pandit.name'],
   PANDIT_POOJA_REQUEST_CREATED: ['pandit.name', 'pooja.name'],

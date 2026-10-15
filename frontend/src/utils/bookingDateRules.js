@@ -108,3 +108,23 @@ export function formatDateLabel(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' });
 }
+
+/**
+ * Normalise a Booking.scheduledDate into its 'YYYY-MM-DD' calendar day, exactly
+ * as the server's toDateString() does (backend/src/utils/bookingDateRules.js).
+ *
+ * Deliberately the UTC calendar day, NOT the device/IST calendar day:
+ * scheduledDate is persisted as `new Date('YYYY-MM-DD')` = UTC midnight, so
+ * taking the UTC day is the only reading that round-trips the stored value
+ * without shifting it. Keep this in lockstep with the server helper — the
+ * Pandit accepted-booking cancellation window is derived from it.
+ */
+export function toDateString(date) {
+  if (date == null) return null;
+  if (date instanceof Date) {
+    if (isNaN(date.getTime())) return null;
+    return date.toISOString().slice(0, 10);
+  }
+  const m = String(date).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}

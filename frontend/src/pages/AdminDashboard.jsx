@@ -975,6 +975,8 @@ function BookingsTab() {
 
         const PanditCard = ({ p, fromSearch }) => {
           const outOfCoverage  = !fromSearch && p.withinCoverage === false;
+          const kycBlocked     = p.isEligibleForBooking === false;
+          const isDisabled     = outOfCoverage || kycBlocked;
           const isSelected     = panditId === p._id;
           const isRecommended  = !!p.isRecommended;
           const photoUrl = p.profilePhoto
@@ -984,15 +986,15 @@ function BookingsTab() {
           return (
             <button
               type="button"
-              disabled={outOfCoverage}
+              disabled={isDisabled}
               onClick={() => {
-                if (outOfCoverage) return;
+                if (isDisabled) return;
                 setPanditId(p._id);
                 setAssignmentMethod(fromSearch ? 'manual_search' : 'nearby_recommendation');
               }}
               className={[
                 'w-full text-left rounded-xl border transition-all duration-150 p-3',
-                outOfCoverage
+                isDisabled
                   ? 'border-gray-100 bg-gray-50/60 opacity-50 cursor-not-allowed'
                   : isSelected
                     ? 'border-indigo-500 bg-indigo-50 shadow-sm ring-1 ring-indigo-400'
@@ -1015,6 +1017,9 @@ function BookingsTab() {
                       {p.isOnline && <span className="w-1.5 h-1.5 bg-green-500 rounded-full" title="Online" />}
                       {isRecommended && (
                         <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">⭐ Referring Pandit</span>
+                      )}
+                      {kycBlocked && (
+                        <span className="text-[9px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">KYC not approved</span>
                       )}
                       {!fromSearch && (
                         outOfCoverage

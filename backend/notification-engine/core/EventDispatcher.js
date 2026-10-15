@@ -11,7 +11,8 @@
  * behavior is preserved when this becomes the live path in Phase 3.
  */
 
-const User = require('../../src/models/User');
+  const User = require('../../src/models/User');
+  const { ADMIN_TIER_ROLES } = require('../../src/utils/roleUtils');
 const MappingCache = require('./MappingCache');
 const JobQueue = require('../queue/JobQueue');
 
@@ -51,10 +52,24 @@ async function resolveRecipients(recipientType, payload) {
         ? [{ userId: orNull(payload.pandit.userId), phone: payload.pandit.phone, email: payload.pandit.email }]
         : [];
 
-    case 'admin': {
-      const admins = await User.find({ role: 'admin' }).select('_id email phone').lean();
-      return admins.map((a) => ({ userId: String(a._id), phone: a.phone || '', email: a.email || '' }));
-    }
+  case 'admin': {
+    // Admin-tier recipients, not just role === 'admin'. The project's root /
+    // super-admin account is seeded as role 'system_admin' (src/models/User.js
+    // enum) and every other admin gate in the codebase treats it as a superset
+    // of 'admin' (see authorize() in src/middleware/auth.js and
+    // ADMIN_TIER_ROLES in src/utils/roleUtils.js). Matching only 'admin' here
+    // meant admin-recipient notifications silently reached nobody, because the
+    // seed accounts are system_admin. isDeleted/isActive are filtered to
+    // match the { role, isDeleted, isActive } compound index on User.
+    const admins = await User.find({
+      role: { $in: ADMIN_TIER_ROLES },
+      isDeleted: false,
+      isActive: true,
+    })
+      .select('_id email phone')
+      .lean();
+    return admins.map((a) => ({ userId: String(a._id), phone: a.phone || '', email: a.email || '' }));
+  }
 
     default:
       return [];
