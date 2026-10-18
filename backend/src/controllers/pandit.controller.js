@@ -22,6 +22,7 @@ const {
   assertCancellationReason,
   isValidBookingId,
 } = require('../services/panditCancellationService');
+const { validateCoordinatePair, addressFieldsChanged } = require('../utils/locationValidation');
 
 const KYC_VIEW_SESSION_MS = 5 * 60 * 1000; // 5 minutes, per the retained-document viewing flow
 const KYC_OTP_PURPOSE     = 'kyc_document_view';
@@ -297,6 +298,15 @@ exports.updateMyProfile = async (req, res, next) => {
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
 
+    // Desync guard: this endpoint cannot write coordinates, so an address
+    // change must clear the stored pin rather than leave the previous
+    // location silently attached to the new address. The dedicated
+    // location endpoints re-pair address and coordinates atomically.
+    if (addressFieldsChanged(req.body)) {
+      updates.latitude = null;
+      updates.longitude = null;
+    }
+
     const pandit = await Pandit.findOneAndUpdate({ userId: req.user._id }, updates, { new: true });
     res.json({ success: true, pandit });
   } catch (err) {
@@ -307,10 +317,21 @@ exports.updateMyProfile = async (req, res, next) => {
 // PATCH /api/pandits/me/personal — update personal info (gender, dob, name, phone, location, fatherName, bio, lat/lng)
 exports.updatePersonalInfo = async (req, res, next) => {
   try {
+    const pair = validateCoordinatePair(req.body);
+    if (!pair.ok) return res.status(400).json({ success: false, message: pair.message });
+
     const allowed = ['name', 'phone', 'gender', 'dob', 'fatherName', 'bio',
                      'pincode', 'state', 'city', 'district', 'address', 'latitude', 'longitude'];
     const updates = {};
     allowed.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+    if (pair.updates) Object.assign(updates, pair.updates);
+    // Desync guard: address change without a new coordinate pair clears the
+    // stored pin instead of silently pairing the new address with the old
+    // coordinates.
+    if (addressFieldsChanged(req.body) && !pair.updates) {
+      updates.latitude = null;
+      updates.longitude = null;
+    }
 
     const pandit = await Pandit.findOneAndUpdate({ userId: req.user._id }, updates, { new: true });
     if (updates.name || updates.phone) {
@@ -328,7 +349,10 @@ exports.updatePersonalInfo = async (req, res, next) => {
 // PATCH /api/pandits/me/languages-address — update languages, address, lat/lng, and service coverage
 exports.updateLanguagesAddress = async (req, res, next) => {
   try {
-    const { languages, pincode, state, city, district, address, latitude, longitude, serviceCoverage } = req.body;
+    const pair = validateCoordinatePair(req.body);
+    if (!pair.ok) return res.status(400).json({ success: false, message: pair.message });
+
+    const { languages, pincode, state, city, district, address, serviceCoverage } = req.body;
     const updates = {};
     if (languages        !== undefined) updates.languages  = languages;
     if (pincode          !== undefined) updates.pincode    = pincode;
@@ -336,9 +360,15 @@ exports.updateLanguagesAddress = async (req, res, next) => {
     if (city             !== undefined) updates.city       = city;
     if (district         !== undefined) updates.district   = district;
     if (address          !== undefined) updates.address    = address;
-    if (latitude         !== undefined) updates.latitude   = latitude;
-    if (longitude        !== undefined) updates.longitude  = longitude;
     if (serviceCoverage  !== undefined) updates.serviceCoverage = serviceCoverage;
+    if (pair.updates) Object.assign(updates, pair.updates);
+    // Desync guard: address change without a new coordinate pair clears the
+    // stored pin instead of silently pairing the new address with the old
+    // coordinates.
+    if (addressFieldsChanged(req.body) && !pair.updates) {
+      updates.latitude = null;
+      updates.longitude = null;
+    }
     const pandit = await Pandit.findOneAndUpdate({ userId: req.user._id }, updates, { new: true });
     res.json({ success: true, pandit });
   } catch (err) {

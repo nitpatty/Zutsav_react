@@ -30,11 +30,11 @@ export default function useAddresses({ auto = true } = {}) {
     if (auto) refresh().catch(() => {});
   }, [auto, refresh]);
 
-  const addAddress = useCallback(async ({ label, address, pincode, state, city, district, isDefault }) => {
+  const addAddress = useCallback(async ({ label, address, pincode, state, city, district, latitude, longitude, isDefault }) => {
     setSaving(true);
     try {
       const { data } = await api.post('/users/addresses', {
-        label, address, pincode, state, city, district, setDefault: !!isDefault,
+        label, address, pincode, state, city, district, latitude, longitude, setDefault: !!isDefault,
       });
       setAddresses(data.addresses || []);
       return data.addresses || [];
@@ -43,11 +43,11 @@ export default function useAddresses({ auto = true } = {}) {
     }
   }, []);
 
-  const updateAddress = useCallback(async (addrId, { label, address, pincode, state, city, district, isDefault }) => {
+  const updateAddress = useCallback(async (addrId, { label, address, pincode, state, city, district, latitude, longitude, isDefault }) => {
     setSaving(true);
     try {
       const { data } = await api.patch(`/users/addresses/${addrId}`, {
-        label, address, pincode, state, city, district, isDefault,
+        label, address, pincode, state, city, district, latitude, longitude, isDefault,
       });
       setAddresses(data.addresses || []);
       return data.addresses || [];

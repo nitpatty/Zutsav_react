@@ -7,6 +7,9 @@ import useAddresses from '../../hooks/useAddresses';
 import AddressCard from './AddressCard';
 import AddressFormSheet from './AddressFormSheet';
 import PincodeInput from './PincodeInput';
+import LocationSearch from './LocationSearch';
+import MapPicker from './MapPicker';
+import { reverseGeocodeLocation } from '../../services/geocodingService';
 import { PrimaryButton, OutlineButton } from './AppButton';
 
 const LABELS = ['Home', 'Office', 'Other'];
@@ -36,6 +39,7 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
 
   const [sheetVisible, setSheetVisible] = useState(false);
   const [editingAddr, setEditingAddr] = useState(null);
+  const [mapVisible, setMapVisible] = useState(false);
 
   const autoSelectedRef = useRef(false);
 
@@ -47,17 +51,17 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
     const def = addresses.find((a) => a.isDefault) || addresses[0];
     autoSelectedRef.current = true;
     setSelectedId(def._id);
-    onChange({ address: def.address || '', pincode: def.pincode || '', state: def.state || '', city: def.city || '', district: def.district || '' });
+    onChange({ address: def.address || '', pincode: def.pincode || '', state: def.state || '', city: def.city || '', district: def.district || '', latitude: def.latitude ?? null, longitude: def.longitude ?? null });
   }, [addresses, loading, mode]);
 
   const selectSaved = (addr) => {
     setSelectedId(addr._id);
-    onChange({ address: addr.address || '', pincode: addr.pincode || '', state: addr.state || '', city: addr.city || '', district: addr.district || '' });
+    onChange({ address: addr.address || '', pincode: addr.pincode || '', state: addr.state || '', city: addr.city || '', district: addr.district || '', latitude: addr.latitude ?? null, longitude: addr.longitude ?? null });
   };
 
   const selectNew = () => {
     setSelectedId(NEW);
-    onChange({ address: '', pincode: '', state: '', city: '', district: '' });
+    onChange({ address: '', pincode: '', state: '', city: '', district: '', latitude: null, longitude: null });
   };
 
   const handleSaveInlineAddress = async () => {
@@ -69,7 +73,9 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
       setSavingNew(true);
       const updated = await addAddress({
         label: saveLabel, address: value.address, pincode: value.pincode,
-        state: value.state, city: value.city, district: value.district, isDefault: false,
+        state: value.state, city: value.city, district: value.district,
+        latitude: value.latitude ?? null, longitude: value.longitude ?? null,
+        isDefault: false,
       });
       const created = updated[updated.length - 1];
       if (created) selectSaved(created);
@@ -157,17 +163,33 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
 
       {mode === 'picker' && selectedId === NEW && (
         <View style={[styles.formCard, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
-          <View>
-            <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Address *</Text>
-            <TextInput
-              style={[styles.input, { borderColor: C.borderLight, backgroundColor: C.background, color: C.text, height: 70, textAlignVertical: 'top' }]}
-              value={value.address}
-              onChangeText={(v) => onChange({ ...value, address: v })}
-              placeholder="House no., street, area…"
-              placeholderTextColor={C.textSecondary}
-              multiline
-            />
-          </View>
+        <View>
+          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Search Location</Text>
+          <LocationSearch
+            onSelect={async ({ label, lat, lng }) => {
+              onChange({ ...value, address: value.address?.trim() ? value.address : label, latitude: lat, longitude: lng, pincode: value.pincode, state: value.state, city: value.city, district: value.district });
+            }}
+            placeholder="Search your locality, city, or address…"
+          />
+        </View>
+
+        <TouchableOpacity style={[styles.mapBtn, { borderColor: C.borderLight, backgroundColor: C.background }]} onPress={() => setMapVisible(true)} activeOpacity={0.85}>
+          <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>
+            {value.latitude && value.longitude ? `📍 ${Number(value.latitude).toFixed(5)}, ${Number(value.longitude).toFixed(5)}` : 'Pick on Map'}
+          </Text>
+        </TouchableOpacity>
+
+        <View>
+          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Address *</Text>
+          <TextInput
+            style={[styles.input, { borderColor: C.borderLight, backgroundColor: C.background, color: C.text, height: 70, textAlignVertical: 'top' }]}
+            value={value.address}
+            onChangeText={(v) => onChange({ ...value, address: v })}
+            placeholder="House no., street, area…"
+            placeholderTextColor={C.textSecondary}
+            multiline
+          />
+        </View>
           <View>
             <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Pincode *</Text>
             <PincodeInput
@@ -228,6 +250,20 @@ export default function AddressPicker({ value = {}, onChange, allowInlineNew = f
         onSave={handleSheetSave}
         onClose={() => setSheetVisible(false)}
       />
+
+      <MapPicker
+        visible={mapVisible}
+        initialCoords={value.latitude && value.longitude ? { latitude: value.latitude, longitude: value.longitude } : null}
+        onConfirm={async (c) => {
+          onChange({ ...value, latitude: c.latitude, longitude: c.longitude });
+          setMapVisible(false);
+          if (!value.address?.trim()) {
+            const { displayName } = await reverseGeocodeLocation(c.latitude, c.longitude);
+            if (displayName) onChange({ ...value, address: displayName, latitude: c.latitude, longitude: c.longitude });
+          }
+        }}
+        onClose={() => setMapVisible(false)}
+      />
     </View>
   );
 }
@@ -242,6 +278,7 @@ const styles = StyleSheet.create({
   fieldRow:      { flexDirection: 'row', gap: 10 },
   input:         { borderWidth: 1.5, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, fontSize: 14 },
   saveToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  mapBtn:       { borderWidth: 1.5, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   labelPills:    { flexDirection: 'row', gap: 8 },
   pill:          { borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
 });

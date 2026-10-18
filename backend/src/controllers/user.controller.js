@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const path = require('path');
 const fs = require('fs');
+const { validateCoordinatePair, addressFieldsChanged, ADDRESS_FIELDS } = require('../utils/locationValidation');
 
 // GET /api/users/profile
 exports.getProfile = async (req, res) => {
@@ -10,15 +11,37 @@ exports.getProfile = async (req, res) => {
 // PATCH /api/users/profile
 exports.updateProfile = async (req, res, next) => {
   try {
-    const { name, email, pincode, state, city, district, address } = req.body;
+    const { name, email, pincode, state, city, district, address, latitude, longitude } = req.body;
     const updates = {};
 
-    if (name)     updates.name     = name;
-    if (pincode)  updates.pincode  = pincode;
-    if (state)    updates.state    = state;
-    if (city)     updates.city     = city;
-    if (district) updates.district = district;
-    if (address)  updates.address  = address;
+    if (name !== undefined)     updates.name     = name;
+    if (pincode !== undefined)  updates.pincode  = pincode;
+    if (state !== undefined)    updates.state    = state;
+    if (city !== undefined)     updates.city     = city;
+    if (district !== undefined) updates.district = district;
+    if (address !== undefined)  updates.address  = address;
+
+    // Coordinate handling
+    const hasLat = Object.prototype.hasOwnProperty.call(req.body, 'latitude');
+    const hasLng = Object.prototype.hasOwnProperty.call(req.body, 'longitude');
+    if (hasLat || hasLng) {
+      const coordResult = validateCoordinatePair(req.body);
+      if (!coordResult.ok) {
+        return res.status(400).json({ success: false, message: coordResult.message || 'Invalid coordinates' });
+      }
+      if (coordResult.updates) {
+        Object.assign(updates, coordResult.updates);
+      }
+    }
+
+    // Desync guard: if address fields changed and no valid coords provided, clear coords
+    if (addressFieldsChanged(req.body)) {
+      const coordResult = validateCoordinatePair(req.body);
+      if (!coordResult.updates) {
+        updates.latitude = null;
+        updates.longitude = null;
+      }
+    }
 
     if (email && email !== req.user.email) {
       const exists = await User.findOne({ email: email.toLowerCase() });
@@ -77,13 +100,32 @@ exports.getAddresses = async (req, res, next) => {
 // POST /api/users/addresses
 exports.addAddress = async (req, res, next) => {
   try {
-    const { label = 'Home', address, pincode, state, city, district, setDefault = false } = req.body;
+    const { label = 'Home', address, pincode, state, city, district, latitude, longitude, setDefault = false } = req.body;
     if (!address) return res.status(400).json({ success: false, message: 'Address is required' });
+
+    const coordResult = validateCoordinatePair(req.body);
+    if (!coordResult.ok) {
+      return res.status(400).json({ success: false, message: coordResult.message || 'Invalid coordinates' });
+    }
 
     const user = await User.findById(req.user._id);
     if (setDefault) user.savedAddresses.forEach(a => { a.isDefault = false; });
 
-    user.savedAddresses.push({ label, address, pincode, state, city, district, isDefault: setDefault || user.savedAddresses.length === 0 });
+    const newAddr = {
+      label,
+      address,
+      pincode,
+      state,
+      city,
+      district,
+      isDefault: setDefault || user.savedAddresses.length === 0
+    };
+    if (coordResult.updates) {
+      if (coordResult.updates.latitude !== undefined) newAddr.latitude = coordResult.updates.latitude;
+      if (coordResult.updates.longitude !== undefined) newAddr.longitude = coordResult.updates.longitude;
+    }
+
+    user.savedAddresses.push(newAddr);
     await user.save();
     res.json({ success: true, addresses: user.savedAddresses });
   } catch (err) { next(err); }
@@ -92,7 +134,7 @@ exports.addAddress = async (req, res, next) => {
 // PATCH /api/users/addresses/:addrId
 exports.updateAddress = async (req, res, next) => {
   try {
-    const { label, address, pincode, state, city, district, isDefault } = req.body;
+    const { label, address, pincode, state, city, district, latitude, longitude, isDefault } = req.body;
     const user = await User.findById(req.user._id);
     const addr = user.savedAddresses.id(req.params.addrId);
     if (!addr) return res.status(404).json({ success: false, message: 'Address not found' });
@@ -103,6 +145,30 @@ exports.updateAddress = async (req, res, next) => {
     if (state !== undefined)    addr.state    = state;
     if (city !== undefined)     addr.city     = city;
     if (district !== undefined) addr.district = district;
+
+    // Coordinate handling
+    const hasLat = Object.prototype.hasOwnProperty.call(req.body, 'latitude');
+    const hasLng = Object.prototype.hasOwnProperty.call(req.body, 'longitude');
+    if (hasLat || hasLng) {
+      const coordResult = validateCoordinatePair(req.body);
+      if (!coordResult.ok) {
+        return res.status(400).json({ success: false, message: coordResult.message || 'Invalid coordinates' });
+      }
+      if (coordResult.updates) {
+        Object.assign(addr, coordResult.updates);
+      } else {
+        // neither provided? shouldn't happen here, but clear to be safe
+      }
+    }
+
+    // Desync guard: if address fields changed and no valid coords provided, clear coords
+    if (addressFieldsChanged(req.body)) {
+      const coordResult = validateCoordinatePair(req.body);
+      if (!coordResult.updates) {
+        addr.latitude = null;
+        addr.longitude = null;
+      }
+    }
 
     if (isDefault === true) {
       user.savedAddresses.forEach(a => { a.isDefault = String(a._id) === req.params.addrId; });

@@ -11,7 +11,9 @@ import toast from 'react-hot-toast';
 import API from '../api/axios';
 import ProfilePhoto from '../components/shared/ProfilePhoto';
 import PincodeInput from '../components/shared/PincodeInput';
-import MapPicker, { forwardGeocode } from '../components/shared/MapPicker';
+import LocationSearch from '../components/shared/LocationSearch';
+import MapPicker from '../components/shared/MapPicker';
+import { geocodeLocation } from '../services/geocodingService';
 import { formatDuration, parseDurationForForm } from '../utils/durationFormatter';
 
 const LANGUAGE_OPTIONS = [
@@ -178,9 +180,12 @@ function LanguagesAddressTab({ pandit, reload }) {
     district: pandit.district  || '',
     address:  pandit.address   || '',
   });
+  // Stored coordinates only — never a fabricated default. `null` means the
+  // pandit has no saved pin yet, and the map renders without a marker so an
+  // unset location can never be mistaken for the centre of India.
   const [coords, setCoords] = useState({
-    lat: pandit.latitude  || 20.5937,
-    lng: pandit.longitude || 78.9629,
+    lat: Number.isFinite(pandit.latitude)  ? pandit.latitude  : null,
+    lng: Number.isFinite(pandit.longitude) ? pandit.longitude : null,
   });
   const [coverage, setCoverage] = useState({
     type:     pandit.serviceCoverage?.type     || 'city',
@@ -188,8 +193,15 @@ function LanguagesAddressTab({ pandit, reload }) {
   });
   const [saving, setSaving] = useState(false);
   const [geoStatus, setGeoStatus] = useState('idle');
+  const [suggestedAddr, setSuggestedAddr] = useState('');
   const geocodeTimerRef = useRef(null);
+  const geocodeAbortRef = useRef(null);
   const userChangedRef  = useRef(false);
+  // True while the edited address no longer provably matches the current pin
+  // (set on any address edit, cleared when a geocode or pin move resolves it).
+  const pinStaleRef     = useRef(false);
+
+  const hasPin = Number.isFinite(coords.lat) && Number.isFinite(coords.lng);
 
   const toggleLang = (lang) => {
     setSelectedLangs((prev) => prev.includes(lang) ? prev.filter((l) => l !== lang) : [...prev, lang]);
@@ -200,37 +212,67 @@ function LanguagesAddressTab({ pandit, reload }) {
   };
   const onPinMove = (lat, lng, address) => {
     setCoords({ lat, lng });
-    if (address) setAddrForm((p) => ({ ...p, address }));
+    pinStaleRef.current = false; // pin now matches whatever is on the map
+    userChangedRef.current = true;
+    // Reverse-geocode output is a suggestion only — never overwrite text the
+    // user typed. Fill the field only while it is still empty; otherwise keep
+    // the typed text and offer the suggestion separately.
+    if (address) {
+      setSuggestedAddr(address);
+      setAddrForm((p) => (p.address.trim() ? p : { ...p, address }));
+    }
   };
   const handleAddrChange = (field) => (e) => {
     userChangedRef.current = true;
+    pinStaleRef.current = true; // address edited — the pin may no longer match
     setAddrForm((p) => ({ ...p, [field]: e.target.value }));
   };
 
+  useEffect(() => () => {
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
+  }, []);
+
   useEffect(() => {
     if (!userChangedRef.current) return;
-    const { address, city, state, pincode } = addrForm;
-    if (!address && !city && !state && !pincode) return;
+    const { address, city, state, pincode, district } = addrForm;
+    if (!address && !city && !state && !pincode && !district) return;
     if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
     setGeoStatus('loading');
     geocodeTimerRef.current = setTimeout(async () => {
-      const result = await forwardGeocode(address, city, state, pincode);
+      const controller = new AbortController();
+      geocodeAbortRef.current = controller;
+      const result = await geocodeLocation(
+        { address, city, state, pincode, district },
+        { signal: controller.signal },
+      );
+      if (result.aborted) return; // a newer edit superseded this request
       if (result.found) {
         setCoords({ lat: result.lat, lng: result.lng });
+        pinStaleRef.current = false;
         setGeoStatus('idle');
       } else {
         setGeoStatus('notfound');
         setTimeout(() => setGeoStatus((prev) => prev === 'notfound' ? 'idle' : prev), 3000);
       }
     }, 900);
-  }, [addrForm.address, addrForm.city, addrForm.state, addrForm.pincode]);
+  }, [addrForm.address, addrForm.city, addrForm.state, addrForm.pincode, addrForm.district]);
 
   const save = async () => {
     setSaving(true);
     try {
+      // A changed address whose pin was never re-resolved must not be saved
+      // with the OLD coordinates silently attached — send explicit nulls so
+      // the backend clears the pin, and tell the user why.
+      const pinValid = hasPin && !pinStaleRef.current;
+      if (hasPin && pinStaleRef.current) {
+        toast('Address changed — map pin cleared. Re-pin the map for a precise location.', { icon: '📍' });
+      }
       await API.patch('/pandits/me/languages-address', {
         languages: selectedLangs, ...addrForm,
-        latitude: coords.lat, longitude: coords.lng,
+        latitude:  pinValid ? coords.lat : null,
+        longitude: pinValid ? coords.lng : null,
         serviceCoverage: coverage,
       });
       await reload();
@@ -278,18 +320,26 @@ function LanguagesAddressTab({ pandit, reload }) {
           <MapPin size={18} className="text-saffron-500" />
           <h3 className="font-semibold text-gray-800">Address</h3>
         </div>
+        <LocationSearch
+          onSelect={({ label, lat, lng }) => {
+            // An explicit suggestion pick is deliberate — apply it directly.
+            userChangedRef.current = true;
+            pinStaleRef.current = false;
+            setCoords({ lat, lng });
+            setSuggestedAddr(label);
+            setAddrForm((p) => (p.address.trim() ? p : { ...p, address: label }));
+          }}
+          disabled={saving}
+          placeholder="Search your locality, city, or address…"
+          helperText="Pick a suggestion to drop the pin, or fill the fields below manually."
+        />
         <PincodeInput
           value={addrForm.pincode}
-          onChange={(v) => { userChangedRef.current = true; setAddrForm((p) => ({ ...p, pincode: v })); }}
+          onChange={(v) => { userChangedRef.current = true; pinStaleRef.current = true; setAddrForm((p) => ({ ...p, pincode: v })); }}
           onFill={({ state, city, district }) => {
             userChangedRef.current = true;
+            pinStaleRef.current = true;
             setAddrForm((p) => ({ ...p, state, city, district }));
-            if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
-            setGeoStatus('loading');
-            forwardGeocode(addrForm.address, city, state, addrForm.pincode).then((result) => {
-              if (result.found) { setCoords({ lat: result.lat, lng: result.lng }); setGeoStatus('idle'); }
-              else { setGeoStatus('notfound'); setTimeout(() => setGeoStatus((prev) => prev === 'notfound' ? 'idle' : prev), 3000); }
-            });
           }}
         />
         {addrForm.state && (
@@ -297,7 +347,7 @@ function LanguagesAddressTab({ pandit, reload }) {
             {[['state','State'],['city','City'],['district','District']].map(([f,l]) => (
               <div key={f}>
                 <label className="label text-xs">{l}</label>
-                <input className="input bg-saffron-50 text-sm" value={addrForm[f]} onChange={handleAddrChange(f)} />
+                <input className="input bg-saffron-50 text-sm" value={addrForm[f]} onChange={handleAddrChange(f)} disabled={saving} />
               </div>
             ))}
           </div>
@@ -305,11 +355,26 @@ function LanguagesAddressTab({ pandit, reload }) {
         <div>
           <label className="label">Full Address</label>
           <textarea className="input min-h-[60px] resize-none text-sm" value={addrForm.address}
-            onChange={handleAddrChange('address')} placeholder="House/flat, street, locality..." />
+            onChange={handleAddrChange('address')} placeholder="House/flat, street, locality..." disabled={saving} />
+          {suggestedAddr && suggestedAddr !== addrForm.address && (
+            <button
+              type="button"
+              onClick={() => {
+                // The suggestion came from the current pin, so the pin already
+                // matches — adopt the text without moving the pin.
+                setAddrForm((p) => ({ ...p, address: suggestedAddr }));
+                pinStaleRef.current = false;
+                userChangedRef.current = false;
+              }}
+              className="mt-1.5 text-left text-xs text-saffron-700 bg-saffron-50 border border-saffron-100 rounded-lg px-2.5 py-1.5 hover:bg-saffron-100"
+            >
+              Use suggested address: {suggestedAddr}
+            </button>
+          )}
         </div>
         <div>
           <label className="label">Pin Location on Map</label>
-          <p className="text-xs text-gray-400 mb-2">Drag the pin or click on the map to set your exact location</p>
+          <p className="text-xs text-gray-400 mb-2">Search above, or drag the pin / click the map to set your exact location</p>
           {geoStatus === 'loading' && (
             <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl mb-2">
               <ZutsavLoaderInline size={14} /> Updating map location...
@@ -317,13 +382,18 @@ function LanguagesAddressTab({ pandit, reload }) {
           )}
           {geoStatus === 'notfound' && (
             <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-xl mb-2">
-              Nearby location shown — enter more details for a precise pin.
+              Could not find an exact match — click the map to place your pin manually.
+            </div>
+          )}
+          {!hasPin && (
+            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-xl mb-2">
+              No location pin set yet. Search, click the map, or drag to set it.
             </div>
           )}
           <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 320 }}>
-            <MapPicker lat={coords.lat} lng={coords.lng} onPinMove={onPinMove} />
+            <MapPicker lat={coords.lat ?? undefined} lng={coords.lng ?? undefined} hasPin={hasPin} onPinMove={onPinMove} />
           </div>
-          {coords.lat && (
+          {hasPin && (
             <p className="text-xs text-gray-400 mt-1.5">Coordinates: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</p>
           )}
         </div>

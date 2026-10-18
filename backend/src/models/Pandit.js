@@ -97,8 +97,11 @@ const panditSchema = new mongoose.Schema({
 
   // Extended personal info
   fatherName: { type: String, trim: true, default: '' },
-  latitude:   { type: Number, default: null },
-  longitude:  { type: Number, default: null },
+  // Location pin — written only as a validated pair by the profile
+  // endpoints (see utils/locationValidation.js). min/max reject any other
+  // writer; existing valid documents are unaffected.
+  latitude:   { type: Number, default: null, min: -90,  max: 90 },
+  longitude:  { type: Number, default: null, min: -180, max: 180 },
 
   // Qualifications / Education
   qualifications: [{

@@ -6,6 +6,9 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import ProfilePhoto from '../components/shared/ProfilePhoto';
 import PincodeInput from '../components/shared/PincodeInput';
+import LocationSearch from '../components/shared/LocationSearch';
+import MapPicker from '../components/shared/MapPicker';
+import { geocodeLocation, reverseGeocodeLocation } from '../services/geocodingService';
 import API from '../api/axios';
 
 // ── Account Deletion Modal ─────────────────────────────────────────────────
@@ -273,6 +276,16 @@ export default function Profile() {
     district: user?.district || '',
     address:  user?.address  || '',
   });
+  const [coords, setCoords] = useState({
+    lat: Number.isFinite(user?.latitude)  ? user.latitude  : null,
+    lng: Number.isFinite(user?.longitude) ? user.longitude : null,
+  });
+  const [pinStale, setPinStale] = useState(false);
+  const [geoStatus, setGeoStatus] = useState('idle');
+  const [suggestedAddr, setSuggestedAddr] = useState('');
+  const geocodeTimerRef = useRef(null);
+  const geocodeAbortRef = useRef(null);
+  const userChangedRef = useRef(false);
   const [saving, setSaving] = useState(false);
 
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
@@ -329,13 +342,66 @@ export default function Profile() {
   // const [referral, setReferral] = useState(null);
   // useEffect(() => { API.get('/referral/my').then(({ data }) => setReferral(data)).catch(() => {}); }, []);
 
-  const set = (f) => (e) => setForm({ ...form, [f]: e.target.value });
+  const ADDRESS_FIELDS = ['pincode','state','city','district','address'];
+  const set = (f) => (e) => {
+    if (ADDRESS_FIELDS.includes(f)) { userChangedRef.current = true; setPinStale(true); }
+    setForm((p) => ({ ...p, [f]: e.target.value }));
+  };
+
+  const hasPin = Number.isFinite(coords.lat) && Number.isFinite(coords.lng);
+
+  const onPinMove = (lat, lng, address) => {
+    setCoords({ lat, lng });
+    setPinStale(false);
+    userChangedRef.current = true;
+    if (address) {
+      setSuggestedAddr(address);
+      setForm((p) => (p.address.trim() ? p : { ...p, address }));
+    }
+  };
+
+  useEffect(() => () => {
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!userChangedRef.current) return;
+    const { address, city, state, pincode, district } = form;
+    if (!address && !city && !state && !pincode && !district) return;
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    if (geocodeAbortRef.current) geocodeAbortRef.current.abort();
+    setGeoStatus('loading');
+    geocodeTimerRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      geocodeAbortRef.current = controller;
+      const result = await geocodeLocation({ address, city, state, pincode, district }, { signal: controller.signal });
+      if (result.aborted) return;
+      if (result.found) {
+        setCoords({ lat: result.lat, lng: result.lng });
+        setPinStale(false);
+        setGeoStatus('idle');
+      } else {
+        setGeoStatus('notfound');
+        setTimeout(() => setGeoStatus((prev) => (prev === 'notfound' ? 'idle' : prev)), 3000);
+      }
+    }, 900);
+  }, [form.address, form.city, form.state, form.pincode, form.district]);
 
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await API.patch('/users/profile', form);
+      const hasPin = Number.isFinite(coords.lat) && Number.isFinite(coords.lng);
+      const pinValid = hasPin && !pinStale;
+      if (hasPin && pinStale) {
+        toast('Address changed — map pin cleared. Re-pin the map for a precise location.', { icon: '📍' });
+      }
+      await API.patch('/users/profile', {
+        ...form,
+        latitude:  pinValid ? coords.lat : null,
+        longitude: pinValid ? coords.lng : null,
+      });
       await refreshUser();
       toast.success(t('profile.updatedToast'));
     } catch (err) {
@@ -398,15 +464,6 @@ export default function Profile() {
               </div>
             </div>
 
-            <div>
-              <label className="label">{t('common.fields.pincode')}</label>
-              <PincodeInput
-                value={form.pincode}
-                onChange={(v) => setForm({ ...form, pincode: v })}
-                onFill={({ state, city, district }) => setForm((prev) => ({ ...prev, state, city, district }))}
-              />
-            </div>
-
             <div className="grid grid-cols-3 gap-3">
               {[['state',t('common.fields.state')],['city',t('common.fields.city')],['district',t('common.fields.district')]].map(([f, l]) => (
                 <div key={f}>
@@ -420,6 +477,76 @@ export default function Profile() {
               <label className="label">{t('common.fields.address')}</label>
               <textarea rows={2} className="input resize-none" value={form.address} onChange={set('address')} placeholder={t('profile.addressPlaceholder')} />
             </div>
+
+            <LocationSearch
+              onSelect={({ label, lat, lng, components }) => {
+                userChangedRef.current = true;
+                setPinStale(false);
+                setCoords({ lat, lng });
+                setSuggestedAddr(label);
+                setForm((p) => {
+                  const next = { ...p };
+                  if (!p.address.trim()) next.address = label;
+                  if (components?.pincode) next.pincode = components.pincode;
+                  if (components?.state) next.state = components.state;
+                  if (components?.city) next.city = components.city;
+                  if (components?.district) next.district = components.district;
+                  return next;
+                });
+              }}
+              disabled={saving}
+              placeholder="Search your locality, city, or address…"
+              helperText="Pick a suggestion to drop the pin, or fill the fields below manually."
+            />
+
+            <PincodeInput
+              value={form.pincode}
+              onChange={(v) => { userChangedRef.current = true; setPinStale(true); setForm((p) => ({ ...p, pincode: v })); }}
+              onFill={({ state, city, district }) => { userChangedRef.current = true; setPinStale(true); setForm((p) => ({ ...p, state, city, district })); }}
+            />
+
+            {suggestedAddr && suggestedAddr !== form.address && (
+              <button
+                type="button"
+                onClick={() => { setForm((p) => ({ ...p, address: suggestedAddr })); setPinStale(false); userChangedRef.current = false; }}
+                className="text-left text-xs text-saffron-700 bg-saffron-50 border border-saffron-100 rounded-lg px-2.5 py-1.5 hover:bg-saffron-100"
+              >
+                Use suggested address: {suggestedAddr}
+              </button>
+            )}
+
+            {geoStatus === 'loading' && (
+              <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl">
+                Updating map location...
+              </div>
+            )}
+            {geoStatus === 'notfound' && (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-xl">
+                Could not find an exact match — click the map to place your pin manually.
+              </div>
+            )}
+            {!hasPin && (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-xl">
+                No location pin set yet. Search, click the map, or drag to set it.
+              </div>
+            )}
+
+            <div>
+              <label className="label">Pin Location on Map</label>
+              <p className="text-xs text-gray-400 mb-2">Search above, or drag the pin / click the map to set your exact location</p>
+              <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 320 }}>
+                <MapPicker lat={coords.lat ?? undefined} lng={coords.lng ?? undefined} hasPin={hasPin} onPinMove={onPinMove} />
+              </div>
+              {hasPin && (
+                <p className="text-xs text-gray-400 mt-1.5">Coordinates: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</p>
+              )}
+            </div>
+
+            {pinStale && hasPin && (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 px-3 py-2 rounded-xl">
+                Address changed — re-pick the pin on the map so the saved location matches.
+              </div>
+            )}
 
             <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
               <Save size={16} /> {saving ? t('profile.saving') : t('profile.saveChanges')}

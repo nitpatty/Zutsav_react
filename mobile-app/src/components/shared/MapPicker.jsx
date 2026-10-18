@@ -24,6 +24,11 @@ export default function MapPicker({ visible, initialCoords, onConfirm, onClose }
     initialCoords?.latitude ? { ...initialCoords, latitudeDelta: 0.02, longitudeDelta: 0.02 } : DEFAULT_REGION
   );
   const [locating, setLocating] = useState(false);
+  // When opened without a saved location the map shows the default India-wide
+  // view. Confirming that untouched view would silently save the centre of
+  // India as the pandit's location, so confirm stays disabled until the user
+  // actually pans the map or taps "Use My Current Location".
+  const [userMoved, setUserMoved] = useState(!!(initialCoords?.latitude && initialCoords?.longitude));
 
   const handleUseCurrentLocation = async () => {
     try {
@@ -36,6 +41,7 @@ export default function MapPicker({ visible, initialCoords, onConfirm, onClose }
       const pos = await Location.getCurrentPositionAsync({});
       const next = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 };
       setRegion(next);
+      setUserMoved(true);
       mapRef.current?.animateToRegion(next, 500);
     } catch {
       Toast.show({ type: 'error', text1: 'Could not fetch current location' });
@@ -61,6 +67,7 @@ export default function MapPicker({ visible, initialCoords, onConfirm, onClose }
             style={{ flex: 1 }}
             initialRegion={region}
             onRegionChangeComplete={setRegion}
+            onPanDrag={() => setUserMoved(true)}
           />
           <View pointerEvents="none" style={styles.centerPin}>
             <Ionicons name="location" size={40} color={C.primary} />
@@ -68,13 +75,19 @@ export default function MapPicker({ visible, initialCoords, onConfirm, onClose }
         </View>
 
         <View style={[styles.footer, { backgroundColor: C.surface, borderTopColor: C.border }]}>
+          {!userMoved && (
+            <Text style={[styles.hint, { color: C.textSecondary }]}>
+              Drag the map to place your pin, or tap “Use My Current Location”.
+            </Text>
+          )}
           <TouchableOpacity style={[styles.locateBtn, { borderColor: C.border }]} onPress={handleUseCurrentLocation} disabled={locating}>
             <Ionicons name="navigate" size={16} color={C.primary} />
             <Text style={[styles.locateText, { color: C.text }]}>{locating ? 'Locating…' : 'Use My Current Location'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.confirmBtn, { backgroundColor: C.primary }]}
+            style={[styles.confirmBtn, { backgroundColor: C.primary }, !userMoved && styles.confirmDisabled]}
             onPress={() => onConfirm({ latitude: region.latitude, longitude: region.longitude })}
+            disabled={!userMoved}
             activeOpacity={0.85}
           >
             <Text style={styles.confirmText}>Confirm Location</Text>
@@ -102,5 +115,7 @@ const styles = StyleSheet.create({
   },
   locateText: { fontSize: 13, fontWeight: '600' },
   confirmBtn: { borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
+  confirmDisabled: { opacity: 0.5 },
   confirmText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  hint: { fontSize: 12, textAlign: 'center', marginBottom: 2 },
 });

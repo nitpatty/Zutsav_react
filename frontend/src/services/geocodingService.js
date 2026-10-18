@@ -65,13 +65,15 @@ export async function autocompletePlaces(query, opts = {}) {
         lat: Number(r.lat),
         lng: Number(r.lng),
         placeId: r.placeId || '',
+        components: r.components || {},
       })).filter((r) => r.label && Number.isFinite(r.lat) && Number.isFinite(r.lng)),
     };
     cacheSet(key, result);
     return result;
   } catch (err) {
     if (isAbort(err)) return { found: false, aborted: true };
-    // Network/server failure — surfaced as "no suggestions", never thrown.
+    // Network/server failure — surfaced as "no suggestions", never thrown,
+    // and never cached (a transient provider failure must not sticky-cache).
     return { found: false };
   }
 }
@@ -84,8 +86,14 @@ export async function autocompletePlaces(query, opts = {}) {
  * Ordered, most-accurate-first search tiers — never search on a partial
  * string when more information is available. India is appended to every
  * tier (Zutsav is India-first) unless the address already names a country.
+ *
+ * `district` is an optional extra admin division used by the Pandit address
+ * form; the temple/admin callers that don't pass it produce exactly the same
+ * tier list as before (duplicate tiers are deduped by the caller).
+ * The `name` tier is for famous places (temples); person-name callers must
+ * NOT pass `name` — a pandit's name is not a location.
  */
-function buildQueryTiers({ address = '', city = '', state = '', pincode = '', name = '' }) {
+function buildQueryTiers({ address = '', city = '', state = '', pincode = '', district = '', name = '' }) {
   const hasCountry = /india/i.test(address);
   const tier = (parts) => {
     const joined = parts.filter(Boolean).join(', ');
@@ -93,11 +101,13 @@ function buildQueryTiers({ address = '', city = '', state = '', pincode = '', na
     return hasCountry ? joined : `${joined}, India`;
   };
   return [
-    tier([address, city, state, pincode]), // Full Address + City + State + PIN
-    tier([address, city, state]),          // Address + City + State
-    tier([name, city, state]),             // Temple Name + City + State (famous temples resolve well by name)
-    tier([city, state]),                   // City + State
-  ];
+    tier([address, district, city, state, pincode]), // Full Address + District + City + State + PIN
+    tier([address, city, state, pincode]),           // Full Address + City + State + PIN
+    tier([address, city, state]),                    // Address + City + State
+    tier([name, city, state]),                       // Landmark/place Name + City + State
+    tier([district, city, state]),                   // District + City + State
+    tier([city, state]),                             // City + State
+  ].filter(Boolean);
 }
 
 async function proxyGeocode(query, opts = {}) {
@@ -112,7 +122,9 @@ async function proxyGeocode(query, opts = {}) {
     const result = data?.found
       ? { found: true, lat: Number(data.lat), lng: Number(data.lng), displayName: data.label || '' }
       : { found: false };
-    cacheSet(query, result);
+    // Cache successes only — a transient miss/provider outage must not be
+    // sticky for the rest of the editing session.
+    if (result.found) cacheSet(query, result);
     return result;
   } catch (err) {
     if (isAbort(err)) return { found: false, aborted: true };

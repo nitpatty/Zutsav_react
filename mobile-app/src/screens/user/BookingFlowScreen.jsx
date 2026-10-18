@@ -193,6 +193,8 @@ export default function BookingFlowScreen({ navigation, route }) {
     state:    user?.state    || '',
     city:     user?.city     || '',
     district: user?.district || '',
+    latitude:  user?.latitude  ?? null,
+    longitude: user?.longitude ?? null,
   });
   const [specialNote, setSpecialNote] = useState('');
 
@@ -326,6 +328,7 @@ export default function BookingFlowScreen({ navigation, route }) {
       name: userDetails.name, phone: userDetails.phone, email: userDetails.email,
       address: userDetails.address, pincode: userDetails.pincode, state: userDetails.state, city: userDetails.city,
       district: userDetails.district,
+      latitude: userDetails.latitude ?? null, longitude: userDetails.longitude ?? null,
     };
     try {
       setSubmitting(true);

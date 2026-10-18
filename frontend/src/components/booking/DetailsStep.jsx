@@ -1,8 +1,11 @@
-import React from 'react';
-import { ClipboardList, MapPin, Plus, Trash2, CheckCircle, Info } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { ClipboardList, MapPin, Plus, Trash2, CheckCircle, Info, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
 import API from '../../api/axios';
 import PincodeInput from '../shared/PincodeInput';
+import LocationSearch from '../shared/LocationSearch';
+import MapPicker from '../shared/MapPicker';
+import { reverseGeocodeLocation } from '../../services/geocodingService';
 import StepHeader from './StepHeader';
 import NavButtons from './NavButtons';
 
@@ -57,6 +60,8 @@ export default function DetailsStep({
                       state: addr.state || '',
                       city: addr.city || '',
                       district: addr.district || '',
+                      latitude: Number.isFinite(addr.latitude) ? addr.latitude : null,
+                      longitude: Number.isFinite(addr.longitude) ? addr.longitude : null,
                     }));
                   }}
                   className={`w-full text-left rounded-2xl border-2 p-3.5 transition-all ${
@@ -90,11 +95,11 @@ export default function DetailsStep({
                             const remaining = data.addresses || [];
                             if (remaining.length > 0) {
                               const next = remaining[0];
-                              setSelectedAddrId(next._id);
-                              setUserDetails(p => ({ ...p, address: next.address, pincode: next.pincode || '', state: next.state || '', city: next.city || '', district: next.district || '' }));
-                            } else {
-                              setSelectedAddrId('new');
-                              setUserDetails(p => ({ ...p, address: '', pincode: '', state: '', city: '', district: '' }));
+                               setSelectedAddrId(next._id);
+                               setUserDetails(p => ({ ...p, address: next.address, pincode: next.pincode || '', state: next.state || '', city: next.city || '', district: next.district || '', latitude: Number.isFinite(next.latitude) ? next.latitude : null, longitude: Number.isFinite(next.longitude) ? next.longitude : null }));
+                              } else {
+                               setSelectedAddrId('new');
+                               setUserDetails(p => ({ ...p, address: '', pincode: '', state: '', city: '', district: '', latitude: null, longitude: null }));
                             }
                           }
                         }).catch(() => toast.error('Could not delete address'));
@@ -112,7 +117,7 @@ export default function DetailsStep({
                 onClick={() => {
                   setSelectedAddrId('new');
                   setWantSaveAddr(null);
-                  setUserDetails(p => ({ ...p, address: '', pincode: '', state: '', city: '', district: '' }));
+                   setUserDetails(p => ({ ...p, address: '', pincode: '', state: '', city: '', district: '', latitude: null, longitude: null }));
                 }}
                 className={`w-full text-left rounded-2xl border-2 p-3.5 transition-all flex items-center gap-2.5 ${
                   selectedAddrId === 'new' ? 'border-orange-400 bg-orange-50' : 'border-dashed border-gray-300 bg-white hover:border-orange-300'
@@ -132,6 +137,24 @@ export default function DetailsStep({
 
           {selectedAddrId === 'new' && (
             <div className="space-y-3 mt-1">
+              <LocationSearch
+                onSelect={({ label, lat, lng, components }) => {
+                  setUserDetails(p => {
+                    const next = { ...p, latitude: lat, longitude: lng };
+                    if (!p.address.trim()) next.address = label;
+                    if (components?.pincode) next.pincode = components.pincode;
+                    if (components?.state) next.state = components.state;
+                    if (components?.city) next.city = components.city;
+                    if (components?.district) next.district = components.district;
+                    return next;
+                  });
+                  setWantSaveAddr(null);
+                }}
+                disabled={false}
+                placeholder="Search your locality, city, or address…"
+                helperText="Pick a suggestion to drop the pin, or fill the fields below manually."
+              />
+
               <div>
                 <textarea rows={2} className={`input resize-none ${errors.address ? 'border-red-400' : ''}`} value={userDetails.address}
                   onChange={e => { setUserDetails(p => ({ ...p, address: e.target.value })); setErrors(p => ({ ...p, address: '' })); setWantSaveAddr(null); }}
@@ -161,6 +184,30 @@ export default function DetailsStep({
                 </div>
               )}
 
+              <div>
+                <label className="label">Pin Location on Map</label>
+                <p className="text-xs text-gray-400 mb-2">Search above, or drag the pin / click the map to set your exact location</p>
+                <div className="rounded-xl overflow-hidden border border-gray-200" style={{ height: 260 }}>
+                  <MapPicker
+                    lat={Number.isFinite(userDetails.latitude) ? userDetails.latitude : undefined}
+                    lng={Number.isFinite(userDetails.longitude) ? userDetails.longitude : undefined}
+                    hasPin={Number.isFinite(userDetails.latitude) && Number.isFinite(userDetails.longitude)}
+                    onPinMove={async (lat, lng, address) => {
+                      setUserDetails(p => ({ ...p, latitude: lat, longitude: lng }));
+                      if (address) {
+                        // reverse geocode suggestion only; don't overwrite typed text
+                        if (!userDetails.address.trim()) {
+                          setUserDetails(p => ({ ...p, address }));
+                        }
+                      }
+                    }}
+                  />
+                </div>
+                {Number.isFinite(userDetails.latitude) && Number.isFinite(userDetails.longitude) && (
+                  <p className="text-xs text-gray-400 mt-1.5">Coordinates: {userDetails.latitude.toFixed(5)}, {userDetails.longitude.toFixed(5)}</p>
+                )}
+              </div>
+
               {user && userDetails.address && userDetails.pincode && wantSaveAddr === null && (
                 <div className="rounded-2xl border border-blue-200 bg-blue-50 p-3.5">
                   <p className="text-sm font-semibold text-blue-800 flex items-center gap-1.5">
@@ -179,17 +226,22 @@ export default function DetailsStep({
                       onClick={async () => {
                         setSavingAddr(true);
                         try {
-                          const { data } = await API.post('/users/addresses', {
-                            label: saveAddrLabel || 'Home',
-                            address: userDetails.address,
-                            pincode: userDetails.pincode,
-                            state: userDetails.state,
-                            city: userDetails.city,
-                            district: userDetails.district,
-                          });
+                           const { data } = await API.post('/users/addresses', {
+                             label: saveAddrLabel || 'Home',
+                             address: userDetails.address,
+                             pincode: userDetails.pincode,
+                             state: userDetails.state,
+                             city: userDetails.city,
+                             district: userDetails.district,
+                             latitude: Number.isFinite(userDetails.latitude) ? userDetails.latitude : null,
+                             longitude: Number.isFinite(userDetails.longitude) ? userDetails.longitude : null,
+                           });
                           setSavedAddresses(data.addresses || []);
-                          const saved = (data.addresses || []).at(-1);
-                          if (saved) setSelectedAddrId(saved._id);
+                           const saved = (data.addresses || []).at(-1);
+                           if (saved) {
+                             setSelectedAddrId(saved._id);
+                             setUserDetails(p => ({ ...p, address: saved.address || p.address, pincode: saved.pincode || p.pincode, state: saved.state || p.state, city: saved.city || p.city, district: saved.district || p.district, latitude: Number.isFinite(saved.latitude) ? saved.latitude : p.latitude, longitude: Number.isFinite(saved.longitude) ? saved.longitude : p.longitude }));
+                           }
                           setWantSaveAddr(true);
                           toast.success('Address saved!');
                         } catch {

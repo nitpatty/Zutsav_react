@@ -6,7 +6,9 @@ import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import ScreenHeader from '../../components/ScreenHeader';
 import PincodeInput from '../../components/shared/PincodeInput';
-
+import LocationSearch from '../../components/shared/LocationSearch';
+import MapPicker from '../../components/shared/MapPicker';
+import { reverseGeocodeLocation } from '../../services/geocodingService';
 // Matches the website's Profile "Personal Details" card field-for-field:
 // Full Name, Email, Pincode (auto-fetch), State, City, District, Address.
 export default function PersonalInfoScreen() {
@@ -24,6 +26,10 @@ export default function PersonalInfoScreen() {
     district: user?.district || '',
     address:  user?.address  || '',
   });
+  const [coords, setCoords] = useState(
+    user?.latitude && user?.longitude ? { latitude: user.latitude, longitude: user.longitude } : null
+  );
+  const [mapVisible, setMapVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const set = (patch) => setForm((p) => ({ ...p, ...patch }));
@@ -40,6 +46,8 @@ export default function PersonalInfoScreen() {
         city:     form.city.trim() || undefined,
         district: form.district.trim() || undefined,
         address:  form.address.trim() || undefined,
+        latitude:  coords ? coords.latitude : null,
+        longitude: coords ? coords.longitude : null,
       });
       Toast.show({ type: 'success', text1: 'Profile updated' });
       navigation.goBack();
@@ -105,6 +113,24 @@ export default function PersonalInfoScreen() {
         </View>
 
         <View>
+          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Search Location</Text>
+          <LocationSearch
+            onSelect={async ({ label, lat, lng }) => {
+              setCoords({ latitude: lat, longitude: lng });
+              if (!form.address.trim()) setForm((p) => ({ ...p, address: label }));
+              const { displayName } = await reverseGeocodeLocation(lat, lng);
+              // offer reverse-geocoded only if address empty
+            }}
+          />
+        </View>
+
+        <TouchableOpacity style={[styles.mapBtn, { borderColor: C.border }]} onPress={() => setMapVisible(true)} activeOpacity={0.85}>
+          <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>
+            {coords ? `📍 ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` : 'Pick on Map'}
+          </Text>
+        </TouchableOpacity>
+
+        <View>
           <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Complete Address</Text>
           <TextInput
             style={[styles.input, { borderColor: C.border, color: C.text, height: 80, textAlignVertical: 'top' }]}
@@ -125,6 +151,20 @@ export default function PersonalInfoScreen() {
           <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <MapPicker
+        visible={mapVisible}
+        initialCoords={coords}
+        onConfirm={async (c) => {
+          setCoords(c);
+          setMapVisible(false);
+          if (!form.address.trim()) {
+            const { displayName } = await reverseGeocodeLocation(c.latitude, c.longitude);
+            if (displayName) setForm((p) => ({ ...p, address: displayName }));
+          }
+        }}
+        onClose={() => setMapVisible(false)}
+      />
     </View>
   );
 }
@@ -136,4 +176,5 @@ const styles = StyleSheet.create({
   input:       { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
   saveBtn:     { borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 8 },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  mapBtn:      { borderWidth: 1.5, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
 });

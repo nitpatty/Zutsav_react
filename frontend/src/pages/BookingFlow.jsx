@@ -87,6 +87,8 @@ export default function BookingFlow() {
     state:       user?.state    || '',
     city:        user?.city     || '',
     district:    user?.district || '',
+    latitude:    Number.isFinite(user?.latitude)  ? user.latitude  : null,
+    longitude:   Number.isFinite(user?.longitude) ? user.longitude : null,
     specialNote: '',
   });
   const [errors, setErrors] = useState({});
@@ -124,15 +126,17 @@ export default function BookingFlow() {
         setSavedAddresses(addrs);
         if (addrs.length > 0) {
           const def = addrs.find(a => a.isDefault) || addrs[0];
-          setSelectedAddrId(def._id);
-          setUserDetails(p => ({
-            ...p,
-            address:  def.address  || '',
-            pincode:  def.pincode  || '',
-            state:    def.state    || '',
-            city:     def.city     || '',
-            district: def.district || '',
-          }));
+           setSelectedAddrId(def._id);
+           setUserDetails(p => ({
+             ...p,
+             address:   def.address  || '',
+             pincode:   def.pincode  || '',
+             state:     def.state    || '',
+             city:      def.city     || '',
+             district:  def.district || '',
+             latitude:  Number.isFinite(def.latitude)  ? def.latitude  : null,
+             longitude: Number.isFinite(def.longitude) ? def.longitude : null,
+           }));
         } else {
           setSelectedAddrId('new');
         }
@@ -375,14 +379,16 @@ export default function BookingFlow() {
         couponCode:    appliedCoupon?.code,
         coinRedemptionCoins: coinCoins || undefined,
         userDetails: {
-          name:     userDetails.name,
-          phone:    userDetails.phone,
-          email:    userDetails.email,
-          address:  userDetails.address,
-          pincode:  userDetails.pincode,
-          state:    userDetails.state,
-          city:     userDetails.city,
-          district: userDetails.district,
+          name:      userDetails.name,
+          phone:     userDetails.phone,
+          email:     userDetails.email,
+          address:   userDetails.address,
+          pincode:   userDetails.pincode,
+          state:     userDetails.state,
+          city:      userDetails.city,
+          district:  userDetails.district,
+          latitude:  Number.isFinite(userDetails.latitude)  ? userDetails.latitude  : null,
+          longitude: Number.isFinite(userDetails.longitude) ? userDetails.longitude : null,
         },
         ...(referralToken ? { referralToken } : {}),
       });

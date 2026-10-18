@@ -38,6 +38,8 @@ const vendors = {
     autocompletePath: '/places/v1/autocomplete',
     geocodePath: '/places/v1/geocode',
     reverseGeocodePath: '/places/v1/reverse-geocode',
+    // OAuth 2.0 client-credentials token endpoint (see services/olaAuth.js).
+    tokenPath: '/auth/v1/token',
   },
 };
 

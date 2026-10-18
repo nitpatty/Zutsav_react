@@ -3,10 +3,13 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, ScrollView,
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeStore } from '../../store/themeStore';
 import PincodeInput from './PincodeInput';
+import LocationSearch from './LocationSearch';
+import MapPicker from './MapPicker';
+import { reverseGeocodeLocation } from '../../services/geocodingService';
 
 const LABELS = ['Home', 'Office', 'Other'];
 
-const emptyForm = { label: 'Home', address: '', pincode: '', state: '', city: '', district: '', isDefault: false };
+const emptyForm = { label: 'Home', address: '', pincode: '', state: '', city: '', district: '', latitude: null, longitude: null, isDefault: false };
 
 // Add/edit address form, presented as a modal sheet.
 //   visible       – bool
@@ -18,6 +21,7 @@ export default function AddressFormSheet({ visible, initialValues, onSave, onClo
   const C = theme.colors;
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [mapVisible, setMapVisible] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -65,7 +69,23 @@ export default function AddressFormSheet({ visible, initialValues, onSave, onClo
                 ))}
               </View>
 
-              <View>
+               <View>
+                <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Search Location</Text>
+                <LocationSearch
+                  onSelect={async ({ label, lat, lng }) => {
+                    setForm((p) => ({ ...p, address: p.address.trim() ? p.address : label, latitude: lat, longitude: lng }));
+                  }}
+                  placeholder="Search your locality, city, or address…"
+                />
+              </View>
+
+              <TouchableOpacity style={[styles.mapBtn, { borderColor: C.border }]} onPress={() => setMapVisible(true)} activeOpacity={0.85}>
+                <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>
+                  {form.latitude && form.longitude ? `📍 ${Number(form.latitude).toFixed(5)}, ${Number(form.longitude).toFixed(5)}` : 'Pick on Map'}
+                </Text>
+              </TouchableOpacity>
+
+               <View>
                 <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Address *</Text>
                 <TextInput
                   style={[styles.input, { borderColor: C.border, color: C.text, height: 70, textAlignVertical: 'top' }]}
@@ -118,6 +138,20 @@ export default function AddressFormSheet({ visible, initialValues, onSave, onClo
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
+
+        <MapPicker
+          visible={mapVisible}
+          initialCoords={form.latitude && form.longitude ? { latitude: form.latitude, longitude: form.longitude } : null}
+          onConfirm={async (c) => {
+            setForm((p) => ({ ...p, latitude: c.latitude, longitude: c.longitude }));
+            setMapVisible(false);
+            if (!form.address.trim()) {
+              const { displayName } = await reverseGeocodeLocation(c.latitude, c.longitude);
+              if (displayName) setForm((p) => ({ ...p, address: displayName }));
+            }
+          }}
+          onClose={() => setMapVisible(false)}
+        />
       </View>
     </Modal>
   );
@@ -137,4 +171,5 @@ const styles = StyleSheet.create({
   defaultLabel: { fontSize: 13, fontWeight: '500' },
   saveBtn:      { borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 8 },
   saveBtnText:  { color: '#fff', fontSize: 15, fontWeight: '700' },
+  mapBtn:       { borderWidth: 1.5, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
 });

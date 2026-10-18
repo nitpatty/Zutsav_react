@@ -6,8 +6,13 @@
  * address cards (orange highlight ring) so it blends into the existing
  * Temple form without introducing a new design language.
  *
- * Props:
+ * Props (all optional except onSelect in practice):
  *   onSelect   – ({ label, lat, lng }) => void   fired when a suggestion is chosen
+ *   value      – controlled input text; omit to keep the internal query state
+ *   onChange   – (text) => void   fired on every keystroke (controlled or not)
+ *   disabled   – disables the input (e.g. while saving)
+ *   label      – field label (default 'Search Location')
+ *   helperText – helper line under the input (default copy mentions the fields below)
  *   placeholder– input placeholder text
  */
 import React, { useEffect, useRef, useState } from 'react';
@@ -17,8 +22,18 @@ import { autocompletePlaces } from '../../services/geocodingService';
 const DEBOUNCE_MS = 350;
 const MIN_QUERY_LENGTH = 3;
 
-export default function LocationSearch({ onSelect, placeholder = 'Search a temple, city, or address…' }) {
-  const [query, setQuery]         = useState('');
+export default function LocationSearch({
+  onSelect,
+  value,
+  onChange,
+  disabled = false,
+  label = 'Search Location',
+  helperText,
+  placeholder = 'Search a temple, city, or address…',
+}) {
+  const [internalQuery, setInternalQuery] = useState('');
+  const isControlled = value !== undefined;
+  const query = isControlled ? value : internalQuery;
   const [results, setResults]     = useState([]);
   const [open, setOpen]           = useState(false);
   const [loading, setLoading]     = useState(false);
@@ -26,6 +41,11 @@ export default function LocationSearch({ onSelect, placeholder = 'Search a templ
   const wrapRef    = useRef(null);
   const abortRef   = useRef(null);
   const debounceRef = useRef(null);
+
+  const setQuery = (text) => {
+    if (!isControlled) setInternalQuery(text);
+    onChange && onChange(text);
+  };
 
   useEffect(() => () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -42,14 +62,14 @@ export default function LocationSearch({ onSelect, placeholder = 'Search a templ
   }, []);
 
   const handleChange = (e) => {
-    const value = e.target.value;
-    setQuery(value);
+    const next = e.target.value;
+    setQuery(next);
     setHighlighted(-1);
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (abortRef.current) abortRef.current.abort();
 
-    if (value.trim().length < MIN_QUERY_LENGTH) {
+    if (next.trim().length < MIN_QUERY_LENGTH) {
       setResults([]);
       setOpen(false);
       setLoading(false);
@@ -60,7 +80,7 @@ export default function LocationSearch({ onSelect, placeholder = 'Search a templ
     debounceRef.current = setTimeout(async () => {
       const controller = new AbortController();
       abortRef.current = controller;
-      const res = await autocompletePlaces(value, { signal: controller.signal });
+      const res = await autocompletePlaces(next, { signal: controller.signal });
       if (res.aborted) return; // superseded by newer typing — ignore stale response
       setLoading(false);
       if (res.found && res.results.length > 0) {
@@ -77,7 +97,7 @@ export default function LocationSearch({ onSelect, placeholder = 'Search a templ
     setQuery(r.label);
     setOpen(false);
     setResults([]);
-    onSelect && onSelect({ label: r.label, lat: r.lat, lng: r.lng });
+    onSelect && onSelect({ label: r.label, lat: r.lat, lng: r.lng, components: r.components || {} });
   };
 
   const onKeyDown = (e) => {
@@ -90,7 +110,7 @@ export default function LocationSearch({ onSelect, placeholder = 'Search a templ
 
   return (
     <div ref={wrapRef} className="relative">
-      <label className="label">Search Location</label>
+      <label className="label">{label}</label>
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-saffron-400" />
         <input
@@ -99,6 +119,7 @@ export default function LocationSearch({ onSelect, placeholder = 'Search a templ
           onChange={handleChange}
           onKeyDown={onKeyDown}
           onFocus={() => { if (results.length > 0) setOpen(true); }}
+          disabled={disabled}
           autoComplete="off"
           placeholder={placeholder}
         />
@@ -107,7 +128,7 @@ export default function LocationSearch({ onSelect, placeholder = 'Search a templ
         )}
       </div>
       <p className="text-xs text-gray-400 mt-1">
-        Type at least {MIN_QUERY_LENGTH} characters, then pick a suggestion — or fill the fields below manually.
+        {helperText || `Type at least ${MIN_QUERY_LENGTH} characters, then pick a suggestion — or fill the fields below manually.`}
       </p>
 
       {open && !loading && (

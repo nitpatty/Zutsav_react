@@ -14,9 +14,17 @@ app.get('/', (req, res) => {
   res.send('Zutsav backend is running ✅');
 });
 
-// ✅ Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date() });
+// ✅ Health check — includes Ola Maps provider availability (secret-free:
+//    auth mode + timestamps only, never credentials or tokens).
+app.get('/api/health', async (req, res) => {
+  let location = null;
+  try {
+    const locationService = require('./services/locationService');
+    location = await locationService.getProviderHealth();
+  } catch {
+    location = { provider: 'ola-maps', error: 'health-unavailable' };
+  }
+  res.json({ status: 'ok', timestamp: new Date(), location });
 });
 
 // ✅ Security
