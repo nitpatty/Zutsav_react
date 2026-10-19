@@ -439,10 +439,15 @@ exports.createOrder = async (req, res, next) => {
 exports.verifyPhonePeOrder = async (req, res, next) => {
   try {
     const { merchantTransactionId } = req.params;
-    const result = await checkPhonePeStatus(merchantTransactionId);
 
+    // Resolve and authorize BEFORE consulting the gateway: only the owner of
+    // the order may inspect or advance its payment state.
     const order = await Order.findOne({ phonePeMerchantTransactionId: merchantTransactionId });
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    if (String(order.userId) !== String(req.user._id))
+      return res.status(403).json({ success: false, message: 'Access denied' });
+
+    const result = await checkPhonePeStatus(merchantTransactionId);
 
     if (result.success && order.status === 'pending_payment') {
       order.status = 'paid';

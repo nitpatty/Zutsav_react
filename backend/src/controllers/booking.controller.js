@@ -28,6 +28,7 @@ const { normalizeBookingPayload } = require('../../notification-engine/variables
 const { resolveApprovedPayoutAmount } = require('../utils/payoutUtils');
 const OtpService = require('../../notification-engine/otp/OtpService');
 const bookingDateRules = require('../utils/bookingDateRules');
+const { notifyPanditScheduleChanged } = require('../services/panditScheduleService');
 
 // ── Pricing engine (delegates to the centralized financeUtils engine) ─────────
 async function calculatePricing(pooja, kitPrice = 0, urgent = false) {
@@ -143,6 +144,17 @@ async function onFinalPaymentSuccess(booking, poojaName) {
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
+
+// POST /api/bookings/create-order + POST /api/bookings/verify-payment — DISABLED (410)
+// Legacy Razorpay flow deactivated per docs/RAZORPAY_LEGACY_SECURITY_AUDIT.md
+// (findings RZP-01…RZP-08). booking.routes.js registers this handler in place of
+// the two legacy handlers below, so no pricing, Razorpay order creation, signature
+// verification, booking mutation, notification, or payment-state logic is executed
+// on these paths. Full removal of the legacy handlers is a separate, explicitly
+// approved change.
+exports.legacyRazorpayGone = async (req, res) => {
+  res.status(410).json({ success: false, message: 'Razorpay payments are no longer supported. Use PhonePe.' });
+};
 
 // POST /api/bookings/create-order  (Razorpay — legacy)
 exports.createBookingOrder = async (req, res, next) => {
@@ -473,6 +485,11 @@ exports.verifyPhonePePayment = async (req, res, next) => {
 
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
+    // Only the customer who owns this booking may inspect or advance its
+    // payment state — a predictable transaction ID is not authorization.
+    if (String(booking.userId) !== String(req.user._id))
+      return res.status(403).json({ success: false, message: 'Access denied' });
+
     // Already fully processed
     if (['FULLY_PAID', 'PARTIALLY_PAID'].includes(booking.paymentStatus) && booking.status === 'paid') {
       return res.json({ success: true, booking, alreadyVerified: true });
@@ -671,6 +688,10 @@ exports.verifyRemainingPayment = async (req, res, next) => {
 
     const booking = await Booking.findById(ledger.bookingId).populate('poojaId', 'name');
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    // Only the owner of the associated booking may verify a remaining payment.
+    if (String(booking.userId) !== String(req.user._id))
+      return res.status(403).json({ success: false, message: 'Access denied' });
 
     // Already processed
     if (booking.paymentStatus === 'FULLY_PAID' && ledger.paymentStatus === 'SUCCESS') {
@@ -954,6 +975,16 @@ exports.cancelBooking = async (req, res, next) => {
       normalizeBookingPayload({ booking, poojaName, refund: { status: 'pending', reason: cancelNote } })
     ).catch(() => {});
 
+    // Cancelling releases the assigned Pandit's slot — nudge their calendar.
+    if (booking.panditId) {
+      notifyPanditScheduleChanged({
+        panditId: booking.panditId,
+        bookingId: booking._id,
+        dateKey: bookingDateRules.toDateString(booking.scheduledDate),
+        reason: 'booking_cancelled',
+      });
+    }
+
     res.json({ success: true, message: 'Booking cancelled successfully', booking, refundBreakdown: refundCalc });
   } catch (err) { next(err); }
 };
@@ -1077,6 +1108,13 @@ exports.requestCompletion = async (req, res, next) => {
       normalizeBookingPayload({ booking, poojaName, otp: rawOtp })
     ).catch(() => {});
 
+    notifyPanditScheduleChanged({
+      panditId: booking.panditId,
+      bookingId: booking._id,
+      dateKey: bookingDateRules.toDateString(booking.scheduledDate),
+      reason: 'completion_requested',
+    });
+
     res.json({ success: true, message: 'OTP sent to user. Ask user to share it with you.' });
   } catch (err) { next(err); }
 };
@@ -1142,6 +1180,13 @@ exports.verifyCompletionOtp = async (req, res, next) => {
     // wallet ledger's unique idempotencyKey.
     poojaLoyaltyService.grantPoojaLoyaltyReward(booking._id)
       .catch((err) => console.error('[Loyalty] Pooja loyalty reward failed:', err.message));
+
+    notifyPanditScheduleChanged({
+      panditId: booking.panditId,
+      bookingId: booking._id,
+      dateKey: bookingDateRules.toDateString(booking.scheduledDate),
+      reason: 'booking_completed',
+    });
 
     res.json({ success: true, message: 'Booking completed successfully', booking });
   } catch (err) { next(err); }

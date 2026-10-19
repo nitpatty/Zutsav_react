@@ -27,7 +27,22 @@ const createNotification = async ({ userId, type, title, message, data = {} }) =
   }
 };
 
+/**
+ * Emit an arbitrary realtime event to a single user's room. Used for
+ * lightweight, targeted cache-invalidation signals (e.g. the Pandit
+ * availability calendar) that are not user-facing notifications and therefore
+ * must not be persisted or shown in the notification bell.
+ *
+ * Returns true when a Socket.IO server is attached and the emit happened.
+ */
+const emitToUser = (userId, event, payload = {}) => {
+  if (!_io || !userId) return false;
+  _io.to(`user_${userId.toString()}`).emit(event, payload);
+  return true;
+};
+
 module.exports = {
   setIO,
   createNotification,
+  emitToUser,
 };

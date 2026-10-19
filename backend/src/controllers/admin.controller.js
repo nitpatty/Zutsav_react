@@ -40,9 +40,23 @@ const userReferralService = require('../services/userReferralService');
 const poojaLoyaltyService = require('../services/poojaLoyaltyService');
 const {
   loadEligiblePanditForBooking,
+  assertPanditAvailableForAssignment,
+  isPanditAvailableForAssignment,
   PANDIT_BOOKING_ELIGIBILITY_FILTER,
+  PANDIT_BOOKING_AVAILABILITY_FILTER,
+  PANDIT_NOT_AVAILABLE,
+  PANDIT_NOT_AVAILABLE_MESSAGE,
+  PanditEligibilityError,
   withBookingEligibility,
 } = require('../services/panditEligibilityService');
+const {
+  durationMinutesFromPooja,
+  findConflictingBooking,
+  describeConflict,
+  withPanditDateLock,
+  notifyPanditScheduleChanged,
+} = require('../services/panditScheduleService');
+const { toDateString } = require('../utils/bookingDateRules');
 
 const BOOKING_STATUS_LABEL = {
   pending_payment:      'Pending Payment',
@@ -1562,8 +1576,13 @@ exports.getAvailablePandits = async (req, res, next) => {
         return false;
       }
 
-      // 1. Global availability toggle
-      if (p.isAvailableForBookings === false) return false;
+      // 1. Online/availability gate — the SAME authoritative flags the Pandit
+      //    Dashboard uses for its Online/Offline badge (`isOnline`) plus the
+      //    master booking switch (`isAvailableForBookings`). A pandit shown
+      //    as Offline must never be offered as an assignable candidate, even
+      //    when KYC-approved and in coverage — "in coverage" is geographic
+      //    eligibility only and does NOT override the Offline status.
+      if (!isPanditAvailableForAssignment(p)) return false;
 
       // 2. Check leaves / blocked periods
       const isOnLeave = p.blockedPeriods.some(
@@ -1689,10 +1708,11 @@ exports.searchPandits = async (req, res, next) => {
     const regex = new RegExp(q.trim(), 'i');
 
     // Restrict to pandits the assignment gate will actually accept, so an
-    // admin cannot search out and select a KYC-unapproved pandit. This is UI
-    // convenience only — assignPandit re-validates authoritatively.
+    // admin cannot search out and select a KYC-unapproved OR Offline pandit.
+    // This is UI convenience only — assignPandit re-validates authoritatively.
     const pandits = await Pandit.find({
       ...PANDIT_BOOKING_ELIGIBILITY_FILTER,
+      ...PANDIT_BOOKING_AVAILABILITY_FILTER,
       $or: [{ name: regex }, { phone: regex }, { email: regex }],
     })
       .populate('userId', 'name profilePhoto')
@@ -1733,7 +1753,14 @@ exports.assignPandit = async (req, res, next) => {
     // can never leave partial state behind.
     const pandit = await loadEligiblePanditForBooking(panditId);
 
-    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name');
+    // Authoritative availability gate (fresh load): a pandit the Pandit
+    // Dashboard shows as Offline — or who turned the master booking switch
+    // off — may not receive a new assignment/reassignment. Values are read
+    // from the server-side Pandit record only; any isOnline/available flag in
+    // the request body is ignored.
+    assertPanditAvailableForAssignment(pandit);
+
+    const booking = await Booking.findById(req.params.id).populate('poojaId', 'name durationValue durationUnit');
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
     // Only allow assignment from valid pre-assignment states
@@ -1757,20 +1784,70 @@ exports.assignPandit = async (req, res, next) => {
       ? 'manual_search'
       : 'nearby_recommendation';
 
-    booking.panditId = panditId;
-    booking.status = 'pandit_assigned';
-    booking.panditAssignedAt = new Date();
-    booking.auditLog.push({
-      action:          'pandit_assigned',
-      performedBy:     req.user._id,
-      performedByName: req.user.name || 'Admin',
-      note:            `Assigned pandit: ${pandit.name} (Method: ${assignmentMethod === 'manual_search' ? 'Manual Search' : 'Nearby Recommendation'})`,
-      at:              new Date(),
-    });
-    await booking.save();
+    // The booking's own calendar day drives both the conflict check and the
+    // per-day lock key, so this assignment cannot race an accept/assign for the
+    // same Pandit on the same day.
+    const scheduleDateKey = toDateString(booking.scheduledDate);
+    const scheduleDurationMinutes = durationMinutesFromPooja(booking.poojaId);
 
-    // Update pandit total bookings
-    await Pandit.findByIdAndUpdate(panditId, { $inc: { totalBookings: 1 } });
+    const outcome = await withPanditDateLock(panditId, scheduleDateKey, async () => {
+      // True time-overlap gate: block only when another occupying booking of
+      // this Pandit overlaps [scheduledTime, scheduledTime + duration).
+      // Bookings at different times on the same day remain assignable.
+      const conflict = await findConflictingBooking({
+        panditId,
+        dateKey: scheduleDateKey,
+        scheduledTime: booking.scheduledTime,
+        durationMinutes: scheduleDurationMinutes,
+        excludeBookingId: booking._id,
+      });
+      if (conflict) return { conflict };
+
+      // Atomic availability re-validation + the existing totalBookings
+      // increment in ONE conditional update: the assignment only proceeds if
+      // the pandit's authoritative record is STILL Online/available at this
+      // exact moment. This closes the race where a pandit goes Offline after
+      // appearing in candidate discovery (or between the load above and this
+      // write) — a stale candidate result can no longer be assigned.
+      const panditAfterGate = await Pandit.findOneAndUpdate(
+        { _id: panditId, isOnline: true, isAvailableForBookings: { $ne: false } },
+        { $inc: { totalBookings: 1 } },
+        { new: true },
+      );
+      if (!panditAfterGate) {
+        throw new PanditEligibilityError(PANDIT_NOT_AVAILABLE_MESSAGE, {
+          code: PANDIT_NOT_AVAILABLE,
+        });
+      }
+
+      try {
+        booking.panditId = panditId;
+        booking.status = 'pandit_assigned';
+        booking.panditAssignedAt = new Date();
+        booking.auditLog.push({
+          action:          'pandit_assigned',
+          performedBy:     req.user._id,
+          performedByName: req.user.name || 'Admin',
+          note:            `Assigned pandit: ${pandit.name} (Method: ${assignmentMethod === 'manual_search' ? 'Manual Search' : 'Nearby Recommendation'})`,
+          at:              new Date(),
+        });
+        await booking.save();
+      } catch (saveErr) {
+        // Roll the counter back so a failed booking save leaves no partial state.
+        await Pandit.updateOne({ _id: panditId }, { $inc: { totalBookings: -1 } });
+        throw saveErr;
+      }
+      return { ok: true };
+    });
+
+    if (outcome.conflict) {
+      return res.status(409).json({
+        success: false,
+        code: 'BOOKING_TIME_CONFLICT',
+        message: describeConflict(outcome.conflict, scheduleDateKey),
+        data: { conflict: outcome.conflict },
+      });
+    }
 
     const poojaNameForNotif = booking.poojaId?.name || 'Pooja';
 
@@ -1778,6 +1855,13 @@ exports.assignPandit = async (req, res, next) => {
       'PANDIT_ASSIGNMENT_PENDING',
       normalizeBookingPayload({ booking, pandit, poojaName: poojaNameForNotif })
     ).catch(() => {});
+
+    notifyPanditScheduleChanged({
+      panditId,
+      bookingId: booking._id,
+      dateKey: scheduleDateKey,
+      reason: 'booking_assigned',
+    });
 
     res.json({ success: true, booking });
   } catch (err) {
@@ -1837,6 +1921,18 @@ exports.updateBookingStatus = async (req, res, next) => {
       at:              new Date(),
     });
     await booking.save();
+
+    // Refresh the assigned Pandit's calendar on any occupancy-relevant change.
+    // Fired only when a pandit is still attached (cancellations/reassignments
+    // that clear panditId already push their own signal from the pandit side).
+    if (booking.panditId) {
+      notifyPanditScheduleChanged({
+        panditId: booking.panditId,
+        bookingId: booking._id,
+        dateKey: toDateString(booking.scheduledDate),
+        reason: 'booking_status_changed',
+      });
+    }
 
     audit(req, {
       module: 'booking', action: 'update_booking_status',

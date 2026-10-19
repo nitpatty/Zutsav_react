@@ -68,8 +68,8 @@ const check = (c, m) => { if (!ok(c, m)) failures++; };
   const pUser = await User.create({ name: 'Ramesh Sharma', email: 'ramesh@smoke.test', phone: '9003000001', password: 'hashed123', role: 'pandit' });
   const p2User= await User.create({ name: 'Suresh Kumar',  email: 'suresh@smoke.test', phone: '9003000002', password: 'hashed123', role: 'pandit' });
 
-  const pandit = await Pandit.create({ userId: pUser._id,  name: 'Ramesh Sharma', phone: '9003000001', email: 'ramesh@smoke.test', status: 'approved', canReceiveBookings: true });
-  const pandit2= await Pandit.create({ userId: p2User._id, name: 'Suresh Kumar',  phone: '9003000002', email: 'suresh@smoke.test', status: 'approved', canReceiveBookings: true });
+  const pandit = await Pandit.create({ userId: pUser._id,  name: 'Ramesh Sharma', phone: '9003000001', email: 'ramesh@smoke.test', status: 'approved', canReceiveBookings: true, isOnline: true });
+  const pandit2= await Pandit.create({ userId: p2User._id, name: 'Suresh Kumar',  phone: '9003000002', email: 'suresh@smoke.test', status: 'approved', canReceiveBookings: true, isOnline: true });
   const pooja  = await Pooja.create({ name: 'Ganesh Pooja', slug: 'ganesh-smoke', price: 1000, createdByRole: 'admin', approvalStatus: 'approved', isActive: true });
 
   // Install the real mappings so the engine finds them.

@@ -10,8 +10,13 @@ router.get('/pricing-preview', ctrl.getPricingPreview);
 
 router.use(protect);
 
-router.post('/create-order',           ctrl.createBookingOrder);
-router.post('/verify-payment',         ctrl.verifyPayment);
+// Legacy Razorpay endpoints — deactivated with HTTP 410
+// (docs/RAZORPAY_LEGACY_SECURITY_AUDIT.md, findings RZP-01…RZP-08). The
+// original handlers remain in booking.controller.js but are no longer
+// registered, so no order creation, signature, booking, notification, or
+// payment-state logic runs on these paths.
+router.post('/create-order',           ctrl.legacyRazorpayGone);
+router.post('/verify-payment',         ctrl.legacyRazorpayGone);
 router.post('/create-phonepe-order',   ctrl.createPhonePeBooking);
 
 // Verify routes MUST come before /:id routes to avoid Express treating literals as ids

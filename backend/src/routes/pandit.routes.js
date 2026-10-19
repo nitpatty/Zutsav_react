@@ -16,6 +16,7 @@ router.use(protect, authorize('pandit', 'admin'));
 router.get('/me',                    ctrl.getMyProfile);
 router.get('/me/dashboard',          ctrl.getMyDashboard);
 router.get('/me/bookings',           ctrl.getMyBookings);
+router.get('/me/schedule-calendar',  ctrl.getScheduleCalendar);
 router.get('/me/ratings',            ctrl.getRatingHistory);
 router.patch('/me',                  ctrl.updateMyProfile);
 router.patch('/me/personal',         ctrl.updatePersonalInfo);

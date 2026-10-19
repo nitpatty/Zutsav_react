@@ -1,6 +1,6 @@
 # Notification Mappings Bootstrap Report
 
-Generated: 2026-09-27T15:28:31.287Z
+Generated: 2026-10-18T12:09:40.585Z
 Bootstrap script version: 1.3.0
 Database: zutsav @ localhost
 
@@ -8,11 +8,11 @@ Database: zutsav @ localhost
 
 | Outcome | Count |
 |---|---|
-| Created (mapping didn't exist) | 1 |
+| Created (mapping didn't exist) | 0 |
 | Configured (existed, was blank) | 0 |
 | Corrected (known-wrong legacy template) | 0 |
 | Corrected (known-wrong legacy variable mapping) | 0 |
-| Already correct (matches reference exactly) | 46 |
+| Already correct (matches reference exactly) | 47 |
 | Preserved (existing custom configuration, untouched) | 0 |
 | **Total WhatsApp mappings processed** | **47** |
 
@@ -20,9 +20,9 @@ Database: zutsav @ localhost
 
 | Outcome | Count |
 |---|---|
-| Created | 1 |
+| Created | 0 |
 | Configured (existed, was blank) | 0 |
-| Already correct | 4 |
+| Already correct | 5 |
 | Preserved (existing custom content, untouched) | 0 |
 | **Total Email mappings processed** | **5** |
 
@@ -30,9 +30,9 @@ Database: zutsav @ localhost
 
 | Outcome | Count |
 |---|---|
-| Created | 1 |
+| Created | 0 |
 | Configured (existed, was blank) | 0 |
-| Already correct | 2 |
+| Already correct | 3 |
 | Preserved (existing custom content, untouched) | 0 |
 | **Total In-App mappings processed** | **3** |
 
@@ -48,13 +48,13 @@ content — an administrator-set purpose is never overwritten.
 
 | Outcome | Count |
 |---|---|
-| Created with purpose | 3 |
+| Created with purpose | 0 |
 | Purpose set (was blank) | 0 |
-| Purpose matches verified | 52 |
+| Purpose matches verified | 55 |
 | Purpose preserved (admin customization, untouched) | 0 |
 
 ## Created — WhatsApp
-- `PANDIT_CANCELLED` / admin (`6ab9361f1b32aa55f0a8edb6`) → `pandit_cancelled_admin` — purpose: BOOKING
+_none_
 
 ## Configured (filled in blank whatsappVariables) — WhatsApp
 _none_
@@ -69,7 +69,7 @@ _none_
 _none_
 
 ## Created — Email
-- `PANDIT_CANCELLED` / admin (`6ab9361f1b32aa55f0a8edc6`) → "Action required: Pandit cancelled an accepted booking (#{{booking.number}})" — purpose: BOOKING
+_none_
 
 ## Configured (filled in blank subject/HTML) — Email
 _none_
@@ -78,7 +78,7 @@ _none_
 _none_
 
 ## Created — In-App
-- `PANDIT_CANCELLED` / admin (`6ab9361f1b32aa55f0a8edcf`) → `pandit_cancelled` — purpose: BOOKING
+_none_
 
 ## Configured (filled in blank title/message) — In-App
 _none_
@@ -93,7 +93,7 @@ unresolved even after bootstrap ran) — reusing the same startup validator
 notification-engine/bootstrap.js uses, not a separate check. Note this check
 is WhatsApp-specific (Email/In-App have no Meta template to validate against):
 
-- [PANDIT_CANCELLED / admin] template "pandit_cancelled_admin" not found in the synced WhatsAppTemplate collection — has the Meta template sync run in this environment?
+_none — every enabled WhatsApp mapping in this database resolves correctly._
 
 ---
 This report is regenerated every time `bootstrapNotificationMappings.js` runs and reflects only the most recent run.

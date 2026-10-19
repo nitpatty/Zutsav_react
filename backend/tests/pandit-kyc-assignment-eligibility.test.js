@@ -157,7 +157,13 @@ async function makePandit(name, { status = 'approved', kycStatus, canReceiveBook
   });
   return Pandit.create({
     userId: user._id, name, phone, email: user.email,
-    status, kycStatus, canReceiveBookings, ...extra,
+    status, kycStatus, canReceiveBookings,
+    // Eligible-pandit fixtures must also satisfy the assignment AVAILABILITY
+    // gate (isOnline === true), added for the Offline-candidate bug. This
+    // suite is about the KYC gate: KYC-ineligible cases still fail at the
+    // KYC gate regardless of online status, so nothing here is weakened.
+    isOnline: true,
+    ...extra,
   });
 }
 

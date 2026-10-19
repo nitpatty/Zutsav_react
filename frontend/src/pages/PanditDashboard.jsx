@@ -12,7 +12,8 @@ import toast from 'react-hot-toast';
 import API from '../api/axios';
 import AvailabilityManager from '../components/availability/AvailabilityManager';
 import { formatDuration } from '../utils/durationFormatter';
-import { todayIST, addDays, toDateString } from '../utils/bookingDateRules';
+import { todayIST, addDays, toDateString, formatDateLabel } from '../utils/bookingDateRules';
+import usePanditScheduleSync from '../hooks/usePanditScheduleSync';
 
 const KYC_STATUS_CONFIG = {
   not_submitted:     { label: 'Not Submitted',     color: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400'    },
@@ -626,6 +627,10 @@ function BookingsTab() {
   const [submittingCancel, setSubmittingCancel] = useState(false);
   const [otpValues,        setOtpValues]        = useState({});  // bookingId → otp string
   const [verifyingOtp,     setVerifyingOtp]     = useState(null);
+  // Authoritative "what is on my plate TODAY" from the schedule-calendar
+  // endpoint — independent of the status filter chips below, so the same-day
+  // notice never disappears just because a filter is active.
+  const [todayDay,         setTodayDay]         = useState(null);
 
   const QUICK_REASONS = ['Already booked on that date', 'Out of station', 'Medical emergency', 'Personal reason', 'Other'];
 
@@ -661,6 +666,19 @@ function BookingsTab() {
       .catch(() => toast.error('Could not load bookings'))
       .finally(() => setLoading(false));
   }, [statusFilter]);
+
+  const loadToday = useCallback(() => {
+    const key = todayIST();
+    API.get(`/pandits/me/schedule-calendar?from=${key}&to=${key}`)
+      .then(({ data }) => setTodayDay(data.days?.[0] || null))
+      .catch(() => { /* non-critical */ });
+  }, []);
+
+  useEffect(() => { loadToday(); }, [loadToday]);
+
+  // Live refresh on `pandit_schedule_changed` (assignment/acceptance/cancel
+  // happening elsewhere) plus the socket-down fallbacks — see the hook.
+  usePanditScheduleSync(() => { load(); loadToday(); });
 
   const handleAccept = async (bookingId) => {
     setAccepting(bookingId);
@@ -739,6 +757,17 @@ function BookingsTab() {
 
   useEffect(() => { load(); }, [load]);
 
+  /** 'HH:mm' minutes → 'h:mm AM/PM' for the same-day notice rows. */
+  const minsTo12h = (mins) => {
+    const h24 = Math.floor(mins / 60) % 24;
+    const m = mins % 60;
+    const period = h24 >= 12 ? 'PM' : 'AM';
+    const h = h24 % 12 || 12;
+    return `${h}:${String(m).padStart(2, '0')} ${period}`;
+  };
+
+  const sameDayBookings = (todayDay?.bookings || []).filter((b) => b.status !== 'completed');
+
   if (loading) return (
     <div className="space-y-3 animate-pulse">
       {[1,2,3].map((i) => <div key={i} className="h-28 bg-white rounded-2xl border border-gray-100" />)}
@@ -777,6 +806,60 @@ function BookingsTab() {
           </button>
         ))}
       </div>
+
+      {sameDayBookings.length > 0 && (
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+            <p className="font-bold text-amber-800 text-sm">Today · {formatDateLabel(todayDay.date)}</p>
+            <span className="text-[10px] font-bold bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full">
+              {sameDayBookings.length} booking{sameDayBookings.length > 1 ? 's' : ''} today
+            </span>
+          </div>
+
+          {todayDay.scheduleConflict && (
+            <p className="text-[11px] text-red-600 mb-2 flex items-center gap-1">
+              <AlertTriangle size={12} /> A booking falls on a day marked unavailable/leave — review your availability.
+            </p>
+          )}
+
+          <div className="space-y-2">
+            {sameDayBookings.map((b) => {
+              const meta = BOOKING_STATUS_META[b.status] || { label: b.status, color: 'bg-gray-100 text-gray-600' };
+              const inList = bookings.some((x) => x._id === b._id);
+              const range = (b.startMinutes != null && b.endMinutes != null)
+                ? `${minsTo12h(b.startMinutes)} – ${minsTo12h(b.endMinutes)}`
+                : (b.scheduledTime || '');
+              return (
+                <div key={b._id} className="bg-white/80 border border-amber-100 rounded-xl p-3 flex items-center gap-3 flex-wrap">
+                  <div className="text-xs font-bold text-amber-700 w-32 shrink-0">{range}</div>
+                  <div className="flex-1 min-w-[140px]">
+                    <p className="text-sm font-semibold text-gray-800">{b.poojaName || 'Pooja'}</p>
+                    <p className="text-[11px] text-gray-500">
+                      {b.customerName || '—'}{b.bookingNumber ? ` · #${b.bookingNumber}` : ''}
+                    </p>
+                  </div>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>
+                  <div className="flex gap-2">
+                    {b.actionable && (
+                      <button onClick={() => handleAccept(b._id)} disabled={accepting === b._id}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors">
+                        {accepting === b._id ? 'Accepting…' : '✓ Accept'}
+                      </button>
+                    )}
+                    {inList && (
+                      <button onClick={() => setExpanded(expanded === b._id ? null : b._id)}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors">
+                        Details
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {bookings.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-2xl border border-gray-100">

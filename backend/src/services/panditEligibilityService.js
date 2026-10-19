@@ -41,6 +41,14 @@
  * USAGE — every booking-assignment path must call assertPanditEligibleForBooking
  * BEFORE any write (booking mutation, assignment status, timestamps, audit
  * entries, notifications).
+ *
+ * SECOND DIMENSION — AVAILABILITY (added for the Offline-candidate bug):
+ * KYC eligibility above answers "is this pandit APPROVED to receive work?".
+ * It does NOT answer "is this pandit currently AVAILABLE for a new
+ * assignment?". That is governed by `isOnline` (the dashboard Online/Offline
+ * badge) and the `isAvailableForBookings` master switch — see the
+ * AVAILABILITY GATE section below. Both dimensions must hold before an
+ * assignment/reassignment write is allowed.
  */
 
 /** Machine-readable business error code. Follows the existing `code` field
@@ -114,6 +122,55 @@ function assertPanditEligibleForBooking(pandit) {
   throw new PanditEligibilityError(PANDIT_NOT_APPROVED_MESSAGE, {});
 }
 
+/** ── AVAILABILITY GATE (Online/Offline + master booking switch) ────────────
+ *
+ * Separate dimension from KYC eligibility above: a pandit can be fully
+ * KYC-approved yet shown as **Offline** on the Pandit Dashboard.
+ *
+ * The dashboard Online/Offline badge (web PanditDashboard.jsx, mobile
+ * PanditDashboardScreen.jsx) reads `Pandit.isOnline`, toggled via
+ * PATCH /api/pandits/me/online-status. The dashboard renders "Offline" for
+ * ANY falsy value — including a missing field — so the assignment rule is
+ * fail-closed: only an explicit `isOnline === true` counts as Online.
+ *
+ * `isAvailableForBookings` is the pandit's separate master switch
+ * ("turn off to stop receiving new bookings"). Candidate discovery already
+ * excluded explicit `false`; it is enforced here at write time as well.
+ *
+ * Neither flag is ever trusted from the client request body — both are read
+ * from the authoritative server-side Pandit record only.
+ */
+const PANDIT_NOT_AVAILABLE = 'PANDIT_NOT_AVAILABLE';
+
+const PANDIT_NOT_AVAILABLE_MESSAGE =
+  'Pandit is currently offline or unavailable for new bookings and cannot be assigned.';
+
+/**
+ * The authoritative availability rule. Mirrors the dashboard badge exactly
+ * for `isOnline` (fail-closed on missing/unknown) and honours the master
+ * booking switch for `isAvailableForBookings` (only an explicit false
+ * excludes, matching the pre-existing getAvailablePandits filter).
+ */
+function isPanditAvailableForAssignment(pandit) {
+  if (!pandit) return false;
+  if (pandit.isOnline !== true) return false;
+  return pandit.isAvailableForBookings !== false;
+}
+
+/**
+ * Throws PanditEligibilityError when the pandit may not receive a NEW
+ * assignment because they are Offline or the master switch is off.
+ * Callers MUST invoke this (or the atomic conditional update) before
+ * performing any assignment mutation. Reuses PanditEligibilityError so the
+ * global error handler renders the same clean 400 JSON body as the KYC gate.
+ */
+function assertPanditAvailableForAssignment(pandit) {
+  if (isPanditAvailableForAssignment(pandit)) return pandit;
+  throw new PanditEligibilityError(PANDIT_NOT_AVAILABLE_MESSAGE, {
+    code: PANDIT_NOT_AVAILABLE,
+  });
+}
+
 /** 24-char hex ObjectId shape check. A malformed id is a client error (400),
  *  not a server error — without this guard `Pandit.findById` throws a CastError
  *  that surfaces as a 500. */
@@ -152,6 +209,21 @@ const PANDIT_BOOKING_ELIGIBILITY_FILTER = {
 };
 
 /**
+ * Mongo query fragment matching exactly the set of pandits that
+ * assertPanditAvailableForAssignment will accept. Spread into
+ * listing/search queries so an Offline pandit can never even *be seen* as an
+ * assignable candidate. `$ne: false` deliberately matches a missing field
+ * (legacy pandits predate the master switch; only an explicit false excludes).
+ *
+ * This is UI convenience only — it is NOT the security boundary. The
+ * authoritative boundary is the atomic conditional update in assignPandit.
+ */
+const PANDIT_BOOKING_AVAILABILITY_FILTER = {
+  isOnline: true,
+  isAvailableForBookings: { $ne: false },
+};
+
+/**
  * Annotates a pandit payload with the eligibility verdict so admin UIs can
  * mark an ineligible pandit as "KYC not approved" and disable the action
  * without the client having to re-derive the rule.
@@ -166,12 +238,17 @@ module.exports = {
   PANDIT_KYC_NOT_APPROVED,
   PANDIT_KYC_NOT_APPROVED_MESSAGE,
   PANDIT_NOT_APPROVED_MESSAGE,
+  PANDIT_NOT_AVAILABLE,
+  PANDIT_NOT_AVAILABLE_MESSAGE,
   PANDIT_BOOKING_ELIGIBILITY_FILTER,
+  PANDIT_BOOKING_AVAILABILITY_FILTER,
   PanditEligibilityError,
   isPanditEligibleForBooking,
   getPanditIneligibilityReason,
   assertPanditEligibleForBooking,
   loadEligiblePanditForBooking,
+  isPanditAvailableForAssignment,
+  assertPanditAvailableForAssignment,
   isValidPanditId,
   withBookingEligibility,
 };

@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   Calendar, Clock, Plus, Trash2, AlertCircle, CheckCircle,
-  ChevronLeft, ChevronRight, BookOpen, MapPin,
+  ChevronLeft, ChevronRight, BookOpen, MapPin, AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import API from '../../api/axios';
 import { fmtTime } from '../booking/constants';
+import usePanditScheduleSync from '../../hooks/usePanditScheduleSync';
+import { toDateString, todayIST, formatDateLabel } from '../../utils/bookingDateRules';
 
 // ─── Constants ────────────────────────────────────────────────
 const DAYS = [
@@ -18,7 +20,23 @@ const DAYS = [
   { dayOfWeek: 0, label: 'Sunday',    short: 'Sun' },
 ];
 
+/** Booking statuses shown in Upcoming Bookings — an assigned pandit's
+ *  actionable/occupying work (matches the backend occupancy set). */
+const UPCOMING_STATUSES = ['pandit_assigned', 'pandit_accepted', 'completion_requested'];
+
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+/** First/last 'YYYY-MM-DD' of a displayed month (UTC date math, TZ-safe). */
+const monthRangeKeys = (year, month) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return {
+    from: `${year}-${pad(month + 1)}-01`,
+    to: `${year}-${pad(month + 1)}-${pad(lastDay)}`,
+  };
+};
+
+const pad2 = (n) => String(n).padStart(2, '0');
 
 const DEFAULT_SCHEDULE = DAYS.map(({ dayOfWeek }) => ({
   dayOfWeek,
@@ -484,69 +502,14 @@ function LeavesTab({ pandit, onSave }) {
 }
 
 // ─── MINI CALENDAR ────────────────────────────────────────────
-function MiniCalendar({ pandit, bookings }) {
-  const today = new Date();
-  const [year,  setYear]  = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth());
+// Renders the AUTHORITATIVE per-day status from GET /pandits/me/schedule-calendar
+// (daysMap keyed by 'YYYY-MM-DD') instead of re-deriving availability locally,
+// so the grid always matches what the backend conflict gate enforces.
+function MiniCalendar({ year, month, onPrev, onNext, daysMap, selectedKey, onSelectKey }) {
+  const todayKey = todayIST();
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay    = new Date(year, month, 1).getDay();
-
-  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
-  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
-
-  const getDayStatus = useCallback((day) => {
-    const date = new Date(year, month, day);
-    const dayOfWeek = date.getDay();
-    const dayStart = new Date(year, month, day, 0, 0, 0);
-    const dayEnd   = new Date(year, month, day, 23, 59, 59);
-
-    // Check leave (blocked period)
-    const onLeave = pandit.blockedPeriods?.some(
-      (b) => date >= new Date(b.startDate) && date <= new Date(b.endDate)
-    );
-    if (onLeave) return 'leave';
-
-    // Check special date
-    const special = pandit.specialDates?.find(
-      (s) => new Date(s.date) >= dayStart && new Date(s.date) <= dayEnd
-    );
-    if (special) return special.type === 'unavailable' ? 'unavailable' : 'special';
-
-    // Check weekly schedule
-    if (pandit.weeklySchedule?.length > 0) {
-      const sched = pandit.weeklySchedule.find((d) => d.dayOfWeek === dayOfWeek);
-      if (!sched?.enabled) return 'off';
-
-      // Check if partially available (has limited slots)
-      if (sched.slots.length === 1) {
-        const [sh, sm] = sched.slots[0].start.split(':').map(Number);
-        const [eh, em] = sched.slots[0].end.split(':').map(Number);
-        const totalMins = (eh * 60 + em) - (sh * 60 + sm);
-        if (totalMins < 240) return 'limited'; // less than 4 hours = limited
-      }
-      return 'available';
-    }
-
-    // Legacy: check availabilitySlots
-    const hasSlot = pandit.availabilitySlots?.some((slot) => {
-      if (!slot.isActive) return false;
-      const inRange = date >= new Date(slot.startDate) && date <= new Date(slot.endDate);
-      if (!inRange) return false;
-      return slot.daysOfWeek.length === 0 || slot.daysOfWeek.includes(dayOfWeek);
-    });
-    if (hasSlot) return 'available';
-
-    return 'none';
-  }, [pandit, year, month]);
-
-  const hasBooking = useCallback((day) => {
-    const date = new Date(year, month, day);
-    return bookings.some((b) => {
-      const bd = new Date(b.scheduledDate);
-      return bd.getFullYear() === date.getFullYear() && bd.getMonth() === date.getMonth() && bd.getDate() === date.getDate();
-    });
-  }, [bookings, year, month]);
 
   const STATUS_STYLE = {
     available:   'bg-green-100 text-green-700 hover:bg-green-200',
@@ -556,10 +519,11 @@ function MiniCalendar({ pandit, bookings }) {
     special:     'bg-yellow-100 text-yellow-700',
     off:         'text-gray-300',
     none:        'text-gray-300',
+    // A booking occupying an otherwise free/off day: solid booking colour.
+    blue:        'bg-blue-500 text-white hover:bg-blue-600',
   };
 
-  const isToday = (d) =>
-    d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+  const isToday = (key) => key === todayKey;
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-5">
@@ -567,8 +531,8 @@ function MiniCalendar({ pandit, bookings }) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-bold text-gray-800">{MONTH_NAMES[month]} {year}</h3>
         <div className="flex gap-1">
-          <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600"><ChevronLeft size={16} /></button>
-          <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600"><ChevronRight size={16} /></button>
+          <button onClick={onPrev} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600"><ChevronLeft size={16} /></button>
+          <button onClick={onNext} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600"><ChevronRight size={16} /></button>
         </div>
       </div>
 
@@ -583,15 +547,26 @@ function MiniCalendar({ pandit, bookings }) {
       <div className="grid grid-cols-7 gap-0.5">
         {Array(firstDay).fill(null).map((_, i) => <div key={`e${i}`} />)}
         {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => {
-          const status = getDayStatus(d);
-          const booked = hasBooking(d);
+          const key = `${year}-${pad2(month + 1)}-${pad2(d)}`;
+          const day = daysMap[key];
+          const status = day?.status || 'none';
+          const booked = (day?.bookingCount || 0) > 0;
           return (
-            <div key={d} className={`relative aspect-square flex items-center justify-center rounded-lg text-xs font-medium transition-colors ${STATUS_STYLE[status] || 'text-gray-300'} ${isToday(d) ? 'ring-2 ring-saffron-400 ring-offset-1' : ''}`}>
+            <button
+              type="button"
+              key={d}
+              onClick={() => onSelectKey && onSelectKey(key)}
+              title={booked ? `${day.bookingCount} booking${day.bookingCount > 1 ? 's' : ''}` : undefined}
+              className={`relative aspect-square flex items-center justify-center rounded-lg text-xs font-medium transition-colors ${STATUS_STYLE[status] || 'text-gray-300'} ${selectedKey === key ? 'ring-2 ring-saffron-500' : ''} ${isToday(key) ? 'ring-2 ring-saffron-400 ring-offset-1' : ''}`}
+            >
               {d}
               {booked && (
-                <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-500" />
+                <span className="absolute bottom-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-600" />
               )}
-            </div>
+              {day?.scheduleConflict && (
+                <span className="absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full bg-red-600" />
+              )}
+            </button>
           );
         })}
       </div>
@@ -614,17 +589,115 @@ function MiniCalendar({ pandit, bookings }) {
   );
 }
 
+// ─── SELECTED DATE DETAIL ─────────────────────────────────────
+const AVAILABILITY_LABEL = {
+  available:   'Available',
+  limited:     'Limited hours',
+  special:     'Custom hours (special date)',
+  unavailable: 'Unavailable (special date)',
+  leave:       'On leave',
+  off:         'Weekly day off',
+  none:        'No schedule set',
+};
+
+const BOOKING_STATUS_LABEL = {
+  pandit_assigned:      'Awaiting your acceptance',
+  pandit_accepted:      'Accepted',
+  completion_requested: 'Completion requested',
+  completed:            'Completed',
+};
+
+const minsToLabel = (mins) =>
+  mins == null ? null : fmtTime(`${pad2(Math.floor(mins / 60) % 24)}:${pad2(mins % 60)}`);
+
+function SelectedDatePanel({ dateKey, day }) {
+  if (!dateKey) return null;
+  const isToday = dateKey === todayIST();
+  const bookings = day?.bookings || [];
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-5 mt-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-bold text-gray-800 flex items-center gap-2">
+          <Calendar size={17} className="text-saffron-500" />
+          {formatDateLabel(dateKey)}
+          {isToday && <span className="text-xs font-semibold bg-saffron-100 text-saffron-700 px-2 py-0.5 rounded-full">Today</span>}
+        </h3>
+        {day && (
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+            day.availability === 'available' ? 'bg-green-100 text-green-700'
+            : day.availability === 'leave' || day.availability === 'unavailable' ? 'bg-red-100 text-red-600'
+            : day.availability === 'limited' || day.availability === 'special' ? 'bg-yellow-100 text-yellow-700'
+            : 'bg-gray-100 text-gray-600'
+          }`}>
+            {AVAILABILITY_LABEL[day.availability] || day.availability}
+          </span>
+        )}
+      </div>
+
+      {day?.scheduleConflict && (
+        <div className="flex items-start gap-2 p-3 mb-3 rounded-xl bg-red-50 border border-red-100 text-red-700 text-xs">
+          <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+          <span>
+            Conflict: a booking is scheduled on a day marked as leave/unavailable.
+            Update your availability or ask the admin to reassign.
+          </span>
+        </div>
+      )}
+
+      {!day || bookings.length === 0 ? (
+        <div className="text-center py-6 text-gray-400 text-sm">
+          {day ? 'No bookings on this date' : 'No schedule data for this date'}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {bookings.map((b) => {
+            const start = minsToLabel(b.startMinutes);
+            const end   = minsToLabel(b.endMinutes);
+            return (
+              <div key={b._id} className={`flex items-start gap-3 p-3 rounded-xl border ${b.actionable ? 'bg-blue-50 border-blue-100' : 'bg-gray-50 border-gray-100'}`}>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-saffron-50">
+                  <span className="text-base">🪔</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-800 text-sm truncate">{b.poojaName || 'Pooja'}</p>
+                  <p className="text-xs text-gray-500">
+                    {start ? `${start}${end ? ` – ${end}` : ''}` : (b.scheduledTime || 'Time not set')}
+                    {b.customerName ? ` · ${b.customerName}` : ''}
+                  </p>
+                  <p className={`text-xs mt-0.5 font-medium ${b.actionable ? 'text-blue-600' : 'text-gray-400'}`}>
+                    {BOOKING_STATUS_LABEL[b.status] || b.status}
+                    {b.bookingNumber ? ` · #${b.bookingNumber}` : ''}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── UPCOMING BOOKINGS ────────────────────────────────────────
+// Source: GET /api/pandits/me/bookings (the bookings assigned to THIS pandit).
+// The old code called /bookings/my — for a pandit that returns their *customer*
+// bookings (almost always empty), which is why this list used to look dead.
 function UpcomingBookings({ bookings: allBookings, loading }) {
+  const todayKey = todayIST();
   const bookings = (allBookings || [])
-    .filter((b) => ['paid', 'pandit_assigned'].includes(b.status) && new Date(b.scheduledDate) >= new Date())
-    .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
+    .filter((b) => UPCOMING_STATUSES.includes(b.status))
+    // IST-safe "from today onwards": toDateString keeps today's bookings (the
+    // old `new Date(...) >= new Date()` dropped them once midnight passed).
+    .filter((b) => (toDateString(b.scheduledDate) || '') >= todayKey)
+    .sort((a, b) => (toDateString(a.scheduledDate) || '').localeCompare(toDateString(b.scheduledDate) || ''));
 
   const STATUS_COLOR = {
-    paid:            'bg-blue-100 text-blue-700',
-    pandit_assigned: 'bg-purple-100 text-purple-700',
-    completed:       'bg-green-100 text-green-700',
-    cancelled:       'bg-red-100 text-red-700',
+    pandit_assigned:      'bg-purple-100 text-purple-700',
+    pandit_accepted:      'bg-green-100 text-green-700',
+    completion_requested: 'bg-blue-100 text-blue-700',
+    completed:            'bg-green-100 text-green-700',
+    cancelled:            'bg-red-100 text-red-700',
   };
 
   return (
@@ -677,17 +750,59 @@ function UpcomingBookings({ bookings: allBookings, loading }) {
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 export default function AvailabilityManager({ pandit, onReload }) {
+  const today = new Date();
   const [tab,             setTab]             = useState('weekly');
   const [toggling,        setToggling]        = useState(false);
   const [bookings,        setBookings]        = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
+  const [daysMap,         setDaysMap]         = useState({});
+  const [year,            setYear]            = useState(today.getFullYear());
+  const [month,           setMonth]           = useState(today.getMonth());
+  const [selectedKey,     setSelectedKey]     = useState(todayIST());
 
-  useEffect(() => {
-    API.get('/bookings/my?limit=50')
+  // Authoritative bookings assigned to this pandit (Upcoming Bookings panel).
+  const fetchBookings = useCallback(() => {
+    API.get('/pandits/me/bookings?limit=50')
       .then(({ data }) => setBookings(data.bookings || []))
       .catch(() => {})
       .finally(() => setBookingsLoading(false));
   }, []);
+
+  // Per-day statuses + bookings for the displayed month (calendar grid and
+  // selected-date detail come from the SAME response as the conflict gate).
+  const fetchCalendar = useCallback(async (y, m) => {
+    const { from, to } = monthRangeKeys(y, m);
+    try {
+      const { data } = await API.get(`/pandits/me/schedule-calendar?from=${from}&to=${to}`);
+      const map = {};
+      for (const day of data.days || []) map[day.date] = day;
+      setDaysMap(map);
+    } catch {
+      setDaysMap({});
+    }
+  }, []);
+
+  useEffect(() => { fetchBookings(); }, [fetchBookings]);
+  useEffect(() => { fetchCalendar(year, month); }, [year, month, fetchCalendar]);
+
+  const refreshAll = useCallback(() => {
+    fetchBookings();
+    fetchCalendar(year, month);
+  }, [fetchBookings, fetchCalendar, year, month]);
+
+  // Realtime + visibility-driven refetch (see hook for trigger rules).
+  usePanditScheduleSync(refreshAll);
+
+  const shiftMonth = (delta) => {
+    let y = year;
+    let m = month + delta;
+    if (m < 0) { m = 11; y -= 1; }
+    if (m > 11) { m = 0; y += 1; }
+    setYear(y);
+    setMonth(m);
+    const sel = selectedKey;
+    if (sel && sel.slice(0, 7) !== `${y}-${pad2(m + 1)}`) setSelectedKey(null);
+  };
 
   const handleToggle = async (val) => {
     setToggling(true);
@@ -735,7 +850,18 @@ export default function AvailabilityManager({ pandit, onReload }) {
 
       {/* Two-column: calendar + upcoming */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <MiniCalendar pandit={pandit} bookings={bookings} />
+        <div>
+          <MiniCalendar
+            year={year}
+            month={month}
+            onPrev={() => shiftMonth(-1)}
+            onNext={() => shiftMonth(1)}
+            daysMap={daysMap}
+            selectedKey={selectedKey}
+            onSelectKey={setSelectedKey}
+          />
+          <SelectedDatePanel dateKey={selectedKey} day={daysMap[selectedKey]} />
+        </div>
         <UpcomingBookings bookings={bookings} loading={bookingsLoading} />
       </div>
     </div>

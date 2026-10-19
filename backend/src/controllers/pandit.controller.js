@@ -23,6 +23,17 @@ const {
   isValidBookingId,
 } = require('../services/panditCancellationService');
 const { validateCoordinatePair, addressFieldsChanged } = require('../utils/locationValidation');
+const {
+  OCCUPYING_BOOKING_STATUSES,
+  CALENDAR_RELEVANT_STATUSES,
+  buildCalendarDays,
+  durationMinutesFromPooja,
+  findConflictingBooking,
+  describeConflict,
+  withPanditDateLock,
+  notifyPanditScheduleChanged,
+} = require('../services/panditScheduleService');
+const { toDateString } = require('../utils/bookingDateRules');
 
 const KYC_VIEW_SESSION_MS = 5 * 60 * 1000; // 5 minutes, per the retained-document viewing flow
 const KYC_OTP_PURPOSE     = 'kyc_document_view';
@@ -577,31 +588,82 @@ exports.acceptBooking = async (req, res, next) => {
     if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
 
     const booking = await Booking.findOne({ _id: req.params.id, panditId: pandit._id, status: 'pandit_assigned' })
-      .populate('poojaId', 'name');
+      .populate('poojaId', 'name durationValue durationUnit');
     if (!booking) {
       return res.status(404).json({ success: false, message: 'Booking not found, not assigned to you, or cannot be accepted in its current state' });
     }
 
-    booking.status = 'pandit_accepted';
-    booking.auditLog.push({
-      action:          'pandit_accepted',
-      performedBy:     req.user._id,
-      performedByName: pandit.name,
-      note:            'Pandit accepted the booking',
-      at:              new Date(),
+    const dateKey = toDateString(booking.scheduledDate);
+
+    // Check + transition are serialised per (pandit, calendar day), so two
+    // accepts of overlapping bookings cannot both pass the conflict check.
+    const result = await withPanditDateLock(pandit._id, dateKey, async () => {
+      const conflict = await findConflictingBooking({
+        panditId: pandit._id,
+        dateKey,
+        scheduledTime: booking.scheduledTime,
+        durationMinutes: durationMinutesFromPooja(booking.poojaId),
+        excludeBookingId: booking._id,
+      });
+      if (conflict) {
+        return { conflict };
+      }
+
+      // Atomic conditional transition: the status predicate is part of the
+      // query, so a concurrent reject/cancel/admin-change makes this a no-op
+      // instead of resurrecting an invalid state.
+      const updated = await Booking.findOneAndUpdate(
+        { _id: booking._id, panditId: pandit._id, status: 'pandit_assigned' },
+        {
+          $set: { status: 'pandit_accepted' },
+          $push: {
+            auditLog: {
+              action:          'pandit_accepted',
+              performedBy:     req.user._id,
+              performedByName: pandit.name,
+              note:            'Pandit accepted the booking',
+              at:              new Date(),
+            },
+          },
+        },
+        { new: true }
+      ).populate('poojaId', 'name durationValue durationUnit');
+      return { updated };
     });
-    await booking.save();
+
+    if (result.conflict) {
+      return res.status(409).json({
+        success: false,
+        code: 'BOOKING_TIME_CONFLICT',
+        message: describeConflict(result.conflict, dateKey),
+        data: { conflict: result.conflict },
+      });
+    }
+    if (!result.updated) {
+      return res.status(409).json({
+        success: false,
+        code: 'BOOKING_STATE_CHANGED',
+        message: 'Booking is no longer available to accept',
+      });
+    }
 
     NotificationEngine.emit(
       'PANDIT_ACCEPTED',
       normalizeBookingPayload({
-        booking,
+        booking: result.updated,
         pandit: { userId: req.user._id, name: pandit.name, phone: pandit.phone },
-        poojaName: booking.poojaId?.name || '',
+        poojaName: result.updated.poojaId?.name || '',
       })
     ).catch(() => {});
 
-    res.json({ success: true, booking });
+    notifyPanditScheduleChanged({
+      panditId: pandit._id,
+      bookingId: result.updated._id,
+      dateKey,
+      reason: 'booking_accepted',
+    });
+
+    res.json({ success: true, booking: result.updated });
   } catch (err) {
     next(err);
   }
@@ -652,6 +714,13 @@ exports.rejectBooking = async (req, res, next) => {
         reason: trimmedReason,
       })
     ).catch(() => {});
+
+    notifyPanditScheduleChanged({
+      panditId: pandit._id,
+      bookingId: booking._id,
+      dateKey: toDateString(booking.scheduledDate),
+      reason: 'booking_rejected',
+    });
 
     res.json({ success: true, booking });
   } catch (err) {
@@ -777,6 +846,13 @@ exports.cancelAcceptedBooking = async (req, res, next) => {
         reason: trimmedReason,
       })
     ).catch(() => {});
+
+    notifyPanditScheduleChanged({
+      panditId: pandit._id,
+      bookingId: updated._id,
+      dateKey: toDateString(updated.scheduledDate),
+      reason: 'booking_cancelled',
+    });
 
     res.json({ success: true, booking: updated });
   } catch (err) {
@@ -1117,6 +1193,64 @@ exports.getMyBookings = async (req, res, next) => {
     console.log(`[Pandit Bookings] Total bookings found: ${total}`);
 
     res.json({ success: true, bookings, total, page: +page });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/pandits/me/schedule-calendar — authoritative per-day calendar
+//
+// The Pandit Dashboard calendar derives its month grid, selected-date panel and
+// same-day booking notice from THIS response instead of re-deriving state from
+// the paginated bookings list. It is the single source of truth for "what is on
+// this Pandit's plate on each day?" and is guaranteed consistent with the
+// conflict gate used by accept/assign, because both read the same occupancy
+// statuses and the same time parser (panditScheduleService).
+//
+// Returns one entry per calendar day in [from, to] inclusive, each with:
+//   date, availability, status, hasBooking, bookingCount, occupyingCount,
+//   scheduleConflict, bookings[] (minimal, contact/details-free shape).
+exports.getScheduleCalendar = async (req, res, next) => {
+  try {
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select(
+      'weeklySchedule specialDates blockedPeriods availabilitySlots'
+    );
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    const { from, to } = req.query;
+    if (!DATE_RE.test(from || '') || !DATE_RE.test(to || '')) {
+      return res.status(400).json({ success: false, message: 'from and to are required in YYYY-MM-DD format' });
+    }
+    const spanDays = Math.round((new Date(to) - new Date(from)) / 86400000);
+    if (spanDays < 0) {
+      return res.status(400).json({ success: false, message: 'to must be on or after from' });
+    }
+    if (spanDays > 62) {
+      return res.status(400).json({ success: false, message: 'Date range too large (max 62 days)' });
+    }
+
+    const bookings = await Booking.find({
+      panditId: pandit._id,
+      status: { $in: CALENDAR_RELEVANT_STATUSES },
+      // scheduledDate is persisted as UTC midnight of the calendar day, so a
+      // comparison against the same UTC-midnight bounds is exact and inclusive.
+      scheduledDate: { $gte: new Date(from), $lte: new Date(to) },
+    })
+      .populate('poojaId', 'name durationValue durationUnit')
+      .select('bookingNumber status scheduledDate scheduledTime poojaId userDetails.name language')
+      .lean();
+
+    const days = buildCalendarDays(pandit, from, to, bookings);
+
+    res.json({
+      success: true,
+      from,
+      to,
+      timezone: 'Asia/Kolkata',
+      occupyingStatuses: OCCUPYING_BOOKING_STATUSES,
+      days,
+    });
   } catch (err) {
     next(err);
   }

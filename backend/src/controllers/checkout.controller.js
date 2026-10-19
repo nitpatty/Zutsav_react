@@ -403,6 +403,17 @@ exports.verifyCartPayment = async (req, res, next) => {
       .populate('poojaId', 'name');
     const order = await Order.findOne({ phonePeMerchantTransactionId: merchantTransactionId });
 
+    if (!bookings.length && !order) {
+      return res.status(404).json({ success: false, message: 'Payment record not found' });
+    }
+
+    // Every resource behind this transaction must belong to the caller —
+    // possession of a (predictable) transaction ID is not authorization.
+    const notOwned =
+      bookings.some((b) => String(b.userId) !== String(req.user._id)) ||
+      (order && String(order.userId) !== String(req.user._id));
+    if (notOwned) return res.status(403).json({ success: false, message: 'Access denied' });
+
     const alreadyPaid = bookings.every((b) => b.status === 'paid') && (!order || order.status !== 'pending_payment');
     if (alreadyPaid) return res.json({ success: true, bookings, order, alreadyVerified: true });
 

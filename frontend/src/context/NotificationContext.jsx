@@ -30,6 +30,10 @@ export function NotificationProvider({ children, user }) {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [loading,       setLoading]       = useState(false);
+  // Live socket instance exposed to consumers (e.g. the Pandit schedule-sync
+  // hook) so they can listen for targeted refetch signals without needing to
+  // open their own connection. null while disconnected/signed out.
+  const [socket,        setSocket]        = useState(null);
   const socketRef  = useRef(null);
   const navigate   = useNavigate();
 
@@ -96,13 +100,14 @@ export function NotificationProvider({ children, user }) {
   useEffect(() => {
     if (!user) {
       if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; }
+      setSocket(null);
       setNotifications([]);
       setUnreadCount(0);
       return;
     }
 
     const token = localStorage.getItem('zutsav_token');
-    if (!token) return;
+    if (!token) { setSocket(null); return; }
 
     const socket = io(urls.socketUrl, {
       auth:        { token },
@@ -185,6 +190,7 @@ export function NotificationProvider({ children, user }) {
     socket.on('connect_error', (err) => console.warn('[Socket.IO] Error:', err.message));
 
     socketRef.current = socket;
+    setSocket(socket);
 
     // Initial load
     fetchNotifications(1);
@@ -192,12 +198,13 @@ export function NotificationProvider({ children, user }) {
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setSocket(null);
     };
   }, [user]);
 
   return (
     <NotificationContext.Provider value={{
-      notifications, unreadCount, loading,
+      notifications, unreadCount, loading, socket,
       fetchNotifications, fetchUnreadCount,
       markRead, markAllRead,
       deleteNotification, clearAll,
@@ -211,4 +218,10 @@ export const useNotifications = () => {
   const ctx = useContext(NotificationContext);
   if (!ctx) throw new Error('useNotifications must be used within NotificationProvider');
   return ctx;
+};
+
+/** Non-throwing accessor for the shared Socket.IO instance (may be null). */
+export const useNotificationSocket = () => {
+  const ctx = useContext(NotificationContext);
+  return ctx?.socket ?? null;
 };

@@ -178,6 +178,14 @@ app.use('/api/invoices',         require('./routes/invoice.routes'));
 app.use('/api/documents',        require('./routes/legalDocument.routes'));
 app.use('/api/coupons',          require('./routes/coupon.routes'));
 
+// ✅ Mock payment simulator (local development / automated tests only)
+// Mounted exclusively when PAYMENT_MODE=mock. Mock mode cannot be selected in
+// production (src/config/payment.config.js fails startup for it), so this
+// control plane is structurally unreachable there.
+if (require('./config/payment.config').isMockEnabled()) {
+  app.use('/api/payments/mock', require('./routes/mockPayment.routes'));
+}
+
 // ✅ ✅ Error handler (improved)
 app.use((err, req, res, next) => {
   console.error(err.stack);

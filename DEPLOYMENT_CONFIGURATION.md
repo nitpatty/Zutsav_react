@@ -114,7 +114,9 @@ That's it — no file inside `src/` needs to change in any of the three apps.
 | `ADDITIONAL_CORS_ORIGINS` | No | Comma-separated extra allowed origins |
 | `COMPANY_NAME`, `COMPANY_LOGO`, `SUPPORT_EMAIL`, `SUPPORT_PHONE`, `COMPANY_GSTIN`, `COMPANY_PAN`, `PRIVACY_URL`, `TERMS_URL`, `DEFAULT_CURRENCY`, `DEFAULT_TIMEZONE` | No | Branding shown in emails/invoices |
 | `RAZORPAY_KEY_ID` / `_SECRET` | No (legacy) | Old bookings only |
-| `PHONEPE_ENV`, `PHONEPE_MERCHANT_ID`, `PHONEPE_SALT_KEY`, `PHONEPE_SALT_INDEX` | No | Primary payment gateway |
+| `PAYMENT_MODE` | **Yes in production** (`live`, or `sandbox` deliberately) | `mock` = local simulation, no gateway call (dev/tests only; refused in production) · `sandbox` = PhonePe sandbox · `live` = PhonePe production. Precedence: `PAYMENT_MODE` → System Settings `phonepeEnv` (non-production only) → legacy `PHONEPE_ENV` → default `sandbox` outside production. Production takes the mode from env vars only |
+| `MOCK_PAYMENT_OUTCOME` | No (default `success`) | Only with `PAYMENT_MODE=mock`: initial outcome for a mock payment (`success`/`failure`/`pending`) |
+| `PHONEPE_ENV` (legacy), `PHONEPE_MERCHANT_ID`, `PHONEPE_SALT_KEY`, `PHONEPE_SALT_INDEX` | **Yes for sandbox/live** (no built-in fallback — a missing credential fails the payment call) | Primary payment gateway. Merchant/salt can also come from Admin → System Settings. Live mode refuses PhonePe's publicly documented TEST merchant/salt |
 | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_API_VERSION` | No | Meta Cloud API |
 | `EMAIL_USER`, `EMAIL_PASS`, `NOTIFY_ALWAYS_EMAIL` | No | Nodemailer/SMTP |
 | `GROQ_API_KEY` | No | AI spiritual assistant + temporary translation fallback |
