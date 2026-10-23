@@ -1,6 +1,8 @@
 const Invoice      = require('../models/Invoice');
 const Booking      = require('../models/Booking');
+const OfflinePayment = require('../models/OfflinePayment');
 const { getOrCreateLegacyInvoices } = require('../utils/invoiceGenerator');
+const { restoreManualSaleStock } = require('../utils/inventoryUtils');
 const { isAdminRole } = require('../utils/roleUtils');
 const { audit } = require('../services/auditService');
 
@@ -56,10 +58,34 @@ exports.getInvoicesByBooking = async (req, res, next) => {
 
 // GET /api/invoices/number/:invoiceNumber
 // Returns a specific invoice + its booking (for PDF rendering).
+// Manual invoices have no Booking and are admin-only (D9) — they return the
+// persisted line-item snapshot plus the offline payment history instead.
 exports.getInvoiceByNumber = async (req, res, next) => {
   try {
     const invoice = await Invoice.findOne({ invoiceNumber: req.params.invoiceNumber }).lean();
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+
+    if (invoice.source === 'manual') {
+      if (!isAdminRole(req.user.role)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+      const rows = await OfflinePayment.find({ invoiceId: invoice._id }).sort({ createdAt: 1 }).lean();
+      const totalReceived = rows.filter(r => r.kind === 'RECEIPT').reduce((s, r) => s + (r.amount || 0), 0);
+      const totalReversed = rows.filter(r => r.kind === 'REVERSAL').reduce((s, r) => s + (r.amount || 0), 0);
+      const netReceived = Math.round((totalReceived - totalReversed) * 100) / 100;
+      return res.json({
+        success: true,
+        invoice,
+        booking: null,
+        payments: rows,
+        paymentSummary: {
+          totalReceived: Math.round(totalReceived * 100) / 100,
+          totalReversed: Math.round(totalReversed * 100) / 100,
+          netReceived,
+          outstanding: Math.max(0, Math.round(((invoice.grandTotal || 0) - netReceived) * 100) / 100),
+        },
+      });
+    }
 
     if (String(invoice.customerId) !== String(req.user._id) && !isAdminRole(req.user.role)) {
       return res.status(403).json({ success: false, message: 'Access denied' });
@@ -99,7 +125,7 @@ exports.adminGetInvoices = async (req, res, next) => {
   try {
     const {
       page = 1, limit = 50,
-      search, status, paymentType, gateway,
+      search, status, paymentType, gateway, source,
       dateFrom, dateTo,
     } = req.query;
 
@@ -107,6 +133,8 @@ exports.adminGetInvoices = async (req, res, next) => {
     if (status)      query.status = status;
     if (paymentType) query.paymentType = paymentType.toUpperCase();
     if (gateway)     query.paymentGateway = gateway;
+    if (source === 'booking') query.source = { $ne: 'manual' };
+    else if (source === 'manual') query.source = 'manual';
 
     if (dateFrom || dateTo) {
       query.invoiceDate = {};
@@ -143,13 +171,34 @@ exports.adminGetInvoices = async (req, res, next) => {
       }},
     ]);
 
-    // Revenue this month
+    // Revenue this month — gateway/booking revenue (manual/offline excluded)
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthRevenue = await Invoice.aggregate([
-      { $match: { status: 'active', invoiceDate: { $gte: monthStart } } },
+      { $match: { status: 'active', invoiceDate: { $gte: monthStart }, source: { $ne: 'manual' } } },
       { $group: { _id: null, total: { $sum: '$amountPaid' } } },
     ]);
+
+    // Manual/offline revenue this month — reported separately (D11)
+    const manualMonthRevenue = await Invoice.aggregate([
+      { $match: { status: 'active', invoiceDate: { $gte: monthStart }, source: 'manual' } },
+      { $group: { _id: null, total: { $sum: '$amountPaid' } } },
+    ]);
+
+    // Source breakdown (documents that predate `source` count as booking)
+    const sourceStatsRaw = await Invoice.aggregate([
+      { $group: {
+        _id:         { $ifNull: ['$source', 'booking'] },
+        count:       { $sum: 1 },
+        totalAmount: { $sum: '$amountPaid' },
+      }},
+    ]);
+    const sourceStats = { booking: { count: 0, totalAmount: 0 }, manual: { count: 0, totalAmount: 0 } };
+    sourceStatsRaw.forEach((row) => {
+      const key = row._id === 'manual' ? 'manual' : 'booking';
+      sourceStats[key].count       += row.count;
+      sourceStats[key].totalAmount += row.totalAmount;
+    });
 
     res.json({
       success: true,
@@ -158,7 +207,9 @@ exports.adminGetInvoices = async (req, res, next) => {
       page:         +page,
       pages:        Math.ceil(total / +limit),
       stats,
+      sourceStats,
       monthRevenue: monthRevenue[0]?.total || 0,
+      manualMonthRevenue: manualMonthRevenue[0]?.total || 0,
     });
   } catch (err) { next(err); }
 };
@@ -179,14 +230,38 @@ exports.adminCancelInvoice = async (req, res, next) => {
     invoice.cancelReason = req.body.reason || '';
     await invoice.save();
 
+    // Manual invoices: restore stock exactly once under an atomic flag guard.
+    // Booking invoices are untouched (their cancellation rules live on Booking).
+    let stockRestored = false;
+    if (invoice.source === 'manual' && invoice.stockDeducted && !invoice.stockRestored) {
+      const claimed = await Invoice.findOneAndUpdate(
+        { _id: invoice._id, stockRestored: { $ne: true } },
+        { $set: { stockRestored: true } },
+        { new: true }
+      );
+      if (claimed) {
+        const items = (invoice.lineItems || []).map((l) => ({
+          productId: l.productId,
+          variantId: l.variantId,
+          quantity:  l.quantity,
+        })).filter((l) => l.productId);
+        const result = await restoreManualSaleStock(items, invoice._id, req.user._id);
+        stockRestored = result.ok;
+        if (!result.ok) {
+          console.error('[InvoiceCancel] Manual stock restore had failures:', result.failures);
+        }
+      }
+    }
+
     audit(req, {
       module: 'invoice', action: 'cancel_invoice', severity: 'warning',
       targetType: 'invoice', targetId: invoice._id, targetName: invoice.invoiceNumber || String(invoice._id),
-      oldValues: { status: oldStatus }, newValues: { status: 'cancelled' },
+      oldValues: { status: oldStatus },
+      newValues: { status: 'cancelled', source: invoice.source || 'booking', stockRestored },
       note: invoice.cancelReason,
     }).catch(() => {});
 
-    res.json({ success: true, invoice });
+    res.json({ success: true, invoice, stockRestored });
   } catch (err) { next(err); }
 };
 
@@ -231,7 +306,7 @@ exports.exportInvoices = async (req, res, next) => {
       'Customer Email', 'Payment Type', 'Invoice Date', 'Amount Paid (₹)',
       'Previously Paid (₹)', 'Outstanding After (₹)', 'Grand Total (₹)',
       'Total GST (₹)', 'Invoice Status', 'Payment Gateway',
-      'Merchant Txn ID', 'Gateway Txn ID',
+      'Merchant Txn ID', 'Gateway Txn ID', 'Invoice Source', 'Seller GSTIN',
     ];
 
     const rows = invoices.map(inv => [
@@ -251,6 +326,8 @@ exports.exportInvoices = async (req, res, next) => {
       inv.paymentGateway,
       inv.merchantTransactionId,
       inv.gatewayTransactionId,
+      inv.source === 'manual' ? 'manual' : 'booking',
+      inv.sellerSnapshot?.gstin || '',
     ]);
 
     const csv = [headers, ...rows]

@@ -16,14 +16,48 @@ async function _companyStateKeys() {
 }
 
 // ── Atomic sequential invoice number ─────────────────────────────────────────
-async function generateInvoiceNumber() {
+// One-time-per-process index migration for counter rows that pre-date the
+// `series` discriminator. The cheap legacy-row claim runs on every allocation
+// (self-healing if a legacy row is ever introduced); only the index drop is
+// cached. Never renumbers, never resets seq.
+let _counterIndexReady = false;
+async function _ensureCounterSeriesReady() {
+  await InvoiceCounter.updateMany(
+    { series: { $exists: false } },
+    { $set: { series: 'INV' } }
+  );
+  if (_counterIndexReady) return;
+  try {
+    const indexes = await InvoiceCounter.collection.indexes();
+    const legacyYearUnique = indexes.find(
+      (i) => i.unique && Object.keys(i.key || {}).length === 1 && i.key.year === 1
+    );
+    if (legacyYearUnique) await InvoiceCounter.collection.dropIndex(legacyYearUnique.name);
+  } catch (_) { /* index may not exist on a fresh database */ }
+  _counterIndexReady = true;
+}
+
+/**
+ * Mint the next sequential number for a given series (atomic, concurrency-safe).
+ * Series 'INV' preserves the historic INV-YYYY-NNNNNN format exactly.
+ * Manual billing uses series 'MAN' → MAN-YYYY-NNNNNN.
+ * Numbers are never reused: a failed insert leaves a gap, by design.
+ */
+async function generateInvoiceNumberForSeries(series = 'INV') {
+  const safeSeries = String(series || 'INV').toUpperCase().replace(/[^A-Z0-9]/g, '') || 'INV';
+  await _ensureCounterSeriesReady();
   const year    = new Date().getFullYear();
   const counter = await InvoiceCounter.findOneAndUpdate(
-    { year },
+    { series: safeSeries, year },
     { $inc: { seq: 1 } },
     { upsert: true, new: true }
   );
-  return `INV-${year}-${String(counter.seq).padStart(6, '0')}`;
+  return `${safeSeries}-${year}-${String(counter.seq).padStart(6, '0')}`;
+}
+
+// Back-compat alias — automatic booking invoices keep the exact historic format.
+async function generateInvoiceNumber() {
+  return generateInvoiceNumberForSeries('INV');
 }
 
 // ── GST split helper ──────────────────────────────────────────────────────────
@@ -236,4 +270,11 @@ async function getOrCreateLegacyInvoices(booking) {
   return created;
 }
 
-module.exports = { generateInvoiceForPayment, getOrCreateLegacyInvoices };
+module.exports = {
+  generateInvoiceForPayment,
+  getOrCreateLegacyInvoices,
+  generateInvoiceNumber,
+  generateInvoiceNumberForSeries,
+  buildGstBreakdown,
+  DEFAULT_COMPANY_STATE_KEYS,
+};

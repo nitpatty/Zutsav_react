@@ -77,6 +77,7 @@ const ADMIN_NAV = [
   { icon: Zap,             labelKey: 'sidebar.items.notificationEngine',  path: '/admin?tab=notifications' },
   { icon: FileText,        labelKey: 'sidebar.items.blogManagement',      path: '/admin?tab=blog-management' },
   { icon: Receipt,         labelKey: 'sidebar.items.invoices',            path: '/admin?tab=invoices' },
+  { icon: Receipt,         labelKey: 'sidebar.items.manualBilling',       path: '/admin?tab=manual-billing' },
   { icon: Database,        labelKey: 'sidebar.items.logManagement',       path: '/admin?tab=log-management' },
   { icon: Settings,        labelKey: 'sidebar.items.systemSettings',      path: '/admin?tab=system-settings' },
   { icon: Globe,           labelKey: 'sidebar.items.systemConfiguration', path: '/admin?tab=system-config' },

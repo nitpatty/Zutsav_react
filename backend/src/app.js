@@ -203,6 +203,7 @@ app.use((err, req, res, next) => {
     // `code` for machine-readable handling. Only strings are forwarded so
     // driver-level numeric codes (e.g. Mongo duplicate-key) are not leaked.
     ...(typeof err.code === 'string' ? { code: err.code } : {}),
+    ...(Array.isArray(err.details) && err.details.length ? { details: err.details } : {}),
     message: err.message || 'Internal Server Error',
   });
 });

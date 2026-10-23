@@ -103,6 +103,7 @@
       "notificationEngine": "Notification Engine",
       "blogManagement": "Blog Management",
       "invoices": "Invoices",
+      "manualBilling": "Manual Billing",
       "logManagement": "Log Management",
       "systemSettings": "System Settings",
       "systemConfiguration": "System Configuration",

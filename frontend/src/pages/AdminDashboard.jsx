@@ -10,6 +10,8 @@ import UserReferralManagement from '../components/admin/UserReferralManagement';
 import WalletManagement from '../components/admin/WalletManagement';
 import CouponManagement from '../components/admin/CouponManagement';
 import CouponCampaignManagement from '../components/admin/CouponCampaignManagement';
+import ManualBillingTab from '../components/admin/ManualBillingTab';
+import BillingRegistrationsSection from '../components/admin/BillingRegistrationsSection';
 import ZutsavLoader, { ZutsavLoaderInline } from '../components/shared/ZutsavLoader';
 import toast from 'react-hot-toast';
 import API from '../api/axios';
@@ -101,6 +103,7 @@ export default function AdminDashboard() {
       {tab === 'payouts'                && <PayoutsTab />}
       {tab === 'blog-management'        && <BlogManagementTab />}
       {tab === 'invoices'               && <InvoicesTab />}
+      {tab === 'manual-billing'         && <ManualBillingTab />}
       {tab === 'admin-management'       && <AdminManagementTab />}
       {tab === 'user-referrals'         && <UserReferralManagement />}
       {tab === 'wallet'                 && <WalletManagement />}
@@ -8158,6 +8161,7 @@ function ReferralStatsTab() {
 const SETTING_SECTIONS = [
   { key: 'general',       label: 'General',       icon: Settings },
   { key: 'payment',       label: 'PhonePe',       icon: CreditCard },
+  { key: 'billing',       label: 'Billing / GST', icon: Receipt },
   { key: 'payment_rules', label: 'Payment Rules', icon: IndianRupee },
   { key: 'commission',    label: 'Platform Fees', icon: IndianRupee },
   { key: 'urgent',        label: 'Urgent Booking', icon: Zap },
@@ -8317,6 +8321,9 @@ function SystemSettingsTab() {
   const sectionContent = {
     general: (
       <GeneralSettingsSection form={form} setForm={setForm} saving={saving} setSaving={setSaving} />
+    ),
+    billing: (
+      <BillingRegistrationsSection form={form} setForm={setForm} />
     ),
     payment: (
       <SectionForm title="Payment — PhonePe" onSave={() => save(['phonepeEnv','phonepeMerchantId','phonepeSaltKey','phonepeSaltIndex','phonepeWebhookUrl','phonepeRedirectUrl'])} saving={saving}>
@@ -9834,10 +9841,12 @@ function InvoicesTab() {
   const [page,     setPage]         = useState(1);
   const [stats,    setStats]        = useState([]);
   const [monthRev, setMonthRev]     = useState(0);
+  const [manualMonthRev, setManualMonthRev] = useState(0);
   const [loading,  setLoading]      = useState(true);
   const [search,   setSearch]       = useState('');
   const [status,   setStatus]       = useState('');
   const [payType,  setPayType]      = useState('');
+  const [source,   setSource]       = useState('');
   const [dateFrom, setDateFrom]     = useState('');
   const [dateTo,   setDateTo]       = useState('');
   const [cancelModal, setCancelModal] = useState(null); // invoice object
@@ -9851,6 +9860,7 @@ function InvoicesTab() {
       if (search)   params.search      = search;
       if (status)   params.status      = status;
       if (payType)  params.paymentType = payType;
+      if (source)   params.source      = source;
       if (dateFrom) params.dateFrom    = dateFrom;
       if (dateTo)   params.dateTo      = dateTo;
 
@@ -9861,9 +9871,10 @@ function InvoicesTab() {
       setPage(p);
       setStats(data.stats || []);
       setMonthRev(data.monthRevenue || 0);
+      setManualMonthRev(data.manualMonthRevenue || 0);
     } catch { toast.error('Failed to load invoices'); }
     finally  { setLoading(false); }
-  }, [search, status, payType, dateFrom, dateTo]);
+  }, [search, status, payType, source, dateFrom, dateTo]);
 
   useEffect(() => { load(1); }, [load]);
 
@@ -9872,6 +9883,7 @@ function InvoicesTab() {
       const params = {};
       if (status)   params.status      = status;
       if (payType)  params.paymentType = payType;
+      if (source)   params.source      = source;
       if (dateFrom) params.dateFrom    = dateFrom;
       if (dateTo)   params.dateTo      = dateTo;
       const { data } = await API.get('/admin/invoices/export', { params, responseType: 'blob' });
@@ -9909,7 +9921,8 @@ function InvoicesTab() {
 
   const STAT_CARDS = [
     { label: 'Total Revenue',    value: INR_FMT(totalRevenue), icon: IndianRupee, bg:'#f0fdf4', border:'#bbf7d0', color:'#15803d' },
-    { label: 'This Month',       value: INR_FMT(monthRev),     icon: Clock,       bg:'#f0f4ff', border:'#c7d2fe', color:'#4338ca' },
+    { label: 'Gateway (Month)',  value: INR_FMT(monthRev),     icon: Clock,       bg:'#f0f4ff', border:'#c7d2fe', color:'#4338ca' },
+    { label: 'Manual (Month)',   value: INR_FMT(manualMonthRev), icon: Receipt,   bg:'#fffbeb', border:'#fde68a', color:'#b45309' },
     { label: 'Total Invoices',   value: totalCount,            icon: Receipt,     bg:'#fff7ed', border:'#fed7aa', color:'#c2410c' },
     { label: 'Active Invoices',  value: total,                 icon: CheckCircle, bg:'#f8f9ff', border:'#e0e7ff', color:'#1B1F3B' },
   ];
@@ -9934,7 +9947,7 @@ function InvoicesTab() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
         {STAT_CARDS.map(c => (
           <div key={c.label} className="rounded-2xl p-4 border"
             style={{ background:c.bg, borderColor:c.border }}>
@@ -9965,6 +9978,13 @@ function InvoicesTab() {
           <option value="cancelled">Cancelled</option>
           <option value="archived">Archived</option>
         </select>
+        <select value={source} onChange={e => setSource(e.target.value)}
+          className="px-3 py-2 rounded-xl text-sm border"
+          style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }}>
+          <option value="">All Sources</option>
+          <option value="booking">Booking (gateway)</option>
+          <option value="manual">Manual (offline)</option>
+        </select>
         <select value={payType} onChange={e => setPayType(e.target.value)}
           className="px-3 py-2 rounded-xl text-sm border"
           style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-text)' }}>
@@ -9984,7 +10004,7 @@ function InvoicesTab() {
           style={{ background:'var(--t-primary)' }}>
           <Search size={14} />
         </button>
-        <button onClick={() => { setSearch(''); setStatus(''); setPayType(''); setDateFrom(''); setDateTo(''); }}
+        <button onClick={() => { setSearch(''); setStatus(''); setPayType(''); setSource(''); setDateFrom(''); setDateTo(''); }}
           className="px-3 py-2 rounded-xl text-sm border"
           style={{ background:'var(--t-bg)', borderColor:'var(--t-border)', color:'var(--t-muted)' }}>
           Clear
@@ -10005,7 +10025,7 @@ function InvoicesTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ background:'var(--t-primary)', color:'white' }}>
-                  {['Invoice #','Order #','Customer','Type','Date','Amount Paid','Status',''].map(h => (
+                  {['Invoice #','Order #','Customer','Source','Type','Date','Amount Paid','Status',''].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -10018,10 +10038,19 @@ function InvoicesTab() {
                     <td className="px-4 py-3 font-mono font-semibold text-xs"
                       style={{ color:'var(--t-primary)' }}>{inv.invoiceNumber}</td>
                     <td className="px-4 py-3 text-xs font-mono"
-                      style={{ color:'var(--t-muted)' }}>{inv.bookingNumber}</td>
+                      style={{ color:'var(--t-muted)' }}>{inv.bookingNumber || '—'}</td>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-sm" style={{ color:'var(--t-text)' }}>{inv.customerName}</div>
                       <div className="text-xs" style={{ color:'var(--t-muted)' }}>{inv.customerPhone}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{
+                          background: inv.source === 'manual' ? '#fef3c7' : '#eef2ff',
+                          color:      inv.source === 'manual' ? '#b45309' : '#4338ca',
+                        }}>
+                        {inv.source === 'manual' ? 'Manual' : 'Booking'}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold"

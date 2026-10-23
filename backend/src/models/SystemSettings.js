@@ -1,5 +1,21 @@
 const mongoose = require('mongoose');
 
+// ── Company billing registrations (Manual Billing "Bill From") ───────────────
+// One or more GST registrations the business can invoice under. Stored in the
+// existing System Settings document (single source of truth) and snapshotted
+// onto each manual invoice at finalization.
+const billingRegistrationSchema = new mongoose.Schema({
+  id:        { type: String, required: true },
+  legalName: { type: String, required: true, trim: true },
+  gstin:     { type: String, required: true, trim: true, uppercase: true },
+  pan:       { type: String, default: '', trim: true, uppercase: true },
+  address:   { type: String, default: '', trim: true },
+  state:     { type: String, required: true, trim: true },
+  stateCode: { type: String, default: '', trim: true }, // must match GSTIN prefix
+  isActive:  { type: Boolean, default: true },
+  isDefault: { type: Boolean, default: false },
+}, { _id: false });
+
 const systemSettingsSchema = new mongoose.Schema({
   // General
   platformName:    { type: String, default: 'Zutsav' },
@@ -98,6 +114,12 @@ const systemSettingsSchema = new mongoose.Schema({
   companyGstin: { type: String, default: '' },
   companyPan:   { type: String, default: '' },
   companyState: { type: String, default: '' },
+
+  // Company billing registrations (Manual Billing "Bill From")
+  // Empty array = nothing configured → the backend-controlled recommended
+  // fallback is offered (clearly marked unverified) until an Admin configures
+  // a registration.
+  companyBillingRegistrations: { type: [billingRegistrationSchema], default: [] },
 
   // Communication (System Configuration Center)
   whatsappNumber:     { type: String, default: '' },

@@ -34,8 +34,12 @@
     "tailwindcss": "^3.3.6"
   },
   "scripts": {
+    "prepare:pdfjs-worker": "node scripts/prepare-pdfjs-worker.js",
+    "prestart": "node scripts/prepare-pdfjs-worker.js",
     "start": "react-scripts start",
-    "build": "react-scripts build"
+    "prebuild": "node scripts/prepare-pdfjs-worker.js",
+    "build": "react-scripts build",
+    "verify:pdfjs-worker": "node scripts/verify-pdfjs-worker-build.js"
   },
   "proxy": "http://localhost:5000",
   "browserslist": {

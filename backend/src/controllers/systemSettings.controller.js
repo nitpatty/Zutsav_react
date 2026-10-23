@@ -1,5 +1,6 @@
 const SystemSettings  = require('../models/SystemSettings');
 const settingsService = require('../utils/settingsService');
+const billingRegistrations = require('../utils/billingRegistrationService');
 const { sendTestConnectionEmail } = require('../utils/email');
 
 const SENSITIVE = [
@@ -113,6 +114,18 @@ exports.updateSettings = async (req, res) => {
      'sessionTimeoutMinutes','otpExpiryMinutes','passwordMinLength'].forEach((f) => {
       if (update[f] !== undefined && isNaN(update[f])) delete update[f];
     });
+
+    // Company billing registrations (Manual Billing "Bill From") — validate
+    // structurally here so a malformed GSTIN/PAN/state can never be persisted
+    // as an official invoicing identity. Validation is format-only; it is NOT
+    // proof that the registration is genuine or GST-registered.
+    if (update.companyBillingRegistrations !== undefined) {
+      const { registrations, errors } = billingRegistrations.validateRegistrations(update.companyBillingRegistrations);
+      if (errors.length) {
+        return res.status(400).json({ success: false, message: 'Invalid company billing registration', details: errors });
+      }
+      update.companyBillingRegistrations = registrations;
+    }
 
     delete update._id;
     delete update.__v;

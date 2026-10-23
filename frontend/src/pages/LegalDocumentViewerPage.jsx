@@ -6,14 +6,11 @@ import { ArrowLeft, FileText, AlertTriangle, Loader2 } from 'lucide-react';
 import API from '../api/axios';
 import { serverOrigin } from '../config/urls.config';
 
-// PDF.js worker — resolved as an emitted asset by webpack (CRA / react-scripts 5).
-// Without it pdf.js falls back to running on the main thread and surfaces a
-// "No GlobalWorkerOptions.workerSrc specified" warning that also surfaces as an
-// error in some browsers.
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
+// Generated from pdfjs-dist into public/ by scripts/prepare-pdfjs-worker.js.
+// Keeping the worker out of the webpack bundle prevents Babel from injecting
+// runtime helpers that are not deployed with the app.
+const publicUrl = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+pdfjs.GlobalWorkerOptions.workerSrc = `${publicUrl}/pdf.worker-${pdfjs.version}.min.mjs`;
 
 const SUPPORTED_TYPES = new Set(['privacy', 'terms', 'refund-policy', 'about-us', 'vision']);
 

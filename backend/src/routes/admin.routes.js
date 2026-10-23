@@ -3,6 +3,7 @@ const ctrl        = require('../controllers/admin.controller');
 const poojaRequest = require('../controllers/poojaRequest.controller');
 const settingsCtrl = require('../controllers/systemSettings.controller');
 const invoiceCtrl  = require('../controllers/invoice.controller');
+const manualBillingCtrl = require('../controllers/manualBilling.controller');
 const logMgmt      = require('../controllers/logManagement.controller');
 const configCenterRoutes = require('./configCenter.routes');
 const { userReferralRouter, bookingRewardRouter } = require('./adminUserReferral.routes');
@@ -147,6 +148,15 @@ router.get('/invoices/export',          invoiceCtrl.exportInvoices);
 router.get('/invoices',                 invoiceCtrl.adminGetInvoices);
 router.patch('/invoices/:id/cancel',    invoiceCtrl.adminCancelInvoice);
 router.patch('/invoices/:id/archive',   invoiceCtrl.adminArchiveInvoice);
+
+// Manual Billing (offline product sales) — admin-only, isolated from bookings
+router.get('/manual-billing/registrations',              manualBillingCtrl.listBillingRegistrations);
+router.get('/manual-billing/products',                   manualBillingCtrl.searchProducts);
+router.post('/manual-billing/preview',                   manualBillingCtrl.previewManualBill);
+router.post('/manual-billing/invoices',                  manualBillingCtrl.createManualInvoice);
+router.get('/manual-billing/invoices/:id/payments',      manualBillingCtrl.getInvoicePayments);
+router.post('/manual-billing/invoices/:id/payments',     manualBillingCtrl.recordOfflinePayment);
+router.post('/manual-billing/payments/:id/reverse',      manualBillingCtrl.reverseOfflinePayment);
 
 // ── Notification Engine Management ────────────────────────────────────────────
 // Events registry (read-only)
