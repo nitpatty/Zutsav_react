@@ -7,6 +7,7 @@ const PayoutBatch = require('../models/PayoutBatch');
 const OTP         = require('../models/OTP');
 const path    = require('path');
 const fs      = require('fs');
+const mongoose = require('mongoose');
 const { NotificationEngine } = require('../../notification-engine');
 const { normalizePanditPayload, normalizeBookingPayload, normalizeUserPayload } = require('../../notification-engine/variables/PayloadNormalizer');
 const OtpService = require('../../notification-engine/otp/OtpService');
@@ -547,30 +548,59 @@ exports.updatePoojaServices = async (req, res, next) => {
     if (!Array.isArray(selectedPoojas)) {
       return res.status(400).json({ success: false, message: 'selectedPoojas must be an array' });
     }
-    const pandit = await Pandit.findOne({ userId: req.user._id });
-    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
-
-    pandit.selectedPoojas = selectedPoojas;
-
-    if (Array.isArray(poojaCharges)) {
-      for (const { poojaId, expectedCharges } of poojaCharges) {
-        const idx = pandit.poojaCharges.findIndex(
-          (c) => c.poojaId && c.poojaId.toString() === poojaId.toString()
-        );
-        if (idx >= 0) {
-          pandit.poojaCharges[idx].expectedCharges = +expectedCharges || 0;
-        } else {
-          pandit.poojaCharges.push({ poojaId, expectedCharges: +expectedCharges || 0 });
-        }
-      }
-      // Remove charge entries for poojas no longer selected
-      pandit.poojaCharges = pandit.poojaCharges.filter((c) =>
-        c.poojaId && selectedPoojas.some((id) => id.toString() === c.poojaId.toString())
-      );
+    if (!selectedPoojas.every((id) => mongoose.isValidObjectId(id))) {
+      return res.status(400).json({ success: false, message: 'selectedPoojas contains an invalid Pooja ID' });
+    }
+    const selectedIds = selectedPoojas.map(String);
+    if (new Set(selectedIds).size !== selectedIds.length) {
+      return res.status(400).json({ success: false, message: 'selectedPoojas must not contain duplicate Pooja IDs' });
+    }
+    if (poojaCharges !== undefined && !Array.isArray(poojaCharges)) {
+      return res.status(400).json({ success: false, message: 'poojaCharges must be an array' });
     }
 
-    await pandit.save();
-    res.json({ success: true, message: 'Pooja services updated', pandit });
+    // Read only the service metadata needed to retain approval state. A full
+    // document save would revalidate unrelated legacy fields such as gender.
+    const pandit = await Pandit.findOne({ userId: req.user._id }).select('poojaCharges');
+    if (!pandit) return res.status(404).json({ success: false, message: 'Pandit profile not found' });
+
+    const updates = { selectedPoojas };
+
+    if (Array.isArray(poojaCharges)) {
+      const chargesByPoojaId = new Map();
+      for (const charge of poojaCharges) {
+        const { poojaId, expectedCharges } = charge || {};
+        if (!mongoose.isValidObjectId(poojaId) || !selectedIds.includes(String(poojaId))) {
+          return res.status(400).json({ success: false, message: 'poojaCharges contains an invalid or unselected Pooja ID' });
+        }
+        if (chargesByPoojaId.has(String(poojaId))) {
+          return res.status(400).json({ success: false, message: 'poojaCharges must not contain duplicate Pooja IDs' });
+        }
+        const chargeValue = Number(expectedCharges);
+        if (!Number.isFinite(chargeValue) || chargeValue < 0) {
+          return res.status(400).json({ success: false, message: 'expectedCharges must be a non-negative number' });
+        }
+        chargesByPoojaId.set(String(poojaId), chargeValue);
+      }
+
+      // Preserve approval metadata for retained services while replacing only
+      // the client-editable expected charge.
+      const existingCharges = new Map((pandit.poojaCharges || [])
+        .filter((charge) => charge.poojaId)
+        .map((charge) => [String(charge.poojaId), charge.toObject ? charge.toObject() : { ...charge }]));
+      updates.poojaCharges = selectedIds.map((poojaId) => ({
+        ...(existingCharges.get(poojaId) || {}),
+        poojaId,
+        expectedCharges: chargesByPoojaId.get(poojaId) ?? 0,
+      }));
+    }
+
+    const updatedPandit = await Pandit.findOneAndUpdate(
+      { userId: req.user._id },
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+    res.json({ success: true, message: 'Pooja services updated', pandit: updatedPandit });
   } catch (err) {
     next(err);
   }
