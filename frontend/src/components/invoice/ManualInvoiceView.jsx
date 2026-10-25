@@ -59,8 +59,10 @@ function Cell({ children, right, bold, small }) {
   );
 }
 
+// `publicView`: customer-facing, token-shared rendering — no admin navigation,
+// no internal seller-identity notice and no payment references / operator names.
 export default function ManualInvoiceView({
-  invoice, payments = [], paymentSummary, logoUrl, platformName, navigate,
+  invoice, payments = [], paymentSummary, logoUrl, platformName, navigate, publicView = false,
 }) {
   const seller = invoice.sellerSnapshot || {};
   const status = STATUS_CFG[invoice.status] || STATUS_CFG.active;
@@ -98,13 +100,15 @@ export default function ManualInvoiceView({
 
       <div className="no-print" style={{ maxWidth: 920, margin: '0 auto 20px',
         display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <button onClick={() => navigate('/admin?tab=manual-billing')} style={{
-          display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px',
-          borderRadius: 10, border: '1.5px solid #d1d5db', background: 'white',
-          fontWeight: 600, fontSize: 14, cursor: 'pointer', color: '#374151',
-        }}>
-          <ArrowLeft size={15} /> Manual Billing
-        </button>
+        {!publicView && (
+          <button onClick={() => navigate('/admin?tab=manual-billing')} style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px',
+            borderRadius: 10, border: '1.5px solid #d1d5db', background: 'white',
+            fontWeight: 600, fontSize: 14, cursor: 'pointer', color: '#374151',
+          }}>
+            <ArrowLeft size={15} /> Manual Billing
+          </button>
+        )}
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: '#6b7280' }}>Invoice #{invoice.invoiceNumber}</span>
         <button onClick={() => window.print()} style={{
@@ -183,7 +187,7 @@ export default function ManualInvoiceView({
           </div>
         </div>
 
-        {seller.isFallback && (
+        {seller.isFallback && !publicView && (
           <div className="inv-block" style={{ background: '#fffbeb', borderBottom: '1px solid #fde68a', padding: '9px 34px' }}>
             <div style={{ fontSize: 11, color: '#92400e' }}>
               <strong>Seller identity notice:</strong> this invoice uses the built-in fallback company
@@ -349,7 +353,7 @@ export default function ManualInvoiceView({
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
               <thead>
                 <tr style={{ background: '#f8f9ff' }}>
-                  {['Date', 'Kind', 'Method', 'Reference', 'Recorded By', 'Amount'].map((h) => (
+                  {['Date', 'Kind', 'Method', ...(publicView ? [] : ['Reference', 'Recorded By']), 'Amount'].map((h) => (
                     <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Amount' ? 'right' : 'left',
                       color: '#6b7280', fontSize: 9.5, letterSpacing: 0.8, textTransform: 'uppercase' }}>{h}</th>
                   ))}
@@ -357,12 +361,12 @@ export default function ManualInvoiceView({
               </thead>
               <tbody>
                 {payments.map((p) => (
-                  <tr key={p._id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                  <tr key={p._id || `${p.kind}-${p.receivedAt}-${p.amount}`} style={{ borderTop: '1px solid #f3f4f6' }}>
                     <td style={{ padding: '6px 8px', color: '#374151' }}>{fmtDate(p.receivedAt || p.createdAt)}</td>
                     <td style={{ padding: '6px 8px', color: p.kind === 'REVERSAL' ? '#b91c1c' : '#15803d', fontWeight: 700 }}>{p.kind}</td>
                     <td style={{ padding: '6px 8px', color: '#374151' }}>{p.method || '—'}</td>
-                    <td style={{ padding: '6px 8px', color: '#6b7280' }}>{p.reference || '—'}</td>
-                    <td style={{ padding: '6px 8px', color: '#6b7280' }}>{p.recordedByName || '—'}</td>
+                    {!publicView && <td style={{ padding: '6px 8px', color: '#6b7280' }}>{p.reference || '—'}</td>}
+                    {!publicView && <td style={{ padding: '6px 8px', color: '#6b7280' }}>{p.recordedByName || '—'}</td>}
                     <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700,
                       color: p.kind === 'REVERSAL' ? '#b91c1c' : '#111827' }}>
                       {p.kind === 'REVERSAL' ? '−' : ''}{INR(p.amount)}

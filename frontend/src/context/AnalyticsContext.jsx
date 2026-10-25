@@ -22,6 +22,11 @@ import { initClarity, trackPageView, identifyUser, clearUserIdentity } from '../
 
 const AnalyticsContext = createContext(null);
 
+// Share-link pages carry a bearer token in the URL and show a customer's invoice.
+// Session recording / page-view tracking must never see either, so Clarity is not
+// loaded on these routes and their paths are never reported.
+const isPrivateSharePath = (pathname) => String(pathname || '').startsWith('/share/');
+
 export function AnalyticsProvider({ children }) {
   const location = useLocation();
   const { user } = useAuth();
@@ -30,13 +35,14 @@ export function AnalyticsProvider({ children }) {
 
   /* ── Step 1: Initialize Clarity exactly once ──────────────────────── */
   useEffect(() => {
-    if (didInit.current) return;
+    if (didInit.current || isPrivateSharePath(location.pathname)) return;
     didInit.current = true;
     initClarity();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Step 2: Track every SPA route change ─────────────────────────── */
   useEffect(() => {
+    if (isPrivateSharePath(location.pathname)) return;
     trackPageView(location.pathname);
   }, [location.pathname]);
 

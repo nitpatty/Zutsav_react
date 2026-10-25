@@ -4,6 +4,7 @@ const poojaRequest = require('../controllers/poojaRequest.controller');
 const settingsCtrl = require('../controllers/systemSettings.controller');
 const invoiceCtrl  = require('../controllers/invoice.controller');
 const manualBillingCtrl = require('../controllers/manualBilling.controller');
+const invoiceShareCtrl = require('../controllers/invoiceShare.controller');
 const logMgmt      = require('../controllers/logManagement.controller');
 const dataCleanup  = require('../controllers/dataCleanup.controller');
 const configCenterRoutes = require('./configCenter.routes');
@@ -23,6 +24,7 @@ router.use('/wallet', adminWalletRoutes);
 router.use('/coupons', adminCouponRoutes);
 router.use('/campaigns', adminCampaignRoutes);
 router.use('/documents', require('./legalDocumentAdmin.routes'));
+router.use('/footer-links', require('./footerLinksAdmin.routes'));
 
 router.get('/dashboard',                    ctrl.getDashboard);
 router.get('/activity-feed',               ctrl.getActivityFeed);
@@ -155,6 +157,11 @@ router.get('/invoices/export',          invoiceCtrl.exportInvoices);
 router.get('/invoices',                 invoiceCtrl.adminGetInvoices);
 router.patch('/invoices/:id/cancel',    invoiceCtrl.adminCancelInvoice);
 router.patch('/invoices/:id/archive',   invoiceCtrl.adminArchiveInvoice);
+// Public share links for an invoice (customer opens it without logging in)
+router.get('/invoices/:id/share',               invoiceShareCtrl.getInvoiceShare);
+router.post('/invoices/:id/share',              invoiceShareCtrl.createInvoiceShare);
+router.post('/invoices/:id/share/regenerate',   invoiceShareCtrl.regenerateInvoiceShare);
+router.post('/invoices/:id/share/revoke',       invoiceShareCtrl.revokeInvoiceShare);
 
 // Manual Billing (offline product sales) — admin-only, isolated from bookings
 router.get('/manual-billing/registrations',              manualBillingCtrl.listBillingRegistrations);

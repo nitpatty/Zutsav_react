@@ -72,4 +72,34 @@ const legalDocFilter = (req, file, cb) => {
 };
 const uploadLegalDocument = multer({ storage: createStorage('legaldocs'), fileFilter: legalDocFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 
-module.exports = { uploadLogo, uploadProfile, uploadGovtId, uploadProducts, uploadKits, uploadCSV, uploadKYCDocs, uploadBlog, uploadPooja, uploadHeroBanner, uploadLegalDocument, uploadTemple };
+// ── Custom footer link files ─────────────────────────────────────────────────
+// General-purpose files (documents, images, spreadsheets, archives, …) up to 10 MB.
+// There is no extension allowlist; instead executable / script / macro / web-page
+// names are refused here, and the controller verifies the real bytes afterwards
+// (utils/footerLinks.js → inspectUpload). Stored under a server-generated name with
+// a known-safe extension (or .bin) in the same non-web-accessible legaldocs folder.
+const footerLinks = require('../utils/footerLinks');
+const footerFileStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(__dirname, '../..', uploadDir, 'legaldocs');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}${footerLinks.storedExtension(file.originalname)}`);
+  },
+});
+const footerFileFilter = (req, file, cb) => {
+  const reason = footerLinks.blockedNameReason(file.originalname);
+  if (reason) cb(new Error(reason));
+  else cb(null, true);
+};
+const uploadFooterFile = multer({
+  storage: footerFileStorage,
+  fileFilter: footerFileFilter,
+  // multer rejects a file whose size EQUALS `fileSize`, so +1 makes the advertised 10 MB limit inclusive
+  // (a file of exactly 10 MB is accepted, 10 MB + 1 byte is refused).
+  limits: { fileSize: footerLinks.MAX_FILE_SIZE + 1, files: 1, fields: 20 },
+});
+
+module.exports = { uploadFooterFile, uploadLogo, uploadProfile, uploadGovtId, uploadProducts, uploadKits, uploadCSV, uploadKYCDocs, uploadBlog, uploadPooja, uploadHeroBanner, uploadLegalDocument, uploadTemple };

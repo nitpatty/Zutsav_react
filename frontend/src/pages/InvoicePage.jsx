@@ -273,15 +273,20 @@ const PMT_LABEL = { PARTIAL: 'Advance Payment', REMAINING: 'Final Payment', FULL
      /invoice/:bookingId        (legacy — loads first invoice for booking)
      /invoice/view/:invoiceNumber  (new — loads specific invoice)
 ═══════════════════════════════════════════════════════════ */
-export default function InvoicePage() {
+// `publicData` (optional): a pre-loaded customer-safe { invoice, booking } payload
+// from a share link. When present the page renders read-only: it never calls the
+// authenticated invoice APIs and shows no account navigation.
+export default function InvoicePage({ publicData = null }) {
   const { bookingId, invoiceNumber } = useParams();
   const navigate = useNavigate();
   const { logoUrl, platformName } = useSettings();
-  const [data,    setData]    = useState(null);
-  const [loading, setLoading] = useState(true);
+  const isPublic = Boolean(publicData);
+  const [data,    setData]    = useState(publicData);
+  const [loading, setLoading] = useState(!isPublic);
   const [err,     setErr]     = useState(null);
 
   useEffect(() => {
+    if (isPublic) return;
     const fetch = invoiceNumber
       ? API.get(`/invoices/number/${invoiceNumber}`)
       : API.get(`/invoices/booking/${bookingId}`);
@@ -290,7 +295,7 @@ export default function InvoicePage() {
       .then(r => setData(r.data))
       .catch(() => setErr('Invoice not found or you do not have access.'))
       .finally(() => setLoading(false));
-  }, [bookingId, invoiceNumber]);
+  }, [bookingId, invoiceNumber, isPublic]);
 
   if (loading) return <ZutsavLoader fullscreen size={64} message="Loading invoice…" />;
 
@@ -323,6 +328,7 @@ export default function InvoicePage() {
         logoUrl={logoUrl}
         platformName={platformName}
         navigate={navigate}
+        publicView={isPublic}
       />
     );
   }
@@ -390,13 +396,15 @@ export default function InvoicePage() {
       {/* ── Screen toolbar ──────────────────────────────── */}
       <div className="no-print" style={{ maxWidth:920, margin:'0 auto 20px',
         display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-        <button onClick={() => navigate('/my-bookings')} style={{
-          display:'flex', alignItems:'center', gap:6, padding:'8px 18px',
-          borderRadius:10, border:'1.5px solid #d1d5db', background:'white',
-          fontWeight:600, fontSize:14, cursor:'pointer', color:'#374151',
-        }}>
-          <ArrowLeft size={15} /> My Bookings
-        </button>
+        {!isPublic && (
+          <button onClick={() => navigate('/my-bookings')} style={{
+            display:'flex', alignItems:'center', gap:6, padding:'8px 18px',
+            borderRadius:10, border:'1.5px solid #d1d5db', background:'white',
+            fontWeight:600, fontSize:14, cursor:'pointer', color:'#374151',
+          }}>
+            <ArrowLeft size={15} /> My Bookings
+          </button>
+        )}
         <div style={{ flex:1 }} />
         <span style={{ fontSize:13, color:'#6b7280' }}>Invoice #{displayInvNumber}</span>
         <button onClick={() => window.print()} style={{

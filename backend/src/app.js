@@ -102,6 +102,11 @@ const apiLimiter = rateLimit({
 app.use('/api/auth', authLimiter);
 app.use('/api/', apiLimiter);
 
+// ✅ Public invoice share links (no login). Mounted BEFORE the request logger and
+// request monitor below because the URL path is a bearer token — see
+// routes/publicInvoice.routes.js, which terminates every request under this prefix.
+app.use('/api/public/invoices', require('./routes/publicInvoice.routes'));
+
 // ✅ Body parsing
 // The `verify` callback preserves the exact raw bytes so signature-verified
 // webhooks (Meta WhatsApp Cloud API) can validate X-Hub-Signature-256 against
@@ -176,6 +181,7 @@ app.use('/api/settings',         require('./routes/settings.routes'));
 app.use('/api/blogs',            require('./routes/blog.routes'));
 app.use('/api/invoices',         require('./routes/invoice.routes'));
 app.use('/api/documents',        require('./routes/legalDocument.routes'));
+app.use('/api/footer-links',     require('./routes/footerLinks.routes'));
 app.use('/api/coupons',          require('./routes/coupon.routes'));
 
 // ✅ Mock payment simulator (local development / automated tests only)

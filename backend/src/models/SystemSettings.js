@@ -16,6 +16,36 @@ const billingRegistrationSchema = new mongoose.Schema({
   isDefault: { type: Boolean, default: false },
 }, { _id: false });
 
+// ── Custom footer links (System Configuration → Frontend) ────────────────────
+// Admin-managed links shown in the public footer, in addition to the fixed legal
+// documents (LegalDocument). Each link has EXACTLY ONE destination:
+//   linkType 'url'      → `url` (validated http/https)
+//   linkType 'document' → `document` (an uploaded PDF/DOC/DOCX kept under
+//                          uploads/legaldocs, served only via the public view API)
+// `labelKey` is the normalized (lower-cased) label, used to enforce unique names
+// atomically. `storagePath` never leaves the server.
+const footerLinkDocumentSchema = new mongoose.Schema({
+  originalName:   { type: String, required: true },
+  storedFileName: { type: String, required: true },
+  mimeType:       { type: String, required: true },
+  size:           { type: Number, required: true },
+  storagePath:    { type: String, required: true },
+  uploadedByName: { type: String, default: '' },
+  uploadedAt:     { type: Date, default: Date.now },
+}, { _id: false });
+
+const footerLinkSchema = new mongoose.Schema({
+  id:        { type: String, required: true },
+  label:     { type: String, required: true, trim: true, maxlength: 60 },
+  labelKey:  { type: String, required: true },
+  linkType:  { type: String, enum: ['url', 'document'], required: true },
+  url:       { type: String, default: '' },
+  document:  { type: footerLinkDocumentSchema, default: null },
+  enabled:   { type: Boolean, default: true },
+  order:     { type: Number, default: 0 },
+  updatedAt: { type: Date, default: Date.now },
+}, { _id: false });
+
 const systemSettingsSchema = new mongoose.Schema({
   // General
   platformName:    { type: String, default: 'Zutsav' },
@@ -178,6 +208,9 @@ const systemSettingsSchema = new mongoose.Schema({
       message:   'Invalid cutoff time format',
     },
   },
+
+  // Custom public footer links (see footerLinkSchema above). Max 20 — enforced in the controller.
+  footerLinks: { type: [footerLinkSchema], default: [] },
 }, { timestamps: true });
 
 module.exports = mongoose.model('SystemSettings', systemSettingsSchema);

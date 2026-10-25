@@ -45,6 +45,7 @@ import UserDashboard    from './pages/UserDashboard';
 import MyOrders         from './pages/MyOrders';
 import CartPage         from './pages/CartPage';
 import InvoicePage      from './pages/InvoicePage';
+import PublicInvoicePage from './pages/PublicInvoicePage';
 import BlogHomePage     from './pages/BlogHomePage';
 import BlogDetailPage   from './pages/BlogDetailPage';
 import BlogEditor       from './pages/BlogEditor';
@@ -112,6 +113,8 @@ const AppRoutes = () => {
           <Route path="/poojas"    element={<PublicLayout><PoojaCategories /></PublicLayout>} />
           <Route path="/poojas/:categorySlug" element={<PublicLayout><PoojaList /></PublicLayout>} />
           <Route path="/festivals"   element={<PublicLayout><Festivals /></PublicLayout>} />
+          {/* Admin-managed custom footer documents — declared with the fixed /legal/:type route; the extra segment keeps them distinct. */}
+          <Route path="/legal/link/:linkId" element={<PublicLayout><LegalDocumentViewerPage /></PublicLayout>} />
           <Route path="/legal/:type" element={<PublicLayout><LegalDocumentViewerPage /></PublicLayout>} />
           <Route path="/marketplace" element={<PublicLayout><Marketplace /></PublicLayout>} />
           <Route path="/marketplace/product/:slug" element={<PublicLayout><ProductDetail /></PublicLayout>} />
@@ -137,6 +140,9 @@ const AppRoutes = () => {
           <Route path="/payment-callback/:merchantTransactionId" element={
             <ProtectedRoute><PaymentCallback /></ProtectedRoute>
           } />
+          {/* Customer invoice opened from an admin-issued share link — intentionally NOT
+              behind ProtectedRoute: the secret token in the URL is the credential. */}
+          <Route path="/share/invoice/:token" element={<PublicInvoicePage />} />
           <Route path="/invoice/view/:invoiceNumber" element={
             <ProtectedRoute><InvoicePage /></ProtectedRoute>
           } />

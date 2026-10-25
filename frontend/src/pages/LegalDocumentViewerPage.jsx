@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { pdfjs, Document, Page } from 'react-pdf';
-import { ArrowLeft, FileText, AlertTriangle, Loader2 } from 'lucide-react';
+import { ArrowLeft, FileText, AlertTriangle, Loader2, Download } from 'lucide-react';
 import API from '../api/axios';
 import { serverOrigin } from '../config/urls.config';
+import { formatFileSize } from '../utils/footerLinks';
 
 // Generated from pdfjs-dist into public/ by scripts/prepare-pdfjs-worker.js.
 // Keeping the worker out of the webpack bundle prevents Babel from injecting
@@ -93,22 +94,22 @@ function NotFound({ message }) {
 
 export default function LegalDocumentViewerPage() {
   const { t } = useTranslation();
-  const { type } = useParams();
+  const { type, linkId } = useParams(); // `linkId` → admin-managed custom footer document
   const [meta, setMeta] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | missing | invalid
   const [numPages, setNumPages] = useState(0);
-  const [containerRef, width] = useContainerWidth(status === 'ready' && meta?.mimeType === 'application/pdf' && !!meta?.viewUrl);
+  const [containerRef, width] = useContainerWidth(status === 'ready' && meta?.mimeType === 'application/pdf' && !!meta?.viewUrl && (!linkId || meta?.kind === 'pdf'));
   const pageWidth = Math.min(Math.round(width), 820);
 
   const load = useCallback(() => {
     setMeta(null);
     setNumPages(0);
     setStatus('loading');
-    if (!type || !SUPPORTED_TYPES.has(type)) {
+    if (linkId ? !/^[a-f0-9]{16}$/.test(linkId) : (!type || !SUPPORTED_TYPES.has(type))) {
       setStatus('invalid');
       return;
     }
-    API.get(`/documents/${type}`)
+    API.get(linkId ? `/footer-links/${linkId}` : `/documents/${type}`)
       .then(({ data }) => {
         const doc = data?.document;
         if (!doc || !doc.exists) {
@@ -119,12 +120,21 @@ export default function LegalDocumentViewerPage() {
         setStatus('ready');
       })
       .catch(() => setStatus('error'));
-  }, [type]);
+  }, [type, linkId]);
 
   useEffect(() => { load(); }, [load]);
 
   const isPdf = meta?.mimeType === 'application/pdf';
   const absoluteViewUrl = meta?.viewUrl ? `${serverOrigin}${meta.viewUrl}` : '';
+  const absoluteDownloadUrl = meta?.downloadUrl ? `${serverOrigin}${meta.downloadUrl}` : absoluteViewUrl;
+  // Admin-managed footer files carry a server-decided `kind`: 'pdf' and 'image' render in
+  // the page; everything else is offered as a download (never rendered on this origin).
+  // Fixed legal documents have no `kind` and keep their original PDF / Google-viewer behaviour.
+  const isCustomFile = Boolean(linkId);
+  const showDownloadCard = isCustomFile && meta?.kind === 'download';
+  const showImage = isCustomFile && meta?.kind === 'image';
+  const showPdf = isPdf && (!isCustomFile || meta?.kind === 'pdf');
+  const showLegacyOffice = !isCustomFile && !isPdf;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10" style={{ background: 'var(--t-bg)' }}>
@@ -167,7 +177,31 @@ export default function LegalDocumentViewerPage() {
 
       {/* Ready: DOC/DOCX fallback — Google's hosted online viewer (same as the previous
           behavior before the viewer page). These formats have no custom page renderer. */}
-      {status === 'ready' && meta && !isPdf && absoluteViewUrl && (
+      {status === 'ready' && meta && showImage && absoluteViewUrl && (
+        <div className="rounded-2xl shadow-sm overflow-hidden p-2 sm:p-4 flex justify-center" style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
+          <img src={absoluteViewUrl} alt={meta.label} className="max-w-full h-auto rounded-lg" style={{ maxHeight: '80vh', objectFit: 'contain' }} />
+        </div>
+      )}
+
+      {/* Ready: any other file type — a download card (the file is never rendered on this site). */}
+      {status === 'ready' && meta && showDownloadCard && (
+        <div className="rounded-2xl shadow-sm p-6 sm:p-8 flex flex-col items-center text-center gap-3" style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
+          <FileText size={34} style={{ color: 'var(--t-primary)' }} />
+          <p className="text-sm font-semibold break-all max-w-full" style={{ color: 'var(--t-text)' }}>{meta.fileName || meta.label}</p>
+          {meta.size ? <p className="text-xs" style={{ color: 'var(--t-muted)' }}>{formatFileSize(meta.size)}</p> : null}
+          <a
+            href={absoluteDownloadUrl}
+            download
+            className="mt-1 inline-flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-lg transition-opacity hover:opacity-90"
+            style={{ background: 'var(--t-primary)', color: '#fff' }}
+          >
+            <Download size={16} />
+            {t('legalDocViewer.download', 'Download')}
+          </a>
+        </div>
+      )}
+
+      {status === 'ready' && meta && showLegacyOffice && absoluteViewUrl && (
         <div className="rounded-2xl shadow-sm overflow-hidden" style={{ background: 'var(--t-card)', border: '1px solid var(--t-border)' }}>
           <iframe
             title={meta.label}
@@ -180,7 +214,7 @@ export default function LegalDocumentViewerPage() {
 
       {/* Ready: PDF custom renderer — pages painted into the Zutsav page via PDF.js.
           No iframe/object/embed → the browser's native PDF toolbar is never shown. */}
-      {status === 'ready' && meta && isPdf && absoluteViewUrl && (
+      {status === 'ready' && meta && showPdf && absoluteViewUrl && (
         <div
           ref={containerRef}
           className="rounded-2xl shadow-sm"

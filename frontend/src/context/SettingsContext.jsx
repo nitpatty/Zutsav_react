@@ -13,6 +13,7 @@ const SettingsContext = createContext({
   whatsappNumber: '',
   customerCareNumber: '',
   deployWebsiteUrl: '',
+  footerLinks: [],   // admin-managed custom footer links (sanitized by the public API)
   logoUrl: null,
   reload: () => {},
 });
@@ -27,6 +28,7 @@ export function SettingsProvider({ children }) {
     whatsappNumber:     '',
     customerCareNumber: '',
     deployWebsiteUrl:   '',
+    footerLinks:        [],
   });
 
   const reload = useCallback(() => {

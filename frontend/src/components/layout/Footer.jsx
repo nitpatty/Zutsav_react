@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../context/SettingsContext';
 import API from '../../api/axios';
 import { resolveViewUrl } from '../../utils/legalDocs';
+import { prepareFooterLinks } from '../../utils/footerLinks';
 
 const SERVICES = [
   { i18nKey: 'footer.bookPooja',    label: 'Book a Pooja',          to: '/poojas'      },
@@ -24,7 +25,7 @@ const COMPANY = [
 export default function Footer() {
   const { t } = useTranslation();
   const {
-    platformName, logoUrl, contactEmail, supportPhone, supportAddress,
+    platformName, logoUrl, contactEmail, supportPhone, supportAddress, footerLinks,
   } = useSettings();
 
   const [legalDocs, setLegalDocs] = useState([]);
@@ -34,6 +35,11 @@ export default function Footer() {
       .then(({ data }) => setLegalDocs((data.documents || []).filter((d) => d.exists)))
       .catch(() => {});
   }, []);
+
+  // Custom links come from the public settings already loaded by SettingsContext
+  // (no extra request). Unsafe/duplicate entries — including any that repeat a
+  // fixed legal document shown above them — are filtered out here.
+  const customLinks = prepareFooterLinks(footerLinks, legalDocs);
 
   return (
     <footer className="bg-charcoal text-white">
@@ -102,6 +108,28 @@ export default function Footer() {
                   >
                     {doc.label}
                   </Link>
+                </li>
+              ))}
+              {customLinks.map((link) => (
+                <li key={`custom-${link.id}`}>
+                  {link.linkType === 'url' ? (
+                    <a
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-gray-400 text-sm hover:text-saffron-400 transition-colors inline-flex items-center gap-1.5 group break-words"
+                    >
+                      {link.label}
+                      <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                    </a>
+                  ) : (
+                    <Link
+                      to={link.href}
+                      className="text-gray-400 text-sm hover:text-saffron-400 transition-colors break-words"
+                    >
+                      {link.label}
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

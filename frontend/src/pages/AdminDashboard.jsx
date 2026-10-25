@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, ChevronLeft, Receipt, Ban, Archive, Copy, Bell, BellOff, Zap, Filter, Send, ChevronUp, Activity, Database, Lock, History, Calendar, AlignLeft, Flame, ListChecks, Info, HelpCircle, LayoutGrid, List, Coins } from 'lucide-react';
+import { Users, BookOpen, IndianRupee, Clock, CheckCircle, XCircle, Plus, User, LayoutDashboard, CalendarDays, ShoppingBag, MapPin, Tv, Package, Star, Trash2, Gift, Sparkles, Percent, Tag, Mail, ClipboardList, Truck, ChevronDown, RotateCcw, Search, Settings, CreditCard, MessageSquare, Cpu, Image, Shield, Save, Eye, EyeOff, Upload, AlertTriangle, ShieldCheck, FileText, Loader, X, BadgeCheck, Phone, Globe, Edit3, ToggleLeft, ToggleRight, RefreshCw, Download, ExternalLink, Navigation, ChevronRight, ChevronLeft, Receipt, Ban, Archive, Copy, Bell, BellOff, Zap, Filter, Send, ChevronUp, Activity, Database, Lock, History, Calendar, AlignLeft, Flame, ListChecks, Info, HelpCircle, LayoutGrid, List, Coins, Share2 } from 'lucide-react';
 import NotificationEngineAdmin from '../components/admin/NotificationEngineAdmin';
+import InvoiceShareDialog from '../components/admin/InvoiceShareDialog';
 import PoojaCategoriesManager from '../components/admin/PoojaCategoriesManager';
 import SystemConfigurationTab from '../components/admin/SystemConfigurationTab';
 import HomepageCurationTab from '../components/admin/HomepageCurationTab';
@@ -9862,6 +9863,7 @@ function InvoicesTab() {
   const [dateFrom, setDateFrom]     = useState('');
   const [dateTo,   setDateTo]       = useState('');
   const [cancelModal, setCancelModal] = useState(null); // invoice object
+  const [shareInvoice, setShareInvoice] = useState(null); // invoice whose public link dialog is open
   const [cancelReason, setCancelReason] = useState('');
   const [actioning, setActioning]   = useState(false);
 
@@ -10103,6 +10105,17 @@ function InvoicesTab() {
                           title="View Invoice">
                           <Eye size={14} />
                         </a>
+                        {/* Public (no-login) link for the customer. Archived invoices are not
+                            shareable; the server enforces the same rule. */}
+                        <button
+                          onClick={() => setShareInvoice(inv)}
+                          disabled={inv.status === 'archived'}
+                          className="p-1.5 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{ borderColor:'var(--t-border)', color:'var(--t-primary)' }}
+                          aria-label={`Share invoice ${inv.invoiceNumber}`}
+                          title={inv.status === 'archived' ? 'Archived invoices cannot be shared' : 'Share invoice link'}>
+                          <Share2 size={14} />
+                        </button>
                         {inv.status === 'active' && (
                           <>
                             <button
@@ -10150,6 +10163,10 @@ function InvoicesTab() {
             </div>
           )}
         </div>
+      )}
+
+      {shareInvoice && (
+        <InvoiceShareDialog invoice={shareInvoice} onClose={() => setShareInvoice(null)} />
       )}
 
       {/* Cancel Modal */}

@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import API from '../../api/axios';
 import { validateField } from '../../utils/configValidation';
 import LegalDocumentsSection from './LegalDocumentsSection';
+import CustomFooterLinksSection from './CustomFooterLinksSection';
 
 // ─── Sub-tab nav ────────────────────────────────────────────────────────────
 const TABS = [
@@ -452,7 +453,12 @@ export default function SystemConfigurationTab() {
         />
       )}
 
-      {tab === 'frontend' && <LegalDocumentsSection />}
+      {tab === 'frontend' && (
+        <div className="space-y-8">
+          <LegalDocumentsSection />
+          <CustomFooterLinksSection />
+        </div>
+      )}
 
       {tab === 'mobile' && (
         <EditableSection

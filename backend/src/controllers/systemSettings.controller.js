@@ -2,6 +2,7 @@ const SystemSettings  = require('../models/SystemSettings');
 const settingsService = require('../utils/settingsService');
 const billingRegistrations = require('../utils/billingRegistrationService');
 const { sendTestConnectionEmail } = require('../utils/email');
+const { toAdminLink } = require('../utils/footerLinks');
 
 const SENSITIVE = [
   'phonepeSaltKey',
@@ -21,6 +22,8 @@ exports.getSettings = async (req, res) => {
     let doc = await SystemSettings.findOne().lean();
     if (!doc) doc = {};
     SENSITIVE.forEach((f) => { if (doc[f]) doc[f] = MASK; });
+    // Footer links are managed through /api/admin/footer-links; never echo server storage paths.
+    if (Array.isArray(doc.footerLinks)) doc.footerLinks = doc.footerLinks.map(toAdminLink);
     res.json({ success: true, settings: doc });
   } catch (err) {
     console.error('getSettings error:', err);
@@ -127,6 +130,9 @@ exports.updateSettings = async (req, res) => {
       update.companyBillingRegistrations = registrations;
     }
 
+    // Footer links carry uploaded-file records: only /api/admin/footer-links may write them,
+    // so a generic settings save can never inject a client-supplied storage path.
+    delete update.footerLinks;
     delete update._id;
     delete update.__v;
     delete update.createdAt;
