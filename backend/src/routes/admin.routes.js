@@ -5,6 +5,7 @@ const settingsCtrl = require('../controllers/systemSettings.controller');
 const invoiceCtrl  = require('../controllers/invoice.controller');
 const manualBillingCtrl = require('../controllers/manualBilling.controller');
 const logMgmt      = require('../controllers/logManagement.controller');
+const dataCleanup  = require('../controllers/dataCleanup.controller');
 const configCenterRoutes = require('./configCenter.routes');
 const { userReferralRouter, bookingRewardRouter } = require('./adminUserReferral.routes');
 const adminWalletRoutes = require('./adminWallet.routes');
@@ -116,6 +117,12 @@ router.get('/settings',            settingsCtrl.getSettings);
 router.patch('/settings',          uploadLogo.single('logo'), settingsCtrl.updateSettings);
 router.post('/settings/test-email', settingsCtrl.testEmailConnection);
 
+// Data cleanup is a deliberately narrow, server-owned allowlist. It never
+// accepts collection names or filters from the client.
+router.get('/data-cleanup/categories', dataCleanup.categories);
+router.post('/data-cleanup/preview', dataCleanup.preview);
+router.post('/data-cleanup/execute', dataCleanup.execute);
+
 // Blog Administration
 router.get('/blogs',                    ctrl.adminGetBlogs);
 router.patch('/blogs/:id/approve',      ctrl.adminApproveBlog);
@@ -152,6 +159,7 @@ router.patch('/invoices/:id/archive',   invoiceCtrl.adminArchiveInvoice);
 // Manual Billing (offline product sales) — admin-only, isolated from bookings
 router.get('/manual-billing/registrations',              manualBillingCtrl.listBillingRegistrations);
 router.get('/manual-billing/products',                   manualBillingCtrl.searchProducts);
+router.get('/manual-billing/catalog',                    manualBillingCtrl.searchCatalog);
 router.post('/manual-billing/preview',                   manualBillingCtrl.previewManualBill);
 router.post('/manual-billing/invoices',                  manualBillingCtrl.createManualInvoice);
 router.get('/manual-billing/invoices/:id/payments',      manualBillingCtrl.getInvoicePayments);

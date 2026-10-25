@@ -67,6 +67,14 @@ export default function ManualInvoiceView({
   const gst = invoice.gstBreakdown || {};
   const isInterstate = Boolean(gst.isInterstate);
   const lines = invoice.lineItems || [];
+  // Invoices issued before the "Apply tax" option (taxApplied unset) were always taxed.
+  const taxApplied = invoice.taxApplied !== false;
+  // 'manual_bill_rate': ONE percentage typed by the issuer, applied to the taxable
+  // value. It is shown as a single bill-level row; per-line tax columns are hidden
+  // because per-line figures are only an apportionment, not per-item statutory rates.
+  const isManualRate = invoice.taxMode === 'manual_bill_rate';
+  const showLineTax = taxApplied && !isManualRate;
+  const COLS = showLineTax ? 8 : 6; // table width in columns (label spans COLS - 1)
 
   const grossTotal    = lines.reduce((s, l) => s + (l.unitPrice || 0) * (l.quantity || 0), 0);
   const discountTotal = lines.reduce((s, l) => s + (l.discount || 0), 0);
@@ -145,7 +153,7 @@ export default function ManualInvoiceView({
           <div style={{ textAlign: 'right' }}>
             <div style={{ color: '#D4AF37', fontSize: 28, fontWeight: 900,
               fontFamily: 'Georgia, serif', letterSpacing: 3, textTransform: 'uppercase' }}>
-              Tax Invoice
+              {taxApplied ? 'Tax Invoice' : 'Invoice'}
             </div>
             <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 10,
               letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 }}>
@@ -226,14 +234,10 @@ export default function ManualInvoiceView({
           <SecLabel>Items Sold</SecLabel>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '5%' }} />
-              <col style={{ width: '35%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '10%' }} />
+              {(showLineTax
+                ? ['5%', '35%', '7%', '13%', '12%', '8%', '10%', '10%']
+                : ['6%', '44%', '10%', '14%', '12%', '14%']
+              ).map((w, i) => <col key={i} style={{ width: w }} />)}
             </colgroup>
             <thead>
               <tr style={{ background: '#1B1F3B' }}>
@@ -242,9 +246,9 @@ export default function ManualInvoiceView({
                 <TH right>Qty</TH>
                 <TH right>Unit Price</TH>
                 <TH right>Discount</TH>
-                <TH right>Tax %</TH>
-                <TH right>Tax</TH>
-                <TH right>Line Total</TH>
+                {showLineTax && <TH right>Tax %</TH>}
+                {showLineTax && <TH right>Tax</TH>}
+                <TH right>{showLineTax ? 'Line Total' : 'Amount'}</TH>
               </tr>
             </thead>
             <tbody>
@@ -258,12 +262,12 @@ export default function ManualInvoiceView({
                       {[l.variantLabel, l.sku && `SKU ${l.sku}`, l.hsn && `HSN ${l.hsn}`].filter(Boolean).join(' · ') || '—'}
                     </div>
                   </td>
-                  <Cell right>{l.quantity}</Cell>
+                  <Cell right>{l.quantity}{l.unit ? ` ${l.unit}` : ''}</Cell>
                   <Cell right>{INR(l.unitPrice)}</Cell>
                   <Cell right>{INR(l.discount)}</Cell>
-                  <Cell right>{l.taxRate || 0}%</Cell>
-                  <Cell right>{INR(l.taxAmount)}</Cell>
-                  <Cell right bold>{INR(l.lineTotal)}</Cell>
+                  {showLineTax && <Cell right>{l.taxRate || 0}%</Cell>}
+                  {showLineTax && <Cell right>{INR(l.taxAmount)}</Cell>}
+                  <Cell right bold>{INR(showLineTax ? l.lineTotal : (l.lineTotal || 0) - (l.taxAmount || 0))}</Cell>
                 </tr>
               ))}
             </tbody>
@@ -271,32 +275,40 @@ export default function ManualInvoiceView({
               {[
                 ['Gross', grossTotal],
                 ['Discount', -discountTotal],
-                ['Taxable Value', taxableValue],
+                ...(taxApplied ? [['Taxable Value', taxableValue]] : []),
               ].map(([k, v]) => (
                 <tr key={k}>
-                  <td colSpan={7} style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 12 }}>{k}</td>
+                  <td colSpan={COLS - 1} style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 12 }}>{k}</td>
                   <td style={{ padding: '4px 10px', textAlign: 'right', fontSize: 12 }}>{INR(v)}</td>
                 </tr>
               ))}
-              {isInterstate ? (
+              {isManualRate && (
                 <tr>
-                  <td colSpan={7} style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 12 }}>IGST</td>
+                  <td colSpan={COLS - 1} style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 12 }}>
+                    Tax @ {invoice.manualTaxRate}% (manually specified)
+                  </td>
+                  <td style={{ padding: '4px 10px', textAlign: 'right', fontSize: 12 }}>{INR(totalTax)}</td>
+                </tr>
+              )}
+              {!taxApplied ? null : isInterstate ? (
+                <tr>
+                  <td colSpan={COLS - 1} style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 12 }}>IGST</td>
                   <td style={{ padding: '4px 10px', textAlign: 'right', fontSize: 12 }}>{INR(gst.igst ?? totalTax)}</td>
                 </tr>
               ) : (
                 <>
                   <tr>
-                    <td colSpan={7} style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 12 }}>CGST</td>
+                    <td colSpan={COLS - 1} style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 12 }}>CGST</td>
                     <td style={{ padding: '4px 10px', textAlign: 'right', fontSize: 12 }}>{INR(gst.cgst ?? totalTax / 2)}</td>
                   </tr>
                   <tr>
-                    <td colSpan={7} style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 12 }}>SGST</td>
+                    <td colSpan={COLS - 1} style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 600, fontSize: 12 }}>SGST</td>
                     <td style={{ padding: '4px 10px', textAlign: 'right', fontSize: 12 }}>{INR(gst.sgst ?? totalTax / 2)}</td>
                   </tr>
                 </>
               )}
               <tr style={{ background: '#1B1F3B' }}>
-                <td colSpan={7} style={{ padding: '10px 10px', textAlign: 'right',
+                <td colSpan={COLS - 1} style={{ padding: '10px 10px', textAlign: 'right',
                   color: '#D4AF37', fontWeight: 900, fontSize: 13, letterSpacing: 1 }}>
                   GRAND TOTAL
                 </td>
@@ -308,7 +320,10 @@ export default function ManualInvoiceView({
             </tfoot>
           </table>
           <div style={{ fontSize: 11, color: '#6b7280', marginTop: 6 }}>
-            {isInterstate ? 'Inter-state supply — IGST applied.' : 'Intra-state supply — CGST + SGST applied.'}
+            {taxApplied
+              ? (isInterstate ? 'Inter-state supply — IGST applied.' : 'Intra-state supply — CGST + SGST applied.')
+              : 'Tax has not been applied on this invoice.'}
+            {isManualRate && ` Tax is charged at ${invoice.manualTaxRate}% on the taxable value, a rate entered by the issuer — not derived from per-item tax classification.`}
             {seller.state ? ` Seller state: ${seller.state}.` : ''}
           </div>
         </div>
@@ -389,7 +404,7 @@ export default function ManualInvoiceView({
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', paddingTop: 10,
             display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
             <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10 }}>
-              Computer-generated tax invoice · Manual offline sale · Issued by {seller.legalName || '—'}
+              Computer-generated {taxApplied ? 'tax invoice' : 'invoice'} · Manual offline sale · Issued by {seller.legalName || '—'}
             </span>
             <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10 }}>Generated: {genTime}</span>
           </div>

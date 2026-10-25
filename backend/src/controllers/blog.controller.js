@@ -7,7 +7,7 @@ const BlogBookmark = require('../models/BlogBookmark');
 const User         = require('../models/User');
 const path         = require('path');
 const { urls }     = require('../config');
-const { isAdminRole } = require('../utils/roleUtils');
+const { isAdminRole, toBlogAuthorRole } = require('../utils/roleUtils');
 const { sanitizeHtml: sanitizeHTML } = require('../utils/sanitizeHtml');
 const translationService = require('../services/translationService');
 
@@ -250,7 +250,7 @@ exports.createBlog = async (req, res, next) => {
       featuredImage: featuredImage || '',
       scheduledAt:   scheduledAt ? new Date(scheduledAt) : null,
       authorId:       user._id,
-      authorRole:     user.role,
+      authorRole:     toBlogAuthorRole(user.role),
       authorName:     user.name,
       authorAvatar:   user.profilePhoto || '',
       authorVerified: isAdminRole(user.role) || user.role === 'pandit',
@@ -348,7 +348,7 @@ exports.duplicateBlog = async (req, res, next) => {
       ogImage:        blog.ogImage,
       canonicalUrl:   blog.canonicalUrl,
       authorId:       user._id,
-      authorRole:     user.role,
+      authorRole:     toBlogAuthorRole(user.role),
       authorName:     user.name,
       authorAvatar:   user.profilePhoto || '',
       authorVerified: isAdminRole(user.role) || user.role === 'pandit',
@@ -514,7 +514,7 @@ exports.addComment = async (req, res, next) => {
       blogId:       blog._id,
       authorId:     req.user._id,
       authorName:   req.user.name,
-      authorRole:   req.user.role,
+      authorRole:   toBlogAuthorRole(req.user.role),
       authorAvatar: req.user.profilePhoto || '',
       content:      content.trim().substring(0, 1000),
       parentId:     parentId || null,

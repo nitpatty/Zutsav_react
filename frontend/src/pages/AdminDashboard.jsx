@@ -8172,7 +8172,18 @@ const SETTING_SECTIONS = [
   { key: 'panchang',      label: 'Panchang',      icon: Sparkles },
   { key: 'media',         label: 'Media',         icon: Image },
   { key: 'security',      label: 'Security',      icon: Shield },
+  { key: 'data_cleanup',  label: 'Data Cleanup',  icon: Trash2 },
 ];
+
+function DataCleanupSection() {
+  const [catalog, setCatalog] = useState(null), [selected, setSelected] = useState([]), [preview, setPreview] = useState(null), [confirm, setConfirm] = useState(''), [busy, setBusy] = useState(false);
+  useEffect(() => { API.get('/admin/data-cleanup/categories').then(({ data }) => setCatalog(data)).catch(() => toast.error('Could not load cleanup categories')); }, []);
+  const toggle = (id) => { setSelected((v) => v.includes(id) ? v.filter((x) => x !== id) : [...v, id]); setPreview(null); setConfirm(''); };
+  const generatePreview = async () => { setBusy(true); try { const { data } = await API.post('/admin/data-cleanup/preview', { categoryIds: selected }); setPreview(data.preview); } catch (e) { toast.error(e.response?.data?.message || 'Preview failed'); } finally { setBusy(false); } };
+  const execute = async () => { setBusy(true); try { const { data } = await API.post('/admin/data-cleanup/execute', { operationId: preview.operationId, confirmation: confirm }); setPreview(null); setSelected([]); setConfirm(''); toast.success(`Cleanup completed: ${data.result.results.reduce((n, r) => n + r.deleted, 0)} records removed`); } catch (e) { toast.error(e.response?.data?.message || 'Cleanup failed'); } finally { setBusy(false); } };
+  if (!catalog) return <ZutsavLoaderInline />;
+  return <div className="space-y-5"><div className="rounded-2xl border border-red-200 bg-red-50 p-5"><div className="flex gap-3"><AlertTriangle className="text-red-600 shrink-0" size={20}/><div><h2 className="font-bold text-red-900">Permanent Data Cleanup</h2><p className="text-sm text-red-700 mt-1">This cannot be undone. Generate a server-side preview before confirming any deletion.</p></div></div></div><div className="space-y-2">{catalog.categories.map((c) => <label key={c.id} className="flex gap-3 p-4 border rounded-xl bg-white cursor-pointer"><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggle(c.id)} /><span><b>{c.label}</b><small className="block text-gray-500">{c.description}</small></span></label>)}</div><div className="text-xs text-gray-500">Protected / unavailable: {catalog.blockedCategories.map((c) => c.label).join(', ')}.</div><button className="btn-primary px-5 py-2.5" disabled={!selected.length || busy} onClick={generatePreview}>{busy ? 'Working…' : 'Preview Cleanup'}</button>{preview && <div className="border border-red-200 rounded-2xl p-5 space-y-3"><h3 className="font-bold">Review deletion plan</h3>{preview.collections.map((c) => <div key={c.model} className="flex justify-between text-sm"><span>{c.model}</span><b>{c.planned} records</b></div>)}<p className="text-xs text-red-700">Type <b>{catalog.confirmationPhrase}</b> to permanently delete this exact preview.</p><input className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={catalog.confirmationPhrase}/><button className="px-5 py-2.5 rounded-xl bg-red-600 text-white disabled:opacity-50" disabled={confirm !== catalog.confirmationPhrase || busy} onClick={execute}>Permanently Delete Selected Data</button></div>}</div>;
+}
 
 function SecretInput({ label, name, value, onChange, placeholder }) {
   const [show, setShow] = useState(false);
@@ -8823,6 +8834,7 @@ function SystemSettingsTab() {
         <InfoBox>Password rules and session timeout apply to new authentications. Existing sessions are not invalidated retroactively.</InfoBox>
       </SectionForm>
     ),
+    data_cleanup: <DataCleanupSection />,
   };
 
   return (

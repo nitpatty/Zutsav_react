@@ -5,17 +5,27 @@ const mongoose = require('mongoose');
 // later catalog price / tax-rate / name changes never alter a historical
 // invoice. Booking invoices continue to derive line items from the Booking.
 const invoiceLineItemSchema = new mongoose.Schema({
-  productId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+  // 'product' = marketplace product, 'kit' = kit from the kit builder, 'custom' =
+  // free-form line typed by the admin (no catalog record). Lines persisted before
+  // this field existed are all marketplace products.
+  lineType:     { type: String,   enum: ['product', 'kit', 'custom'], default: 'product' },
+  productId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null }, // null for kit/custom
+  kitId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Kit',     default: null }, // kit lines only
   variantId:    { type: String,   default: null },
   name:         { type: String,   required: true },
-  variantLabel: { type: String,   default: '' },
+  variantLabel: { type: String,   default: '' },   // variant label / custom description
   sku:          { type: String,   default: '' },
   hsn:          { type: String,   default: '' },   // configured later on Product; empty until then
+  unit:         { type: String,   default: '' },   // optional unit of measure (custom lines)
   quantity:     { type: Number,   required: true, min: 1 },
   unitPrice:    { type: Number,   required: true, min: 0 },
   discount:     { type: Number,   default: 0, min: 0 },
+  // Tax rate actually APPLIED on this line (0 when the bill was issued without tax).
   taxRate:      { type: Number,   default: 0, min: 0, max: 100 },
   taxAmount:    { type: Number,   default: 0, min: 0 },
+  // The rate the catalog (or the admin, for custom lines) classified this line at,
+  // kept even when tax was not applied so the classification is never discarded.
+  configuredTaxRate: { type: Number, default: null, min: 0, max: 100 },
   lineTotal:    { type: Number,   required: true, min: 0 },
 }, { _id: false });
 
@@ -97,6 +107,19 @@ const invoiceSchema = new mongoose.Schema({
   platformGST:   { type: Number, default: 0 },
   urgentSurcharge: { type: Number, default: 0 }, // urgent booking price hike line item
   totalGST:      { type: Number, default: 0 },
+  // Manual invoices only: whether the admin opted to apply tax on this bill.
+  // Left unset (undefined) on booking invoices and on manual invoices issued
+  // before the toggle existed — readers must treat "not false" as taxed.
+  taxApplied:    { type: Boolean, default: undefined },
+  // How the tax on a manual invoice was derived (unset on booking invoices):
+  //   'none'             — issued without tax
+  //   'manual_bill_rate' — ONE percentage typed by the admin (`manualTaxRate`),
+  //                        applied to `taxableValue`; NOT a verified statutory
+  //                        rate. Line taxRate/taxAmount are an apportionment of it.
+  //   'line_rates'       — legacy: each line taxed at its own catalog rate.
+  taxMode:       { type: String, enum: ['none', 'manual_bill_rate', 'line_rates'], default: undefined },
+  manualTaxRate: { type: Number, min: 0, max: 100, default: undefined },
+  taxableValue:  { type: Number, min: 0, default: undefined }, // Σ(gross − discount), the tax base
 
   // ── GST breakdown (computed at generation time, immutable) ──────────────────
   gstBreakdown: {

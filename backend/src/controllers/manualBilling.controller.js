@@ -6,13 +6,25 @@
  *   - Never calls PhonePe / Razorpay / mock-payment code.
  *   - Never touches PaymentLedger (offline money lives in OfflinePayment).
  *   - Never issues coupons, coins, wallet credit, referral or loyalty rewards.
- *   - All prices/taxes/totals are server-derived; client monetary inputs are
- *     limited to an optional per-line discount and the amount actually received.
+ *   - All prices/taxes/totals are server-derived. Client monetary inputs are
+ *     limited to an optional per-line discount, the amount actually received,
+ *     and — for custom (non-catalog) lines only — the typed unit price and tax
+ *     rate, which are strictly validated. Catalog prices/rates are never read
+ *     from the request.
+ *
+ * Inventory policy:
+ *   - Product lines deduct/restore product stock exactly as before.
+ *   - Kit lines do NOT touch stock. A Kit has no stock of its own and the
+ *     existing kit-sale path (pooja bookings) never decrements component
+ *     products either, so no kit-stock rule exists to follow; deducting
+ *     components here would be an invented policy (see final report).
+ *   - Custom lines never touch stock or any catalog record.
  */
 
 const Invoice       = require('../models/Invoice');
 const OfflinePayment = require('../models/OfflinePayment');
 const Product       = require('../models/Product');
+const Kit           = require('../models/Kit');
 const User          = require('../models/User');
 const { generateInvoiceNumberForSeries } = require('../utils/invoiceGenerator');
 const billingRegistrations = require('../utils/billingRegistrationService');
@@ -33,6 +45,36 @@ function badRequest(message, details = []) {
   err.statusCode = 400;
   err.details = details;
   return err;
+}
+
+/** The only tax inputs read from the client; validated by resolveTaxPolicy. */
+function taxInput(body) {
+  const b = isPlainObject(body) ? body : {};
+  return { applyTax: b.applyTax, manualTaxRate: b.manualTaxRate };
+}
+
+/** Tax fields of a computed bill, in the shape buildManualBill expects. */
+function taxMeta(computed) {
+  return { taxApplied: computed.taxApplied, taxMode: computed.taxMode, manualTaxRate: computed.manualTaxRate };
+}
+
+/**
+ * Optional stale-preview guard: when the client echoes the grand total it
+ * showed the admin, a different server-calculated total means the catalog (or
+ * the request) changed since the preview — refuse rather than bill a number
+ * the admin never saw. The client value is only ever compared, never used.
+ */
+function assertExpectedTotal(expected, actual, what = 'total') {
+  if (expected === undefined || expected === null || expected === '') return;
+  const n = Number(expected);
+  if (!Number.isFinite(n) || Math.abs(n - actual) > 0.005) {
+    const err = new Error(
+      `The bill ${what} changed since the preview (previewed ${expected}, server calculated ${actual}). Review the refreshed preview and try again.`
+    );
+    err.status = 409;
+    err.statusCode = 409;
+    throw err;
+  }
 }
 
 function normalizeMethod(value) {
@@ -198,17 +240,21 @@ exports.previewManualBill = async (req, res, next) => {
   try {
     const { items, customerState, registrationId } = req.body || {};
     const registration = await billingRegistrations.resolveRegistration(registrationId);
-    const computed = await calculateManualBillLines(items);
+    const computed = await calculateManualBillLines(items, taxInput(req.body));
     const bill = buildManualBill({
       computedLines: computed.lines,
       customerState: customerState || '',
       sellerState:   registration.state,
+      ...taxMeta(computed),
     });
 
     res.json({
       success: true,
       registration,
       lines: bill.lines,
+      taxApplied: bill.taxApplied,
+      taxMode: bill.taxMode,
+      manualTaxRate: bill.manualTaxRate,
       totals: {
         grossTotal:    bill.grossTotal,
         discountTotal: bill.discountTotal,
@@ -216,6 +262,7 @@ exports.previewManualBill = async (req, res, next) => {
         totalTax:      bill.totalTax,
         grandTotal:    bill.grandTotal,
       },
+      taxBreakdown: bill.taxBreakdown,
       gstBreakdown: bill.gstBreakdown,
       requiresTaxIdentityConfirmation: Boolean(registration.isFallback),
     });
@@ -246,30 +293,43 @@ exports.createManualInvoice = async (req, res, next) => {
     }
 
     const customer = await buildCustomerContext(body.customer);
-    const computed = await calculateManualBillLines(body.items);
+    const computed = await calculateManualBillLines(body.items, taxInput(body));
     const bill = buildManualBill({
       computedLines: computed.lines,
       customerState: customer.state,
       sellerState:   registration.state,
+      ...taxMeta(computed),
     });
+    assertExpectedTotal(body.expectedGrandTotal, bill.grandTotal);
+    assertExpectedTotal(body.expectedTotalTax, bill.totalTax, 'tax');
     const payment = validatePaymentInput(body.payment, bill.grandTotal);
 
-    // Stock pre-check (does not mutate) — only for lines linked to a product.
-    const deductStock = body.deductStock !== false;
+    // Stock applies to product lines only; kit and custom lines carry no productId.
+    const stockLines = bill.lines.filter((l) => l.productId);
+    const deductStock = body.deductStock !== false && stockLines.length > 0;
+
+    // Stock pre-check (does not mutate). Demand is aggregated per product/variant
+    // so two lines of the same SKU cannot each pass while together exceeding stock.
     if (deductStock) {
-      const stockErrors = [];
-      const productIds = bill.lines.map((l) => l.productId);
-      const products = await Product.find({ _id: { $in: productIds } }).lean();
+      const demand = new Map();
+      for (const line of stockLines) {
+        const key = `${line.productId}|${line.variantId || ''}`;
+        const row = demand.get(key) || { line, quantity: 0 };
+        row.quantity += line.quantity;
+        demand.set(key, row);
+      }
+      const products = await Product.find({ _id: { $in: stockLines.map((l) => l.productId) } }).lean();
       const byId = new Map(products.map((p) => [String(p._id), p]));
-      for (const line of bill.lines) {
+      const stockErrors = [];
+      for (const { line, quantity } of demand.values()) {
         const product = byId.get(String(line.productId));
         if (!product) continue;
         if (line.variantId) {
           const v = (product.variants || []).find((x) => String(x.variantId) === line.variantId);
-          if (!v || (v.stock || 0) < line.quantity) {
+          if (!v || (v.stock || 0) < quantity) {
             stockErrors.push(`${line.name}${line.variantLabel ? ` (${line.variantLabel})` : ''}: insufficient stock`);
           }
-        } else if ((product.stock || 0) < line.quantity) {
+        } else if ((product.stock || 0) < quantity) {
           stockErrors.push(`${line.name}: insufficient stock`);
         }
       }
@@ -320,6 +380,10 @@ exports.createManualInvoice = async (req, res, next) => {
         outstandingAfter: outstanding,
         grandTotal: bill.grandTotal,
         totalGST: bill.totalTax,
+        taxApplied: bill.taxApplied,
+        taxMode: bill.taxMode,
+        manualTaxRate: bill.manualTaxRate,
+        taxableValue: bill.taxableValue,
         gstBreakdown: bill.gstBreakdown,
         generatedBy: 'admin',
         createdBy: req.user._id,
@@ -408,6 +472,11 @@ exports.createManualInvoice = async (req, res, next) => {
         registrationId: registration.id,
         gstin: registration.gstin,
         lineCount: bill.lines.length,
+        lineTypes: [...new Set(bill.lines.map((l) => l.lineType))],
+        taxApplied: bill.taxApplied,
+        taxMode: bill.taxMode,
+        manualTaxRate: bill.manualTaxRate,
+        totalTax: bill.totalTax,
         stockDeducted: Boolean(deductStock),
       },
       note: 'Manual offline-sale invoice finalized',
@@ -584,21 +653,63 @@ exports.reverseOfflinePayment = async (req, res, next) => {
 /* ── GET /api/admin/manual-billing/products?search= ────────────────────────── */
 // Minimal catalog lookup for the billing form — active, non-deleted products
 // only, with the variant/stock/tax shape the calculator consumes server-side.
+function parseSearchParams(req) {
+  const search = cleanString(req.query.search, 100);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+  const re = search ? new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
+  return { re, limit };
+}
+
+function findCatalogProducts({ re, limit }) {
+  const query = { isDeleted: { $ne: true }, isActive: true };
+  if (re) query.$or = [{ name: re }, { sku: re }, { category: re }];
+  return Product.find(query)
+    .select('name sku category price salePrice stock variants taxRate')
+    .sort({ name: 1 })
+    .limit(limit)
+    .lean();
+}
+
+// Eligibility is exactly the marketplace rule (Kit.isActive) — the same filter
+// getKits/booking use and the calculator re-applies at pricing time.
+function findCatalogKits({ re, limit }) {
+  const query = { isActive: true };
+  if (re) query.$or = [{ name: re }, { slug: re }];
+  return Kit.find(query)
+    .select('name slug description discountPrice taxRate items')
+    .sort({ name: 1 })
+    .limit(limit)
+    .lean();
+}
+
 exports.searchProducts = async (req, res, next) => {
   try {
-    const search = cleanString(req.query.search, 100);
-    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
-    const query = { isDeleted: { $ne: true }, isActive: true };
-    if (search) {
-      const re = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      query.$or = [{ name: re }, { sku: re }, { category: re }];
-    }
-    const products = await Product.find(query)
-      .select('name sku category price salePrice stock variants taxRate')
-      .sort({ name: 1 })
-      .limit(limit)
-      .lean();
+    const products = await findCatalogProducts(parseSearchParams(req));
     res.json({ success: true, products });
+  } catch (err) { next(err); }
+};
+
+/* ── GET /api/admin/manual-billing/catalog?search= ─────────────────────────── */
+// Products + kits for the billing form. Kit prices shown here are informational
+// only — the calculator re-reads `discountPrice` from the DB at preview/finalize.
+exports.searchCatalog = async (req, res, next) => {
+  try {
+    const params = parseSearchParams(req);
+    const [products, kits] = await Promise.all([findCatalogProducts(params), findCatalogKits(params)]);
+    res.json({
+      success: true,
+      products: products.map((p) => ({ ...p, type: 'product' })),
+      kits: kits.map((k) => ({
+        _id:         k._id,
+        type:        'kit',
+        name:        k.name,
+        slug:        k.slug,
+        description: k.description || '',
+        price:       k.discountPrice,
+        taxRate:     k.taxRate ?? 0,
+        itemCount:   Array.isArray(k.items) ? k.items.length : 0,
+      })),
+    });
   } catch (err) { next(err); }
 };
 
