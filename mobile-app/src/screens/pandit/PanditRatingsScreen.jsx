@@ -6,7 +6,8 @@ import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
 import { COLORS } from '../../theme/tokens';
-import { timeAgo } from '../../utils/helpers';
+import { formatDate } from '../../utils/helpers';
+import { mapRatingHistory } from '../../utils/panditRatings';
 import EmptyState from '../../components/EmptyState';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
@@ -23,7 +24,7 @@ export default function PanditRatingsScreen() {
     try {
       if (!silent) setLoading(true);
       const { data: res } = await api.get('/pandits/me/ratings');
-      setData(res.data || res);
+      setData(mapRatingHistory(res));
     } catch { if (!silent) Toast.show({ type: 'error', text1: 'Could not load ratings' }); }
     finally { setLoading(false); setRefreshing(false); }
   };
@@ -33,15 +34,15 @@ export default function PanditRatingsScreen() {
   const renderItem = ({ item }) => (
     <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
       <View style={styles.top}>
-        <Text style={[styles.userName, { color: C.text }]}>{item.userId?.name || 'User'}</Text>
+        <Text style={[styles.userName, { color: C.text }]} numberOfLines={1}>{item.poojaName || 'Pooja'}</Text>
         <View style={styles.stars}>
           {Array.from({ length: 5 }).map((_, i) => (
             <Ionicons key={i} name={i < item.rating ? 'star' : 'star-outline'} size={14} color="#D97706" />
           ))}
         </View>
       </View>
-      {item.comment && <Text style={[styles.comment, { color: C.textSecondary }]}>{item.comment}</Text>}
-      <Text style={[styles.time, { color: C.textSecondary }]}>{timeAgo(item.createdAt)}</Text>
+      {item.review ? <Text style={[styles.comment, { color: C.textSecondary }]}>{item.review}</Text> : null}
+      {item.date ? <Text style={[styles.time, { color: C.textSecondary }]}>{formatDate(item.date)}</Text> : null}
     </View>
   );
 
@@ -50,7 +51,7 @@ export default function PanditRatingsScreen() {
       <ScreenHeader title="Ratings & Reviews" />
       {loading ? <LoadingSpinner fullScreen /> : (
         <FlatList
-          ListHeaderComponent={data?.averageRating ? (
+          ListHeaderComponent={data && (data.averageRating > 0 || data.totalReviews > 0) ? (
             <View style={[styles.avgCard, { backgroundColor: C.surface, borderColor: C.border }]}>
               <Text style={[styles.avgVal, { color: C.primary }]}>{data.averageRating.toFixed(1)}</Text>
               <View style={styles.stars}>
@@ -58,11 +59,11 @@ export default function PanditRatingsScreen() {
                   <Ionicons key={i} name={i < Math.round(data.averageRating) ? 'star' : 'star-outline'} size={22} color="#D97706" />
                 ))}
               </View>
-              <Text style={[styles.totalRatings, { color: C.textSecondary }]}>{data.totalRatings || 0} reviews</Text>
+              <Text style={[styles.totalRatings, { color: C.textSecondary }]}>{data.totalReviews} review{data.totalReviews === 1 ? '' : 's'}</Text>
             </View>
           ) : null}
           data={data?.reviews || []}
-          keyExtractor={(r) => r._id}
+          keyExtractor={(r) => r.id}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarClearance + 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(true); }} tintColor={C.primary} />}

@@ -26,6 +26,8 @@ import PanditNotificationsScreen from '../screens/pandit/PanditNotificationsScre
 import ChangePasswordScreen      from '../screens/user/ChangePasswordScreen';
 import DeleteAccountScreen       from '../screens/user/DeleteAccountScreen';
 import PanditSettingsScreen      from '../screens/pandit/PanditSettingsScreen';
+import LegalResourcesScreen      from '../screens/user/LegalResourcesScreen';
+import LegalDocumentScreen       from '../screens/user/LegalDocumentScreen';
 import PanditReferralScreen  from '../screens/pandit/PanditReferralScreen';
 import PanditReferralDetailScreen from '../screens/pandit/PanditReferralDetailScreen';
 import PanditMyBlogsScreen    from '../screens/pandit/PanditMyBlogsScreen';
@@ -36,6 +38,7 @@ import FestivalsScreen       from '../screens/user/FestivalsScreen';
 import FestivalDetailScreen  from '../screens/user/FestivalDetailScreen';
 import PanchangScreen        from '../screens/user/PanchangScreen';
 import InvoiceScreen         from '../screens/user/InvoiceScreen';
+import { useTranslation } from '../i18n';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -45,6 +48,9 @@ function HomeStack() {
   return (
     <Stack.Navigator screenOptions={NO_HEADER}>
       <Stack.Screen name="PanditDashboard"    component={PanditDashboardScreen} />
+      {/* The dashboard bell navigates to 'PanditNotifications' by name; that route used to exist only in the Profile tab's stack,
+          where a navigate() from this stack cannot reach it (a silent no-op on the device). Same screen, registered here too. */}
+      <Stack.Screen name="PanditNotifications" component={PanditNotificationsScreen} />
       <Stack.Screen name="PanditAvailability" component={PanditAvailabilityScreen} />
       <Stack.Screen name="PanditEarnings"     component={PanditEarningsScreen} />
       <Stack.Screen name="PanditRatings"      component={PanditRatingsScreen} />
@@ -90,6 +96,9 @@ function ProfileStack() {
       <Stack.Screen name="Notifications"       component={PanditNotificationsScreen} />
       <Stack.Screen name="ChangePassword"      component={ChangePasswordScreen} />
       <Stack.Screen name="DeleteAccount"       component={DeleteAccountScreen} />
+      {/* Legal & Resources (public legal documents + admin-configured links) — same screens as the User role. */}
+      <Stack.Screen name="LegalResources"      component={LegalResourcesScreen} />
+      <Stack.Screen name="LegalDocument"       component={LegalDocumentScreen} />
     </Stack.Navigator>
   );
 }
@@ -123,6 +132,7 @@ function BadgeIcon({ name, color, size, count }) {
 }
 
 export default function PanditNavigator() {
+  const { t } = useTranslation(); // tab labels follow the UI language
   const { unreadCount } = useNotificationStore();
   const insets = useSafeAreaInsets();
   // Floating pill must clear the OS gesture/home-indicator area on top of its
@@ -155,23 +165,23 @@ export default function PanditNavigator() {
       <Tab.Screen
         name="PanditHomeTab"
         component={HomeStack}
-        options={{ title: 'Dashboard', tabBarIcon: ({ color, size }) => <Ionicons name="grid" size={size} color={color} /> }}
+        options={{ title: t('nav.dashboard'), tabBarIcon: ({ color, size }) => <Ionicons name="grid" size={size} color={color} /> }}
       />
       <Tab.Screen
         name="PanditBookingsTab"
         component={BookingsStack}
-        options={{ title: 'Bookings', tabBarIcon: ({ color, size }) => <Ionicons name="calendar" size={size} color={color} /> }}
+        options={{ title: t('nav.bookings'), tabBarIcon: ({ color, size }) => <Ionicons name="calendar" size={size} color={color} /> }}
       />
       <Tab.Screen
         name="PanditReferralTab"
         component={ReferralStack}
-        options={{ title: 'Referrals', tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} /> }}
+        options={{ title: t('nav.referrals'), tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} /> }}
       />
       <Tab.Screen
         name="PanditProfileTab"
         component={ProfileStack}
         options={{
-          title: 'Profile',
+          title: t('nav.profile'),
           tabBarIcon: ({ color, size }) => (
             <BadgeIcon name="person-circle" size={size} color={color} count={unreadCount} />
           ),

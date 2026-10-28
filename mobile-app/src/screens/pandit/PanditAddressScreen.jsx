@@ -12,6 +12,8 @@ import MapPicker from '../../components/shared/MapPicker';
 import LocationSearch from '../../components/shared/LocationSearch';
 import Field from '../../components/shared/FormField';
 import { reverseGeocodeLocation } from '../../services/geocodingService';
+import useLocationPin from '../../hooks/useLocationPin';
+import { coordsFromSelection, fieldsFromSelection, formatPinLabel, STALE_PIN_NOTICE } from '../../utils/locationPin';
 
 const LANGUAGES = ['Hindi', 'English', 'Sanskrit', 'Marathi', 'Punjabi', 'Gujarati', 'Tamil', 'Telugu', 'Kannada', 'Bengali', 'Odia', 'Malayalam', 'Urdu', 'Bhojpuri'];
 const COVERAGE_TYPES = [
@@ -36,12 +38,13 @@ export default function PanditAddressScreen() {
   const [city,      setCity]      = useState('');
   const [district,  setDistrict]  = useState('');
   const [address,   setAddress]   = useState('');
-  const [coords,    setCoords]    = useState(null);
   const [mapVisible, setMapVisible] = useState(false);
-  // True while the typed address no longer provably matches the saved pin
-  // (set on any address edit, cleared by a map confirm). Prevents saving a
-  // changed address with the old coordinates silently attached.
-  const [pinStale,  setPinStale]  = useState(false);
+  // The pin goes stale when the user edits an address field by hand (never on programmatic fills: pincode lookup,
+  // search suggestion, loading the saved address). A stale pin is saved as null/null.
+  const pin = useLocationPin(null);
+  const resetPin = pin.reset;
+  // Mark the pin stale only when the user's edit actually changed the value.
+  const editedFrom = (current, next) => { if (next !== current) pin.markStale(); };
   const [coverageType, setCoverageType] = useState('city');
   const [radiusKm,  setRadiusKm]  = useState(25);
 
@@ -55,7 +58,7 @@ export default function PanditAddressScreen() {
         setCity(p.city || '');
         setDistrict(p.district || '');
         setAddress(p.address || '');
-        if (p.latitude && p.longitude) setCoords({ latitude: p.latitude, longitude: p.longitude });
+        resetPin({ latitude: p.latitude, longitude: p.longitude });
         setCoverageType(p.serviceCoverage?.type || 'city');
         setRadiusKm(p.serviceCoverage?.radiusKm || 25);
       })
@@ -66,9 +69,21 @@ export default function PanditAddressScreen() {
   const toggleLanguage = (lang) =>
     setLanguages((prev) => prev.includes(lang) ? prev.filter((l) => l !== lang) : [...prev, lang]);
 
-  const handleMapConfirm = async (c) => {
-    setCoords(c);
-    setPinStale(false);
+  const handlePlaceSelected = (selection) => {
+    const coords = coordsFromSelection(selection);
+    if (!coords) return; // never attach an invalid point
+    pin.select(coords, 'search');
+    // Programmatic fill: sets the available parts without touching the pin. A typed address is never overwritten.
+    const f = fieldsFromSelection(selection, address);
+    if (f.pincode) setPincode(f.pincode);
+    if (f.state) setState(f.state);
+    if (f.city) setCity(f.city);
+    if (f.district) setDistrict(f.district);
+    if (f.address) setAddress(f.address);
+  };
+
+  const handleMapConfirm = async (c, meta) => {
+    pin.select(c, meta?.source === 'gps' ? 'gps' : 'map');
     setMapVisible(false);
     // Offer the reverse-geocoded address only while the field is still empty —
     // never overwrite text the user typed.
@@ -81,19 +96,18 @@ export default function PanditAddressScreen() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      const pinValid = !!coords && !pinStale;
-      if (coords && pinStale) {
-        Toast.show({ type: 'info', text1: 'Address changed — map pin cleared. Re-pick on the map for a precise location.' });
+      const hadStalePin = pin.stale && !!pin.coords;
+      if (hadStalePin) {
+        Toast.show({ type: 'info', text1: 'Address changed — location pin cleared. Pick the location again for a precise position.' });
       }
       await api.patch('/pandits/me/languages-address', {
         languages, pincode, state, city, district, address: address.trim(),
-        latitude:  pinValid ? coords.latitude  : null,
-        longitude: pinValid ? coords.longitude : null,
+        ...pin.coordsForSave(), // both numbers, or both null
         serviceCoverage: { type: coverageType, radiusKm: coverageType === 'radius' ? radiusKm : undefined },
       });
       // If the pin was cleared server-side, drop it locally too so the UI
       // never shows a pin that no longer exists.
-      if (!pinValid && coords) { setCoords(null); setPinStale(false); }
+      if (hadStalePin) resetPin(null);
       Toast.show({ type: 'success', text1: 'Address & coverage saved' });
     } catch (err) {
       Toast.show({ type: 'error', text1: err.response?.data?.message || 'Save failed' });
@@ -121,56 +135,47 @@ export default function PanditAddressScreen() {
         </Field>
 
         <Field label="Search Location" C={C}>
-          <LocationSearch
-            onSelect={({ label, lat, lng }) => {
-              // An explicit suggestion pick is deliberate — the pin matches it.
-              setCoords({ latitude: lat, longitude: lng });
-              setPinStale(false);
-              if (!address.trim()) setAddress(label);
-            }}
-          />
+          <LocationSearch onSelect={handlePlaceSelected} />
         </Field>
 
         <Field label="Pincode" C={C}>
           <PincodeInput
             value={pincode}
-            onChange={(v) => { setPincode(v); setPinStale(true); }}
+            onChange={(v) => { editedFrom(pincode, v); setPincode(v); }}
             onFill={({ state: s, city: c, district: d }) => {
+              // Programmatic (runs after any 6-digit pincode lookup, including on load): must not touch the pin.
               if (s) setState(s); if (c) setCity(c); if (d) setDistrict(d);
-              setPinStale(true);
             }}
           />
         </Field>
 
         <Field label="State" C={C}>
-          <TextInput style={[styles.input, { borderColor: C.border, color: C.text, backgroundColor: C.surface }]} value={state} onChangeText={(v) => { setState(v); setPinStale(true); }} placeholderTextColor={C.textSecondary} />
+          <TextInput style={[styles.input, { borderColor: C.border, color: C.text, backgroundColor: C.surface }]} value={state} onChangeText={(v) => { editedFrom(state, v); setState(v); }} placeholderTextColor={C.textSecondary} />
         </Field>
         <Field label="City" C={C}>
-          <TextInput style={[styles.input, { borderColor: C.border, color: C.text, backgroundColor: C.surface }]} value={city} onChangeText={(v) => { setCity(v); setPinStale(true); }} placeholderTextColor={C.textSecondary} />
+          <TextInput style={[styles.input, { borderColor: C.border, color: C.text, backgroundColor: C.surface }]} value={city} onChangeText={(v) => { editedFrom(city, v); setCity(v); }} placeholderTextColor={C.textSecondary} />
         </Field>
         <Field label="District" C={C}>
-          <TextInput style={[styles.input, { borderColor: C.border, color: C.text, backgroundColor: C.surface }]} value={district} onChangeText={(v) => { setDistrict(v); setPinStale(true); }} placeholderTextColor={C.textSecondary} />
+          <TextInput style={[styles.input, { borderColor: C.border, color: C.text, backgroundColor: C.surface }]} value={district} onChangeText={(v) => { editedFrom(district, v); setDistrict(v); }} placeholderTextColor={C.textSecondary} />
         </Field>
         <Field label="Complete Address" C={C}>
           <TextInput
             style={[styles.input, { borderColor: C.border, color: C.text, backgroundColor: C.surface, height: 80, textAlignVertical: 'top' }]}
             value={address}
-            onChangeText={(v) => { setAddress(v); setPinStale(true); }}
+            onChangeText={(v) => { editedFrom(address, v); setAddress(v); }}
             multiline
             placeholder="House no, street, locality…"
             placeholderTextColor={C.textSecondary}
           />
         </Field>
 
-        <TouchableOpacity style={[styles.mapBtn, { borderColor: C.border }]} onPress={() => setMapVisible(true)} activeOpacity={0.85}>
+        <TouchableOpacity style={[styles.mapBtn, { borderColor: C.border }]} onPress={() => setMapVisible(true)} activeOpacity={0.85} accessibilityRole="button">
           <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>
-            {coords ? `📍 ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` : 'Pick on Map'}
+            {formatPinLabel(pin.coords, pin.source)}
           </Text>
         </TouchableOpacity>
-        {pinStale && coords && (
-          <Text style={{ color: '#B45309', fontSize: 12 }}>
-            Address changed — re-pick the pin on the map so the saved location matches.
-          </Text>
+        {pin.stale && pin.coords && (
+          <Text style={{ color: '#B45309', fontSize: 12 }} testID="stale-pin-notice">{STALE_PIN_NOTICE}</Text>
         )}
 
         <Field label="Service Coverage Area" C={C}>
@@ -207,7 +212,7 @@ export default function PanditAddressScreen() {
 
       <MapPicker
         visible={mapVisible}
-        initialCoords={coords}
+        initialCoords={pin.coords}
         onConfirm={handleMapConfirm}
         onClose={() => setMapVisible(false)}
       />

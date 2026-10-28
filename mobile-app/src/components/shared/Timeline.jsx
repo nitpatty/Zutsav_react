@@ -2,13 +2,15 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDateTime } from '../../utils/helpers';
+import { formatDateTime as defaultFormatDateTime } from '../../utils/helpers';
 
 // Vertical timeline driven by real event data (booking.auditLog,
 // order.statusTimeline, shipment.shipmentHistory) rather than an inferred
 // fixed "happy path" — avoids mismatches for cancelled/edge-case records.
-//   events – [{ label, note, at }], rendered oldest-first
-export default function Timeline({ events = [] }) {
+//   events         – [{ label, note, at }], rendered oldest-first
+//   formatDateTime – optional display formatter for `at`; the customer screens pass their locale-aware one, the Pandit
+//                    screen that also uses this component keeps the English default.
+export default function Timeline({ events = [], formatDateTime = defaultFormatDateTime }) {
   const { theme } = useThemeStore();
   const C = theme.colors;
 

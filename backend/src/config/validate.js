@@ -1,5 +1,6 @@
 const { NODE_ENV, readEnv } = require('./env');
 const paymentConfig = require('./payment.config');
+const ordersConfig = require('./orders.config');
 
 /**
  * Startup validation. Always-required vars fail fast in every environment;
@@ -33,6 +34,10 @@ function validateConfig() {
   const payment = paymentConfig.collectStartupErrors();
   payment.errors.forEach((e) => missing.push(`  - Payments: ${e}`));
   payment.warnings.forEach((w) => console.warn(`\n⚠️  ${w}`));
+
+  // Pending-order expiry is optional; a malformed value must never crash startup — it just keeps expiry off.
+  const expiry = ordersConfig.resolvePendingOrderExpiry();
+  if (!expiry.valid) console.warn('Orders: ' + expiry.reason);
 
   if (missing.length) {
     console.error(

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, TouchableOpacity, FlatList, Dimensions } from 'react-native';
 import RenderHtml from 'react-native-render-html';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,9 +10,15 @@ import { useCartStore } from '../../store/cartStore';
 import { formatCurrency } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useTranslation } from '../../i18n';
+import { useLanguageStore } from '../../i18n/languageStore';
 
 export default function ProductDetailScreen({ route }) {
   const { productId, product: productParam, slug } = route.params || {};
+  const { t } = useTranslation();
+  const contentLanguage = useLanguageStore((s) => s.language);
+  const openedInLanguage = useRef(contentLanguage); // the language the item passed through navigation was fetched in
+  const requestRef = useRef(0);
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -23,15 +29,21 @@ export default function ProductDetailScreen({ route }) {
   const [imgIndex, setImgIndex] = useState(0);
   const [selectedVariantId, setSelectedVariantId] = useState(null);
 
+  // Opened from the list with the item in hand: used as-is, no request (unchanged). Opened by slug/id only: fetched once.
+  // If the UI language changes while the screen is open the same product is fetched again (same endpoint and identifier;
+  // the client adds ?lang=) so old-language text is not left on screen. Only display content is replaced: the selected
+  // variant, the cart and the add-to-cart payload are not touched, and a reply for a superseded request is ignored.
+  const identifier = slug || productParam?.slug || productId;
   useEffect(() => {
-    if (!productParam && (slug || productId)) {
-      const identifier = slug || productId;
-      api.get(`/marketplace/products/${identifier}`)
-        .then(({ data }) => setProduct(data.data || data.product))
-        .catch(() => Toast.show({ type: 'error', text1: 'Could not load product' }))
-        .finally(() => setLoading(false));
-    }
-  }, [slug, productId]);
+    if (!identifier) return undefined;
+    if (productParam && contentLanguage === openedInLanguage.current) return undefined;
+    const request = ++requestRef.current;
+    api.get(`/marketplace/products/${identifier}`)
+      .then(({ data }) => { if (request === requestRef.current) setProduct((prev) => data.data || data.product || prev); })
+      .catch(() => { if (request === requestRef.current) Toast.show({ type: 'error', text1: t('shop.detailLoadFailed') }); })
+      .finally(() => { if (request === requestRef.current) setLoading(false); });
+    return () => { requestRef.current += 1; };
+  }, [identifier, contentLanguage]);
 
   const variants = (product?.variants || []).filter((v) => v.isActive !== false);
 
@@ -57,7 +69,7 @@ export default function ProductDetailScreen({ route }) {
 
   const handleAdd = () => {
     if (variants.length > 0 && !selectedVariant) {
-      Toast.show({ type: 'error', text1: 'Please select a variant' });
+      Toast.show({ type: 'error', text1: t('shop.selectVariant') });
       return;
     }
     addItem({
@@ -68,7 +80,7 @@ export default function ProductDetailScreen({ route }) {
       image: product.images?.[0],
       stock,
     });
-    Toast.show({ type: 'success', text1: `${product.name} added to cart` });
+    Toast.show({ type: 'success', text1: t('shop.addedToCart', { name: product.name }) });
   };
 
   const images = product.images?.length ? product.images : [];
@@ -78,7 +90,7 @@ export default function ProductDetailScreen({ route }) {
       <ScreenHeader
         title={product.name}
         right={
-          <TouchableOpacity onPress={() => navigation.navigate('Cart')}>
+          <TouchableOpacity onPress={() => navigation.navigate('Cart')} accessibilityRole="button" accessibilityLabel={t('shop.openCart')}>
             <Ionicons name="bag-handle-outline" size={22} color={C.text} />
           </TouchableOpacity>
         }
@@ -115,7 +127,7 @@ export default function ProductDetailScreen({ route }) {
 
           {variants.length > 0 && (
             <View style={{ gap: 8 }}>
-              <Text style={[styles.cardTitle, { color: C.text }]}>Select Option</Text>
+              <Text style={[styles.cardTitle, { color: C.text }]}>{t('shop.selectOption')}</Text>
               <View style={styles.variantRow}>
                 {variants.map((v) => {
                   const selected = v.variantId === selectedVariantId;
@@ -133,7 +145,7 @@ export default function ProductDetailScreen({ route }) {
                       activeOpacity={0.8}
                     >
                       <Text style={{ color: selected ? C.primary : C.text, fontSize: 13, fontWeight: '600' }}>{v.quantity}</Text>
-                      {disabled && <Text style={{ fontSize: 10, color: '#DC2626' }}>Out of stock</Text>}
+                      {disabled && <Text style={{ fontSize: 10, color: '#DC2626' }}>{t('shop.variantOutOfStock')}</Text>}
                     </TouchableOpacity>
                   );
                 })}
@@ -146,7 +158,7 @@ export default function ProductDetailScreen({ route }) {
                time and rendered as formatted HTML — same mechanism the blog
                detail screen uses, never raw text. */
             <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-              <Text style={[styles.cardTitle, { color: C.text }]}>Description</Text>
+              <Text style={[styles.cardTitle, { color: C.text }]}>{t('shop.description')}</Text>
               <RenderHtml
                 contentWidth={Dimensions.get('window').width - 60}
                 source={{ html: product.description }}
@@ -171,9 +183,9 @@ export default function ProductDetailScreen({ route }) {
           )}
 
           <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <Text style={[styles.cardTitle, { color: C.text }]}>Stock</Text>
+            <Text style={[styles.cardTitle, { color: C.text }]}>{t('shop.stock')}</Text>
             <Text style={[styles.stock, { color: stock > 0 ? '#16A34A' : '#DC2626' }]}>
-              {stock > 0 ? `${stock} available` : 'Out of Stock'}
+              {stock > 0 ? t('shop.available', { n: stock }) : t('shop.outOfStock')}
             </Text>
           </View>
         </View>
@@ -184,12 +196,12 @@ export default function ProductDetailScreen({ route }) {
           {inCart ? (
             <TouchableOpacity style={[styles.cartBtn, { backgroundColor: '#16A34A' }]} onPress={() => navigation.navigate('Cart')}>
               <Ionicons name="checkmark-circle" size={20} color="#fff" />
-              <Text style={styles.cartBtnText}>View in Cart ({cartItem.quantity})</Text>
+              <Text style={styles.cartBtnText}>{t('shop.viewInCart', { n: cartItem.quantity })}</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={[styles.cartBtn, { backgroundColor: C.primary }]} onPress={handleAdd}>
               <Ionicons name="add" size={20} color="#fff" />
-              <Text style={styles.cartBtnText}>Add to Cart</Text>
+              <Text style={styles.cartBtnText}>{t('shop.addToCart')}</Text>
             </TouchableOpacity>
           )}
         </View>

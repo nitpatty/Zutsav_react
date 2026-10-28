@@ -14,8 +14,12 @@ import EmptyState from '../../components/EmptyState';
 import ScreenHeader from '../../components/ScreenHeader';
 import ExpandableText from '../../components/shared/ExpandableText';
 import { stripHtml } from '../../utils/htmlToText';
+import { useLanguageStore } from '../../i18n/languageStore';
+import { useTranslation } from '../../i18n';
 
 export default function PoojaListScreen() {
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -39,14 +43,14 @@ export default function PoojaListScreen() {
       setHasMore(list.length === 12);
       setPage(pg);
     } catch {
-      if (!silent) Toast.show({ type: 'error', text1: 'Could not load poojas' });
+      if (!silent) Toast.show({ type: 'error', text1: t('poojas.loadFailed') });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search]);
+  }, [search, t]);
 
-  useEffect(() => { fetchPoojas(1); }, []);
+  useEffect(() => { fetchPoojas(1); }, [contentLanguage]);
 
   const handleSearch = () => { fetchPoojas(1, search); };
   const onRefresh = () => { setRefreshing(true); fetchPoojas(1, search, true); };
@@ -95,7 +99,7 @@ export default function PoojaListScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Poojas" />
+      <ScreenHeader title={t('poojas.title')} />
 
       <View style={[styles.searchWrap, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
         <View style={[styles.searchBox, { backgroundColor: C.background, borderColor: C.border }]}>
@@ -104,7 +108,7 @@ export default function PoojaListScreen() {
             style={[styles.searchInput, { color: C.text }]}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search poojas…"
+            placeholder={t('poojas.searchPlaceholder')}
             placeholderTextColor={C.textSecondary}
             returnKeyType="search"
             onSubmitEditing={handleSearch}
@@ -130,7 +134,7 @@ export default function PoojaListScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.3}
-          ListEmptyComponent={<EmptyState icon="flame-outline" title="No poojas found" />}
+          ListEmptyComponent={<EmptyState icon="flame-outline" title={t('poojas.empty')} />}
           ListFooterComponent={loading && page > 1 ? <LoadingSpinner /> : null}
         />
       )}

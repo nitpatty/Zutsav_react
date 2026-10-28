@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import api from '../api/axios';
+import { useTranslation } from '../i18n';
 
 // Shared saved-address CRUD, backed by the same /users/addresses endpoints
 // used by the website's AddressPicker. Consumed by both the Address Book
@@ -10,6 +11,10 @@ export default function useAddresses({ auto = true } = {}) {
   const [loading,   setLoading]   = useState(auto);
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState(null);
+  // `t` is read through a ref so a language change does not recreate `refresh` (which would refetch the addresses).
+  const { t } = useTranslation();
+  const tRef = useRef(t);
+  tRef.current = t;
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -19,7 +24,7 @@ export default function useAddresses({ auto = true } = {}) {
       setAddresses(data.addresses || []);
       return data.addresses || [];
     } catch (err) {
-      setError(err.response?.data?.message || 'Could not load addresses');
+      setError(err.response?.data?.message || tRef.current('address.loadFailed'));
       throw err;
     } finally {
       setLoading(false);

@@ -8,10 +8,12 @@ import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api, { imageUrl } from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDate, truncate } from '../../utils/helpers';
+import { truncate } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import EmptyState from '../../components/EmptyState';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useLanguageStore } from '../../i18n/languageStore';
+import { useTranslation, useFormatters } from '../../i18n';
 
 // Falls back to the placeholder box if the URL is missing OR if it fails to
 // actually load (404, host unreachable, etc.) — previously a load failure
@@ -29,6 +31,9 @@ function BlogCoverImage({ uri, C }) {
 }
 
 export default function BlogsScreen() {
+  const { t } = useTranslation();
+  const { formatDate } = useFormatters();
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -40,26 +45,28 @@ export default function BlogsScreen() {
   const [page,       setPage]       = useState(1);
   const [hasMore,    setHasMore]    = useState(true);
   const loadingMoreRef = useRef(false);
+  const requestRef = useRef(0); // only the latest blogs request may update the list (a slow old-language reply is dropped)
 
   const fetchBlogs = useCallback(async (pg = 1, q = search, silent = false) => {
+    const request = ++requestRef.current;
     try {
       if (!silent) setLoading(pg === 1);
       const params = { page: pg, limit: 15, status: 'published', sort: '-publishedAt' };
       if (q.trim()) params.search = q.trim();
       const { data } = await api.get('/blogs', { params });
       const list = data.data || data.blogs || [];
+      if (request !== requestRef.current) return;
       setBlogs((prev) => pg === 1 ? list : [...prev, ...list]);
       setHasMore(list.length === 15);
       setPage(pg);
     } catch {
-      if (!silent) Toast.show({ type: 'error', text1: 'Could not load blogs' });
+      if (request === requestRef.current && !silent) Toast.show({ type: 'error', text1: t('blogs.loadFailed') });
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (request === requestRef.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [search]);
+  }, [search, t]);
 
-  useEffect(() => { fetchBlogs(1); }, []);
+  useEffect(() => { fetchBlogs(1); }, [contentLanguage]);
 
   const onRefresh = () => { setRefreshing(true); fetchBlogs(1, search, true); };
   const onEndReached = () => {
@@ -88,7 +95,7 @@ export default function BlogsScreen() {
         )}
         <View style={styles.meta}>
           <Text style={[styles.author, { color: C.textSecondary }]}>
-            {item.authorName || 'Zutsav Team'}
+            {item.authorName || t('blogs.defaultAuthor')}
           </Text>
           <Text style={[styles.dot, { color: C.textSecondary }]}>·</Text>
           <Text style={[styles.date, { color: C.textSecondary }]}>
@@ -97,7 +104,7 @@ export default function BlogsScreen() {
           {item.readingTime && (
             <>
               <Text style={[styles.dot, { color: C.textSecondary }]}>·</Text>
-              <Text style={[styles.date, { color: C.textSecondary }]}>{item.readingTime} min read</Text>
+              <Text style={[styles.date, { color: C.textSecondary }]}>{t('blogs.minRead', { n: item.readingTime })}</Text>
             </>
           )}
         </View>
@@ -107,7 +114,7 @@ export default function BlogsScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Spiritual Blogs" showBack={false} />
+      <ScreenHeader title={t('blogs.title')} showBack={false} />
 
       {/* Search */}
       <View style={[styles.searchWrap, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
@@ -117,13 +124,13 @@ export default function BlogsScreen() {
             style={[styles.searchInput, { color: C.text }]}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search blogs…"
+            placeholder={t('blogs.searchPlaceholder')}
             placeholderTextColor={C.textSecondary}
             returnKeyType="search"
             onSubmitEditing={() => fetchBlogs(1, search)}
           />
           {search ? (
-            <TouchableOpacity onPress={() => { setSearch(''); fetchBlogs(1, ''); }}>
+            <TouchableOpacity onPress={() => { setSearch(''); fetchBlogs(1, ''); }} accessibilityRole="button" accessibilityLabel={t('blogs.clearSearch')}>
               <Ionicons name="close-circle" size={18} color={C.textSecondary} />
             </TouchableOpacity>
           ) : null}
@@ -141,7 +148,7 @@ export default function BlogsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.3}
-          ListEmptyComponent={<EmptyState icon="newspaper-outline" title="No blogs yet" subtitle="Check back later for spiritual content" />}
+          ListEmptyComponent={<EmptyState icon="newspaper-outline" title={t('blogs.emptyTitle')} subtitle={t('blogs.emptySub')} />}
           ListFooterComponent={loading && page > 1 ? <LoadingSpinner /> : null}
         />
       )}

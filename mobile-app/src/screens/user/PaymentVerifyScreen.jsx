@@ -1,86 +1,125 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Linking } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
+import { useAuthStore } from '../../store/authStore';
+import {
+  verifyTransaction, savePendingPayment, removePendingPayment, markVerificationActive,
+  openPaymentPage, resumeBookingPayment, bookingTypeForTxn, isValidTransactionId,
+} from '../../utils/paymentRecovery';
+import { useTranslation } from '../../i18n';
+
+// The gateway took a payment that the order could no longer accept (it had expired, was cancelled, or was already
+// paid by another attempt). The server records it for manual reconciliation; the customer must not pay again.
+// (Messages are kept as { key } for our own wording — translated where rendered, so the verification effect never depends on
+// the UI language — or { raw } for text the server supplied, which is shown exactly as received.)
+const NEEDS_REVIEW_MESSAGE = { key: 'payment.needsReview' };
 
 const POLL_INTERVAL = 3000;
 const MAX_POLLS = 20; // 1 minute
 
 export default function PaymentVerifyScreen({ navigation, route }) {
   const { merchantTransactionId, bookingId, orderId, type = 'booking' } = route.params || {};
+  const { t } = useTranslation();
   const { theme } = useThemeStore();
   const C = theme.colors;
 
   const [status,  setStatus]  = useState('pending'); // pending | success | timeout | failed
   const [polls,   setPolls]   = useState(0);
-  const [message, setMessage] = useState('Verifying your payment…');
+  const [message, setMessage] = useState({ key: 'payment.verifying' });
+  const [needsReview, setNeedsReview] = useState(false);
   const [checkAgainCount, setCheckAgainCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
+  const statusRef = useRef('pending');
+  const userId = useAuthStore((s) => s.user?._id);
 
   useEffect(() => {
     if (!merchantTransactionId) {
       setStatus('failed');
-      setMessage('Missing transaction ID');
-      return;
+      setMessage({ key: 'payment.missingTxn' });
+      return undefined;
     }
     let interval;
     let cancelled = false;
+    let finished = false;
     setStatus('pending');
+    statusRef.current = 'pending';
     setPolls(0);
-    setMessage('Verifying your payment…');
+    setNeedsReview(false);
+    setMessage({ key: 'payment.verifying' });
+
+    // Remember this payment BEFORE verifying so it can be found again if the app is killed or the user comes back later
+    // (utils/paymentRecovery). The record is a pointer only; the verdict below always comes from the server.
+    const context = { type, merchantTransactionId, bookingId, orderId };
+    if (userId) savePendingPayment(userId, context).catch(() => {});
+    // The background recovery run leaves a transaction alone while this screen is verifying it.
+    const release = markVerificationActive(merchantTransactionId);
+
+    const settle = (nextStatus, nextMessage, review = false) => {
+      finished = true;
+      clearInterval(interval);
+      statusRef.current = nextStatus;
+      setStatus(nextStatus);
+      setNeedsReview(review);
+      setMessage(nextMessage);
+      // The server gave a terminal answer: nothing is left to recover.
+      if (userId) removePendingPayment(userId, merchantTransactionId).catch(() => {});
+    };
 
     // `booking-remaining` (Pay Remaining top-ups) is tracked on a separate
     // endpoint from a standard/retry booking payment — using the wrong one
     // here previously caused false "verification timed out" results on
-    // successful partial payments.
-    const endpoint = type === 'booking-remaining'
-      ? `/bookings/verify-remaining/${merchantTransactionId}`
-      : type === 'booking'
-      ? `/bookings/verify-phonepe/${merchantTransactionId}`
-      : `/marketplace/orders/verify-phonepe/${merchantTransactionId}`;
-
+    // successful partial payments. Marketplace orders: unified checkout
+    // transactions (ZUT_CART_…) → /checkout/verify; an older legacy order keeps
+    // its own route (see utils/marketplaceCheckout.verifyEndpoint). Success is
+    // only ever what the server's verify response says — never the browser return.
+    // verifyTransaction shares ONE in-flight request per transaction with the background recovery run.
     const verify = async () => {
-      try {
-        const { data } = await api.get(endpoint);
-        if (cancelled) return;
+      if (cancelled || finished) return;
+      // No requests while the app is in the background (the user is paying in PhonePe). A skipped tick is not a poll.
+      if (AppState.currentState === 'background' || AppState.currentState === 'inactive') return;
 
-        if (data.success || data.alreadyVerified) {
-          clearInterval(interval);
-          setStatus('success');
-          setMessage('Payment successful!');
-          return;
-        }
+      const outcome = await verifyTransaction({ type, merchantTransactionId });
+      if (cancelled || finished) return;
 
-        // Booking/order verify endpoints respond 200 with success:false + a
-        // terminal gateway `state` on real failures (they don't throw an HTTP
-        // error) — only a non-PENDING state means the payment actually failed.
-        if (data.state && data.state !== 'PENDING') {
-          clearInterval(interval);
-          setStatus('failed');
-          setMessage(data.code || data.state || 'Payment failed');
-          return;
-        }
-        // Still PENDING — keep polling.
-      } catch {
-        // Transient/network error — keep polling rather than failing early.
-      }
+      if (outcome.kind === 'paid') { settle('success', { key: 'payment.success' }); return; }
+      if (outcome.kind === 'needs_review') { settle('failed', NEEDS_REVIEW_MESSAGE, true); return; }
+      // Booking/order verify endpoints respond 200 with success:false + a terminal gateway `state` on real
+      // failures — only a non-PENDING state means the payment actually failed.
+      if (outcome.kind === 'failed') { settle('failed', outcome.code ? { raw: outcome.code } : { key: 'payment.failedGeneric' }); return; }
+      // pending, unknown record, offline, 5xx …: keep waiting. Never a failure and never a success.
+
       setPolls((p) => {
         const next = p + 1;
         if (next >= MAX_POLLS) {
           clearInterval(interval);
+          statusRef.current = 'timeout';
           setStatus('timeout');
-          setMessage('Still waiting for confirmation. You can check again or view your bookings.');
+          // Running out of checks says nothing about the payment: it stays on record and is re-checked later.
+          setMessage({ key: 'payment.timeoutMsg' });
         }
         return next;
       });
     };
 
+    // Coming back from PhonePe / the browser: verify right away (single-flight), and give a timed-out screen a fresh window.
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active' || cancelled || finished) return;
+      if (statusRef.current === 'timeout') { setCheckAgainCount((c) => c + 1); return; }
+      verify();
+    });
+
     verify();
     interval = setInterval(verify, POLL_INTERVAL);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [merchantTransactionId, type, checkAgainCount]);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      subscription?.remove?.();
+      release();
+    };
+  }, [merchantTransactionId, type, checkAgainCount, userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleContinue = () => {
     if (orderId) navigation.replace('OrderDetail', { orderId });
@@ -98,23 +137,44 @@ export default function PaymentVerifyScreen({ navigation, route }) {
     try {
       const { data } = await api.post(`/bookings/${bookingId}/retry-payment`);
       if (data.alreadyInFlight) {
-        Toast.show({ type: 'info', text1: 'A payment attempt is already in progress' });
-        handleContinue();
+        // The server already has a live attempt: never start another — verify THAT transaction (only the id it returned).
+        if (data.merchantTransactionId === merchantTransactionId) {
+          Toast.show({ type: 'info', text1: t('payment.stillBeingConfirmed') });
+          setRetrying(false);
+          handleCheckAgain();
+          return;
+        }
+        const resumed = await resumeBookingPayment({ navigation, userId, bookingId, merchantTransactionId: data.merchantTransactionId, replace: true });
+        if (!resumed) {
+          Toast.show({ type: 'info', text1: t('bookings.attemptInProgress'), text2: t('payment.openBookingCheck') });
+          handleContinue();
+        }
         return;
       }
-      await Linking.openURL(data.redirectUrl);
+      if (!isValidTransactionId(data.merchantTransactionId)) throw new Error('Unexpected retry response');
+      const opened = await openPaymentPage({
+        userId,
+        context: { type: 'booking', merchantTransactionId: data.merchantTransactionId, bookingId },
+        redirectUrl: data.redirectUrl,
+      });
+      if (!opened.opened) {
+        Toast.show({ type: 'error', text1: opened.reason === 'invalid_url' ? t('orders.retryInvalidLink') : t('bookings.startFailed') });
+        setRetrying(false);
+        return;
+      }
       navigation.replace('PaymentVerify', {
         merchantTransactionId: data.merchantTransactionId,
         bookingId,
         type: 'booking',
       });
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not start payment' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('bookings.startFailed') });
       setRetrying(false);
     }
   };
 
-  const continueLabel = orderId ? 'View Order' : (status === 'success' ? 'View Booking' : 'Go to Bookings');
+  const continueLabel = orderId ? t('payment.viewOrder') : (status === 'success' ? t('payment.viewBooking') : t('payment.goToBookings'));
+  const messageText = message.key ? t(message.key) : message.raw;
   const canRetryPayment = type === 'booking' && !!bookingId;
 
   return (
@@ -123,17 +183,17 @@ export default function PaymentVerifyScreen({ navigation, route }) {
         {status === 'pending' ? (
           <>
             <ActivityIndicator size="large" color={C.primary} />
-            <Text style={[styles.title, { color: C.text }]}>Verifying Payment</Text>
-            <Text style={[styles.sub, { color: C.textSecondary }]}>Please wait while we confirm your payment…</Text>
-            <Text style={[styles.hint, { color: C.textSecondary }]}>({polls}/{MAX_POLLS} checks)</Text>
+            <Text style={[styles.title, { color: C.text }]}>{t('payment.verifyingTitle')}</Text>
+            <Text style={[styles.sub, { color: C.textSecondary }]}>{t('payment.verifyingSub')}</Text>
+            <Text style={[styles.hint, { color: C.textSecondary }]}>{t('payment.checks', { polls, max: MAX_POLLS })}</Text>
           </>
         ) : status === 'success' ? (
           <>
             <View style={[styles.iconCircle, { backgroundColor: '#16A34A20' }]}>
               <Ionicons name="checkmark-circle" size={64} color="#16A34A" />
             </View>
-            <Text style={[styles.title, { color: C.text }]}>Payment Successful!</Text>
-            <Text style={[styles.sub, { color: C.textSecondary }]}>{message}</Text>
+            <Text style={[styles.title, { color: C.text }]}>{t('payment.successTitle')}</Text>
+            <Text style={[styles.sub, { color: C.textSecondary }]}>{messageText}</Text>
             <TouchableOpacity
               style={[styles.btn, { backgroundColor: C.primary }]}
               onPress={handleContinue}
@@ -147,15 +207,15 @@ export default function PaymentVerifyScreen({ navigation, route }) {
             <View style={[styles.iconCircle, { backgroundColor: '#D9770620' }]}>
               <Ionicons name="time" size={64} color="#D97706" />
             </View>
-            <Text style={[styles.title, { color: C.text }]}>Still Confirming</Text>
-            <Text style={[styles.sub, { color: C.textSecondary }]}>{message}</Text>
+            <Text style={[styles.title, { color: C.text }]}>{t('payment.stillConfirming')}</Text>
+            <Text style={[styles.sub, { color: C.textSecondary }]}>{messageText}</Text>
             <TouchableOpacity
               style={[styles.btn, { backgroundColor: C.primary, flexDirection: 'row', justifyContent: 'center', gap: 8 }]}
               onPress={handleCheckAgain}
               activeOpacity={0.85}
             >
               <Ionicons name="refresh" size={18} color="#fff" />
-              <Text style={styles.btnText}>Check Again</Text>
+              <Text style={styles.btnText}>{t('payment.checkAgain')}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleContinue} activeOpacity={0.7}>
               <Text style={[styles.linkText, { color: C.primary }]}>{continueLabel}</Text>
@@ -166,10 +226,15 @@ export default function PaymentVerifyScreen({ navigation, route }) {
             <View style={[styles.iconCircle, { backgroundColor: '#DC262620' }]}>
               <Ionicons name="close-circle" size={64} color="#DC2626" />
             </View>
-            <Text style={[styles.title, { color: C.text }]}>Payment Failed</Text>
+            <Text style={[styles.title, { color: C.text }]}>{t('orders.statusPaymentFailed')}</Text>
             <Text style={[styles.sub, { color: C.textSecondary }]}>
-              {canRetryPayment ? 'Your booking is saved — you can retry the same booking anytime.' : message}
+              {canRetryPayment ? t('payment.bookingSavedRetry') : messageText}
             </Text>
+            {type === 'marketplace' && !needsReview ? (
+              <Text style={[styles.hint, { color: C.textSecondary }]}>
+                {t('payment.orderSavedRetry')}
+              </Text>
+            ) : null}
             {canRetryPayment ? (
               <TouchableOpacity
                 style={[styles.btn, { backgroundColor: '#DC2626', flexDirection: 'row', justifyContent: 'center', gap: 8 }]}
@@ -178,7 +243,7 @@ export default function PaymentVerifyScreen({ navigation, route }) {
                 activeOpacity={0.85}
               >
                 <Ionicons name="refresh" size={18} color="#fff" />
-                <Text style={styles.btnText}>{retrying ? 'Redirecting…' : 'Retry Payment'}</Text>
+                <Text style={styles.btnText}>{retrying ? t('bookings.redirecting') : t('orders.retryPayment')}</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity

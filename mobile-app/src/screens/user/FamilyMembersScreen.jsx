@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Alert, ActivityIndicator, RefreshControl,
@@ -10,6 +10,8 @@ import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useTranslation, useFormatters } from '../../i18n';
+import { relationshipLabel } from '../../utils/familyLabels';
 
 /* ── Relationship options ─────────────────────────────────────────────── */
 const RELATIONSHIPS = [
@@ -19,6 +21,8 @@ const RELATIONSHIPS = [
 
 /* ── Family member card ──────────────────────────────────────────────── */
 function FamilyMemberCard({ member, onEdit, onDelete, C }) {
+  const { t } = useTranslation();
+  const { formatDateWithOptions } = useFormatters();
   const initials = member.name
     .split(' ')
     .map((n) => n[0])
@@ -27,7 +31,7 @@ function FamilyMemberCard({ member, onEdit, onDelete, C }) {
     .toUpperCase();
 
   const formattedDob = member.dateOfBirth
-    ? new Date(member.dateOfBirth).toLocaleDateString('en-IN', {
+    ? formatDateWithOptions(new Date(member.dateOfBirth), {
         day: 'numeric',
         month: 'short',
         year: 'numeric',
@@ -47,7 +51,7 @@ function FamilyMemberCard({ member, onEdit, onDelete, C }) {
           {member.name}
         </Text>
         <Text style={[styles.memberRelation, { color: C.textSecondary }]}>
-          {member.relationship}
+          {relationshipLabel(member.relationship, t)}
         </Text>
         {formattedDob && (
           <Text style={[styles.memberDob, { color: C.textLight }]}>
@@ -62,6 +66,8 @@ function FamilyMemberCard({ member, onEdit, onDelete, C }) {
           onPress={() => onEdit(member)}
           style={[styles.actionBtn, { backgroundColor: C.primary + '15' }]}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t('family.editLabel', { name: member.name })}
         >
           <Ionicons name="pencil" size={14} color={C.primary} />
         </TouchableOpacity>
@@ -69,6 +75,8 @@ function FamilyMemberCard({ member, onEdit, onDelete, C }) {
           onPress={() => onDelete(member)}
           style={[styles.actionBtn, { backgroundColor: (C.error || '#DC2626') + '15' }]}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t('family.deleteLabel', { name: member.name })}
         >
           <Ionicons name="trash-outline" size={14} color={C.error || '#DC2626'} />
         </TouchableOpacity>
@@ -79,14 +87,15 @@ function FamilyMemberCard({ member, onEdit, onDelete, C }) {
 
 /* ── Empty state ─────────────────────────────────────────────────────── */
 function EmptyState({ onAdd, C }) {
+  const { t } = useTranslation();
   return (
     <View style={[styles.emptyContainer, { backgroundColor: C.surface, borderColor: C.borderLight }]}>
       <View style={[styles.emptyIcon, { backgroundColor: C.primary + '15' }]}>
         <Ionicons name="people-outline" size={40} color={C.primary} />
       </View>
-      <Text style={[styles.emptyTitle, { color: C.text }]}>No Family Members Yet</Text>
+      <Text style={[styles.emptyTitle, { color: C.text }]}>{t('family.emptyTitle')}</Text>
       <Text style={[styles.emptySubtitle, { color: C.textSecondary }]}>
-        Add your family members to easily book poojas and services for them.
+        {t('family.emptySub')}
       </Text>
       <TouchableOpacity
         onPress={onAdd}
@@ -94,7 +103,7 @@ function EmptyState({ onAdd, C }) {
         activeOpacity={0.85}
       >
         <Ionicons name="add" size={18} color="#fff" />
-        <Text style={styles.addButtonText}>Add Family Member</Text>
+        <Text style={styles.addButtonText}>{t('family.addTitle')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -102,6 +111,9 @@ function EmptyState({ onAdd, C }) {
 
 /* ── Main screen ─────────────────────────────────────────────────────── */
 export default function FamilyMembersScreen() {
+  const { t } = useTranslation();
+  const tRef = useRef(t); // read at call time so a language switch never changes fetchMembers (and so never refetches)
+  tRef.current = t;
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -117,7 +129,7 @@ export default function FamilyMembersScreen() {
     } catch (err) {
       Toast.show({
         type: 'error',
-        text1: 'Failed to load family members',
+        text1: tRef.current('family.loadFailed'),
       });
     } finally {
       setLoading(false);
@@ -148,12 +160,12 @@ export default function FamilyMembersScreen() {
 
   const handleDelete = (member) => {
     Alert.alert(
-      'Delete Family Member',
-      `Are you sure you want to remove ${member.name} (${member.relationship})?`,
+      t('family.deleteTitle'),
+      t('family.deleteConfirm', { name: member.name, relationship: relationshipLabel(member.relationship, t) }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('address.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -161,12 +173,12 @@ export default function FamilyMembersScreen() {
               setMembers((prev) => prev.filter((m) => m._id !== member._id));
               Toast.show({
                 type: 'success',
-                text1: 'Family member removed',
+                text1: t('family.removed'),
               });
             } catch (err) {
               Toast.show({
                 type: 'error',
-                text1: err.response?.data?.message || 'Failed to delete',
+                text1: err.response?.data?.message || t('family.deleteFailed'),
               });
             }
           },
@@ -182,7 +194,7 @@ export default function FamilyMembersScreen() {
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
       <ScreenHeader
-        title="Family Members"
+        title={t('profile.familyMembers')}
         showBack
         right={
           members.length > 0 ? (
@@ -197,7 +209,7 @@ export default function FamilyMembersScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={C.primary} />
           <Text style={[styles.loadingText, { color: C.textSecondary }]}>
-            Loading family members...
+            {t('family.loading')}
           </Text>
         </View>
       ) : members.length === 0 ? (
@@ -211,7 +223,7 @@ export default function FamilyMembersScreen() {
         >
           {/* Subtitle */}
           <Text style={[styles.subtitle, { color: C.textSecondary }]}>
-            Manage your family members for pooja bookings and spiritual services.
+            {t('family.subtitle')}
           </Text>
 
           {/* Member list */}
@@ -233,7 +245,7 @@ export default function FamilyMembersScreen() {
           >
             <Ionicons name="add" size={18} color={C.primary} />
             <Text style={[styles.addBottomBtnText, { color: C.primary }]}>
-              Add Another Member
+              {t('family.addAnother')}
             </Text>
           </TouchableOpacity>
         </ScrollView>

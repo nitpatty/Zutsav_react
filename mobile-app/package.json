@@ -6,6 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "test": "jest",
+    "test:ci": "jest --ci --runInBand --watchAll=false",
     "build:android": "eas build --platform android --profile production",
     "build:ios": "eas build --platform ios --profile production",
     "submit:android": "eas submit --platform android",
@@ -57,7 +59,11 @@
     "zustand": "^4.5.4"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.0"
+    "@babel/core": "^7.24.0",
+    "@testing-library/react-native": "^12.9.0",
+    "jest": "^29.2.1",
+    "jest-expo": "~51.0.4",
+    "react-test-renderer": "18.2.0"
   },
   "private": true
 }

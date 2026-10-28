@@ -4,12 +4,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
+import { mapTemples } from '../../utils/temple';
 import { useThemeStore } from '../../store/themeStore';
 import EmptyState from '../../components/EmptyState';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useLanguageStore } from '../../i18n/languageStore';
+import { useTranslation } from '../../i18n';
 
 export default function TemplesScreen() {
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -24,17 +29,17 @@ export default function TemplesScreen() {
       const params = { limit: 50 };
       if (q.trim()) params.search = q.trim();
       const { data } = await api.get('/temples', { params });
-      setTemples(data.data || data.temples || []);
-    } catch { if (!silent) Toast.show({ type: 'error', text1: 'Could not load temples' }); }
+      setTemples(mapTemples(data));
+    } catch { if (!silent) Toast.show({ type: 'error', text1: t('temples.loadFailed') }); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => { fetch(); }, [contentLanguage]);
 
   const renderItem = ({ item }) => (
     <TouchableOpacity
       style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}
-      onPress={() => navigation.navigate('TempleDetail', { templeId: item._id, temple: item })}
+      onPress={() => navigation.navigate('TempleDetail', { templeId: item.id, temple: item.raw })}
       activeOpacity={0.85}
     >
       <View style={[styles.iconWrap, { backgroundColor: C.primary + '18' }]}>
@@ -42,8 +47,8 @@ export default function TemplesScreen() {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.name, { color: C.text }]}>{item.name}</Text>
-        {item.city && <Text style={[styles.location, { color: C.textSecondary }]}><Ionicons name="location" size={12} /> {item.city}{item.state ? `, ${item.state}` : ''}</Text>}
-        {item.deity && <Text style={[styles.deity, { color: C.primary }]}>{item.deity}</Text>}
+        {item.location ? <Text style={[styles.location, { color: C.textSecondary }]}><Ionicons name="location" size={12} /> {item.location}</Text> : null}
+        {item.primaryDeity ? <Text style={[styles.deity, { color: C.primary }]}>{item.primaryDeity}</Text> : null}
       </View>
       <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
     </TouchableOpacity>
@@ -51,22 +56,22 @@ export default function TemplesScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Temples" />
+      <ScreenHeader title={t('temples.title')} />
       <View style={[styles.searchWrap, { backgroundColor: C.surface, borderBottomColor: C.border }]}>
         <View style={[styles.searchBox, { backgroundColor: C.background, borderColor: C.border }]}>
           <Ionicons name="search" size={18} color={C.textSecondary} />
-          <TextInput style={[styles.searchInput, { color: C.text }]} value={search} onChangeText={setSearch} placeholder="Search temples…" placeholderTextColor={C.textSecondary} returnKeyType="search" onSubmitEditing={() => fetch(search)} />
+          <TextInput style={[styles.searchInput, { color: C.text }]} value={search} onChangeText={setSearch} placeholder={t('temples.searchPlaceholder')} placeholderTextColor={C.textSecondary} returnKeyType="search" onSubmitEditing={() => fetch(search)} />
           {search ? <TouchableOpacity onPress={() => { setSearch(''); fetch(''); }}><Ionicons name="close-circle" size={18} color={C.textSecondary} /></TouchableOpacity> : null}
         </View>
       </View>
       {loading ? <LoadingSpinner fullScreen /> : (
         <FlatList
           data={temples}
-          keyExtractor={(t) => t._id}
+          keyExtractor={(t) => t.id}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(search, true); }} tintColor={C.primary} />}
-          ListEmptyComponent={<EmptyState icon="business-outline" title="No temples found" />}
+          ListEmptyComponent={<EmptyState icon="business-outline" title={t('temples.empty')} />}
         />
       )}
     </View>

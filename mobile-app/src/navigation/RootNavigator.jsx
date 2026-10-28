@@ -12,6 +12,7 @@ import AdminNavigator from './AdminNavigator';
 import { connectSocket, disconnectSocket, onNotification } from '../utils/socket';
 import { useNotificationStore } from '../store/notificationStore';
 import { useCartStore } from '../store/cartStore';
+import usePaymentRecovery from '../hooks/usePaymentRecovery';
 
 const Stack = createNativeStackNavigator();
 
@@ -31,6 +32,10 @@ export default function RootNavigator() {
   const { pandit, checkedOnce: panditCheckedOnce, fetch: fetchPanditStatus, reset: resetPanditStatus } = usePanditStatusStore();
 
   useEffect(() => { loadTheme(); }, []);
+
+  // A customer who left the app to pay: re-check their pending payment with the server on launch and on every return
+  // to the foreground (no-op until the session is restored; never navigates). See utils/paymentRecovery.
+  usePaymentRecovery({ user, ready });
 
   useEffect(() => {
     if (!user) { disconnectSocket(); return; }

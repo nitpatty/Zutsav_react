@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { thirdParty } from '../config';
+import { useTranslation } from '../i18n';
 
 // Same free India Post pincode API the website uses
 // (frontend/src/components/shared/PincodeInput.jsx) — called directly via
@@ -9,6 +10,9 @@ export default function usePincodeLookup(pincode) {
   const [loading, setLoading] = useState(false);
   const [data,    setData]    = useState(null);
   const [error,   setError]   = useState(null);
+  const { t } = useTranslation();
+  const tRef = useRef(t); // read through a ref so the lookup effect still runs only when the pincode changes
+  tRef.current = t;
 
   useEffect(() => {
     if (!pincode || pincode.length !== 6) {
@@ -32,11 +36,11 @@ export default function usePincodeLookup(pincode) {
           });
         } else {
           setData(null);
-          setError('Invalid pincode. Please check and try again.');
+          setError(tRef.current('location.pincodeInvalid'));
         }
       })
       .catch(() => {
-        if (!cancelled) setError('Could not fetch location data.');
+        if (!cancelled) setError(tRef.current('location.pincodeLookupFailed'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

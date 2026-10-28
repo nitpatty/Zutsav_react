@@ -2,12 +2,15 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeStore } from '../../store/themeStore';
+import { useTranslation } from '../../i18n';
+import { addressLabelText } from '../../utils/addressLabels';
 
 const LABEL_ICON = { Home: 'home', Office: 'business', Other: 'location' };
 
 // Presentational card for one saved address — used both in the picker
 // (booking/checkout) and the manager (Address Book) modes of AddressPicker.
 export default function AddressCard({ address, selected, onSelect, onEdit, onDelete }) {
+  const { t } = useTranslation();
   const { theme } = useThemeStore();
   const C = theme.colors;
   const icon = LABEL_ICON[address.label] || 'location';
@@ -29,10 +32,10 @@ export default function AddressCard({ address, selected, onSelect, onEdit, onDel
 
       <View style={{ flex: 1 }}>
         <View style={styles.labelRow}>
-          <Text style={[styles.label, { color: C.text }]}>{address.label || 'Home'}</Text>
+          <Text style={[styles.label, { color: C.text }]}>{addressLabelText(address.label || 'Home', t)}</Text>
           {address.isDefault && (
             <View style={[styles.defaultBadge, { backgroundColor: C.primary + '20' }]}>
-              <Text style={[styles.defaultBadgeText, { color: C.primary }]}>Default</Text>
+              <Text style={[styles.defaultBadgeText, { color: C.primary }]}>{t('address.defaultBadge')}</Text>
             </View>
           )}
         </View>

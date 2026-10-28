@@ -7,16 +7,23 @@ import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDateTime, formatCurrency, formatStatus, formatAuditAction, refundStatusColor, resolveBookingBadge } from '../../utils/helpers';
+import { formatCurrency, formatStatus, refundStatusColor, resolveBookingBadge, paymentStatusColor } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
-import Timeline from '../../components/shared/Timeline';
-
-const CANCELLABLE_STATUSES = ['pending_payment', 'paid', 'pandit_assigned', 'pandit_accepted', 'pending_reassignment', 'completion_requested'];
+import { canUserCancel } from '../../utils/bookingRules';
+import { useAuthStore } from '../../store/authStore';
+import { openPaymentPage, resumeBookingPayment, isValidTransactionId } from '../../utils/paymentRecovery';
+import PendingPaymentBanner from '../../components/shared/PendingPaymentBanner';
+import { getCouponDisplay, getCoinDisplay } from '../../utils/discountDisplay';
+import { useTranslation, useFormatters } from '../../i18n';
+import { bookingStatusLabel, paymentStatusLabel, refundStatusLabel, paymentModeLabel } from '../../utils/bookingStatusLabels';
 
 export default function BookingDetailScreen({ navigation, route }) {
+  const { formatDateTime } = useFormatters();
   const { bookingId } = route.params || {};
+  const { t } = useTranslation();
+  const userId = useAuthStore((s) => s.user?._id);
   const { theme } = useThemeStore();
   const C = theme.colors;
 
@@ -46,7 +53,7 @@ export default function BookingDetailScreen({ navigation, route }) {
       setBooking(data.data || data.booking);
       setReferralDetails(data.referralDetails || null);
     } catch {
-      Toast.show({ type: 'error', text1: 'Could not load booking' });
+      Toast.show({ type: 'error', text1: t('bookings.detailLoadFailed') });
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -60,12 +67,21 @@ export default function BookingDetailScreen({ navigation, route }) {
       setActing(true);
       const { data } = await api.post(`/bookings/${bookingId}/retry-payment`);
       if (data.alreadyInFlight) {
-        Toast.show({ type: 'info', text1: 'A payment attempt is already in progress' });
+        // A live attempt exists on the server: never start a second one — verify THAT transaction.
+        const resumed = await resumeBookingPayment({ navigation, userId, bookingId, merchantTransactionId: data.merchantTransactionId });
+        if (!resumed) Toast.show({ type: 'info', text1: t('bookings.attemptInProgress'), text2: t('bookings.pullToRefresh') });
         return;
       }
-      if (data.redirectUrl) {
-        const { Linking } = require('react-native');
-        await Linking.openURL(data.redirectUrl);
+      if (data.redirectUrl && isValidTransactionId(data.merchantTransactionId)) {
+        const opened = await openPaymentPage({
+          userId,
+          context: { type: 'booking', merchantTransactionId: data.merchantTransactionId, bookingId },
+          redirectUrl: data.redirectUrl,
+        });
+        if (!opened.opened) {
+          Toast.show({ type: 'error', text1: opened.reason === 'invalid_url' ? t('orders.retryInvalidLink') : t('bookings.startFailed') });
+          return;
+        }
         navigation.navigate('PaymentVerify', {
           merchantTransactionId: data.merchantTransactionId,
           bookingId,
@@ -73,25 +89,32 @@ export default function BookingDetailScreen({ navigation, route }) {
         });
       }
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not start payment' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('bookings.startFailed') });
     } finally { setActing(false); }
   };
 
   const handlePayRemaining = async () => {
     Alert.alert(
-      'Pay Remaining',
-      `Pay the remaining ${formatCurrency(booking.remainingAmount || 0)}?`,
+      t('bookings.payRemainingTitle'),
+      t('bookings.payRemainingConfirm', { amount: formatCurrency(booking.remainingAmount || 0) }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Pay Now',
+          text: t('cart.payNow'),
           onPress: async () => {
             try {
               setActing(true);
               const { data } = await api.post(`/bookings/${bookingId}/pay-remaining`);
-              if (data.redirectUrl) {
-                const { Linking } = require('react-native');
-                await Linking.openURL(data.redirectUrl);
+              if (data.redirectUrl && isValidTransactionId(data.merchantTransactionId)) {
+                const opened = await openPaymentPage({
+                  userId,
+                  context: { type: 'booking-remaining', merchantTransactionId: data.merchantTransactionId, bookingId },
+                  redirectUrl: data.redirectUrl,
+                });
+                if (!opened.opened) {
+                  Toast.show({ type: 'error', text1: opened.reason === 'invalid_url' ? t('orders.retryInvalidLink') : t('bookings.startFailed') });
+                  return;
+                }
                 navigation.navigate('PaymentVerify', {
                   merchantTransactionId: data.merchantTransactionId,
                   bookingId,
@@ -99,7 +122,9 @@ export default function BookingDetailScreen({ navigation, route }) {
                 });
               }
             } catch (err) {
-              Toast.show({ type: 'error', text1: err.response?.data?.message || 'Failed' });
+              // 409 = a remaining-balance payment is already in progress; its response names the transaction. Resume it, never start another.
+              if (err.response?.status === 409 && await resumeBookingPayment({ navigation, userId, bookingId, merchantTransactionId: err.response?.data?.merchantTransactionId })) return;
+              Toast.show({ type: 'error', text1: err.response?.data?.message || t('bookings.failed') });
             } finally { setActing(false); }
           },
         },
@@ -110,12 +135,14 @@ export default function BookingDetailScreen({ navigation, route }) {
   const handleSubmitRating = async () => {
     try {
       setSubmitting(true);
-      await api.post(`/bookings/${bookingId}/rate`, { rating: ratingVal, comment: ratingText.trim() });
-      Toast.show({ type: 'success', text1: 'Thank you for your review!' });
+      // Backend (booking.controller rateBooking) reads `review`, not `comment`;
+      // an empty string is the accepted "no written review" value.
+      await api.post(`/bookings/${bookingId}/rate`, { rating: ratingVal, review: ratingText.trim() });
+      Toast.show({ type: 'success', text1: t('bookings.thanks') });
       setRatingModal(false);
       fetch(true);
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Rating failed' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('bookings.ratingFailed') });
     } finally { setSubmitting(false); }
   };
 
@@ -126,7 +153,7 @@ export default function BookingDetailScreen({ navigation, route }) {
       const { data } = await api.get(`/bookings/${bookingId}/refund-preview`);
       setRefundPreview(data.refundPreview);
     } catch (err) {
-      Toast.show({ type: 'error', text1: 'Could not load refund preview' });
+      Toast.show({ type: 'error', text1: t('bookings.previewFailed') });
     } finally {
       setPreviewLoading(false);
     }
@@ -136,11 +163,11 @@ export default function BookingDetailScreen({ navigation, route }) {
     try {
       setCancelling(true);
       await api.patch(`/bookings/${bookingId}/cancel`, { reason: cancelReason.trim() });
-      Toast.show({ type: 'success', text1: 'Booking cancelled' });
+      Toast.show({ type: 'success', text1: t('bookings.cancelled') });
       setCancelModal(false);
       fetch(true);
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not cancel booking' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('bookings.cancelFailed') });
     } finally {
       setCancelling(false);
     }
@@ -148,19 +175,16 @@ export default function BookingDetailScreen({ navigation, route }) {
 
   const handleShare = async () => {
     try {
-      const ud = booking.userDetails || {};
-      const lines = [
-        `🪔 *Zutsav Booking*`,
-        `Pooja: ${booking.poojaId?.name || '—'}`,
-        `Date: ${booking.scheduledDate ? formatDateTime(booking.scheduledDate) : '—'}`,
-        `Pandit: ${booking.panditId?.name || 'Being assigned'}`,
-        `Amount: ${formatCurrency(booking.grandTotal ?? booking.amount ?? 0)}`,
-        `Status: ${formatStatus(booking.status)}`,
-        `Booking ID: ${booking._id?.slice(-8).toUpperCase()}`,
-        ``,
-        `Track: zutsav.com/my-bookings`,
-      ];
-      await Share.share({ message: lines.join('\n') });
+      await Share.share({
+        message: t('bookings.shareText', {
+          pooja: booking.poojaId?.name || '—',
+          date: booking.scheduledDate ? formatDateTime(booking.scheduledDate) : '—',
+          pandit: booking.panditId?.name || t('bookings.beingAssigned'),
+          amount: formatCurrency(booking.grandTotal ?? booking.amount ?? 0),
+          status: bookingStatusLabel(booking.status, t),
+          id: booking._id?.slice(-8).toUpperCase(),
+        }),
+      });
     } catch {
       // user dismissed
     }
@@ -169,33 +193,33 @@ export default function BookingDetailScreen({ navigation, route }) {
   if (loading) return <LoadingSpinner fullScreen />;
   if (!booking) return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
-      <ScreenHeader title="Booking Detail" />
+      <ScreenHeader title={t('bookings.detailTitle')} />
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <Text style={{ color: C.textSecondary }}>Booking not found</Text>
+        <Text style={{ color: C.textSecondary }}>{t('bookings.notFound')}</Text>
       </View>
     </View>
   );
 
   const ud = booking.userDetails || {};
   const addressStr = [ud.address, ud.city, ud.state, ud.pincode].filter(Boolean).join(', ') || '—';
+  const couponInfo = getCouponDisplay(booking); // persisted values only; grandTotal is already net of them
+  const coinInfo = getCoinDisplay(booking);
   const hasRemaining = booking.paymentMode === 'PARTIAL' && booking.remainingAmount > 0 && booking.paymentStatus !== 'FULLY_PAID';
-  const canRate = booking.status === 'completed' && !booking.userRated;
-  const canCancel = CANCELLABLE_STATUSES.includes(booking.status);
+  // Same rule the server enforces in rateBooking: only a completed booking whose
+  // persisted `rating` is still unset can be rated (the website reads `b.rating`
+  // the same way). `userRated` is not a field the API returns.
+  const canRate = booking.status === 'completed' && (booking.rating === null || booking.rating === undefined);
+  const canCancel = canUserCancel(booking.status);
   const hasRefund = booking.refund && booking.refund.status && booking.refund.status !== 'none';
   const canRetryPayment = booking.status === 'pending_payment';
   const badge = resolveBookingBadge(booking);
   const attempts = booking.paymentAttempts || [];
   const lastAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
 
-  const timelineEvents = (booking.auditLog || []).map((a) => ({
-    label: formatAuditAction(a.action),
-    note:  a.note,
-    at:    a.at,
-  }));
-
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Booking Detail" />
+      <ScreenHeader title={t('bookings.detailTitle')} />
+      <PendingPaymentBanner navigation={navigation} kind="booking" bookingId={bookingId} onResolved={() => fetch(true)} />
       <ScrollView
         contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(true); }} tintColor={C.primary} />}
@@ -203,73 +227,70 @@ export default function BookingDetailScreen({ navigation, route }) {
         {/* Status card */}
         <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
           <View style={styles.statusRow}>
-            <Text style={[styles.poojaName, { color: C.text }]}>{booking.poojaId?.name || 'Pooja'}</Text>
-            <StatusBadge status={badge.value} colorMap={badge.colorMap} />
+            <Text style={[styles.poojaName, { color: C.text }]}>{booking.poojaId?.name || t('home.poojaFallback')}</Text>
+            <StatusBadge status={badge.value} colorMap={badge.colorMap} label={badge.colorMap === paymentStatusColor ? paymentStatusLabel(badge.value, t) : bookingStatusLabel(badge.value, t)} />
           </View>
-          <Text style={[styles.bookingId, { color: C.textSecondary }]}>ID: {booking._id?.slice(-8).toUpperCase()}</Text>
+          <Text style={[styles.bookingId, { color: C.textSecondary }]}>{t('bookings.idLabel', { id: booking._id?.slice(-8).toUpperCase() })}</Text>
         </View>
 
         {/* Schedule */}
-        <InfoCard title="Schedule" C={C}>
-          <Row label="Date & Time" value={booking.scheduledDate ? formatDateTime(booking.scheduledDate) : '—'} C={C} />
-          {booking.language && <Row label="Language" value={booking.language} C={C} />}
-          <Row label="Address" value={addressStr} C={C} />
-          {booking.specialNote && <Row label="Note" value={booking.specialNote} C={C} />}
+        <InfoCard title={t('bookings.scheduleTitle')} C={C}>
+          <Row label={t('bookings.dateTime')} value={booking.scheduledDate ? formatDateTime(booking.scheduledDate) : '—'} C={C} />
+          {booking.language && <Row label={t('booking.language')} value={booking.language} C={C} />}
+          <Row label={t('booking.address')} value={addressStr} C={C} />
+          {booking.specialNote && <Row label={t('bookings.note')} value={booking.specialNote} C={C} />}
         </InfoCard>
 
         {/* Pandit */}
         {booking.panditId && (
-          <InfoCard title="Assigned Pandit" C={C}>
-            <Row label="Name"  value={booking.panditId.name  || '—'} C={C} />
-            <Row label="Phone" value={booking.panditId.phone || '—'} C={C} />
-            {booking.panditId.languages?.length > 0 && <Row label="Languages" value={booking.panditId.languages.join(', ')} C={C} />}
-            {booking.panditId.experience ? <Row label="Experience" value={`${booking.panditId.experience} yrs`} C={C} /> : null}
+          <InfoCard title={t('bookings.panditTitle')} C={C}>
+            <Row label={t('bookings.name')} value={booking.panditId.name  || '—'} C={C} />
+            <Row label={t('bookings.phone')} value={booking.panditId.phone || '—'} C={C} />
+            {booking.panditId.languages?.length > 0 && <Row label={t('bookings.languages')} value={booking.panditId.languages.join(', ')} C={C} />}
+            {booking.panditId.experience ? <Row label={t('bookings.experience')} value={t('bookings.years', { n: booking.panditId.experience })} C={C} /> : null}
           </InfoCard>
         )}
 
         {/* Referral */}
         {referralDetails && (
-          <InfoCard title="Referred by Pandit" C={C}>
-            <Row label="Pandit"  value={referralDetails.panditName  || '—'} C={C} />
-            <Row label="Status"  value={formatStatus(referralDetails.status)} C={C} />
-            {referralDetails.remark ? <Row label="Remark" value={referralDetails.remark} C={C} /> : null}
+          <InfoCard title={t('bookings.referredBy')} C={C}>
+            <Row label={t('bookings.pandit')} value={referralDetails.panditName  || '—'} C={C} />
+            <Row label={t('bookings.status')} value={formatStatus(referralDetails.status)} C={C} />
+            {referralDetails.remark ? <Row label={t('bookings.remark')} value={referralDetails.remark} C={C} /> : null}
           </InfoCard>
         )}
 
         {/* Payment */}
-        <InfoCard title="Payment" C={C}>
-          <Row label="Total Amount"  value={formatCurrency(booking.grandTotal ?? booking.amount ?? 0)} C={C} />
-          <Row label="Paid Amount"   value={formatCurrency(booking.amountPaid  || 0)} C={C} />
-          {hasRemaining && <Row label="Pending Amount" value={formatCurrency(booking.remainingAmount || 0)} C={C} highlight />}
-          <Row label="Payment Mode"   value={formatStatus(booking.paymentMode)   || '—'} C={C} />
-          <Row label="Payment Status" value={formatStatus(booking.paymentStatus) || '—'} C={C} />
+        <InfoCard title={t('orders.payment')} C={C}>
+          <Row label={t('orders.totalAmount')} value={formatCurrency(booking.grandTotal ?? booking.amount ?? 0)} C={C} />
+          {couponInfo && <Row label={t('orders.coupon', { code: couponInfo.code })} value={t('bookings.couponOff', { amount: formatCurrency(couponInfo.discount) })} C={C} />}
+          {coinInfo && <Row label={t('bookings.coinsRedeemed', { n: coinInfo.coins })} value={t('bookings.couponOff', { amount: formatCurrency(coinInfo.value) })} C={C} />}
+          <Row label={t('bookings.paidAmount')} value={formatCurrency(booking.amountPaid  || 0)} C={C} />
+          {hasRemaining && <Row label={t('bookings.pendingAmount')} value={formatCurrency(booking.remainingAmount || 0)} C={C} highlight />}
+          <Row label={t('bookings.paymentMode')} value={paymentModeLabel(booking.paymentMode, t) || '—'} C={C} />
+          <Row label={t('bookings.paymentStatus')} value={paymentStatusLabel(booking.paymentStatus, t) || '—'} C={C} />
           {attempts.length > 0 && (
-            <Row label="Retry Attempts" value={String(attempts.length)} C={C} />
+            <Row label={t('bookings.retryAttempts')} value={String(attempts.length)} C={C} />
           )}
           {lastAttempt?.initiatedAt && (
-            <Row label="Last Attempt" value={formatDateTime(lastAttempt.initiatedAt)} C={C} />
+            <Row label={t('bookings.lastAttempt')} value={formatDateTime(lastAttempt.initiatedAt)} C={C} />
           )}
           {lastAttempt?.failureReason && (
-            <Row label="Failure Reason" value={lastAttempt.failureReason} C={C} highlight />
+            <Row label={t('bookings.failureReason')} value={lastAttempt.failureReason} C={C} highlight />
           )}
         </InfoCard>
 
         {/* Refund status */}
         {hasRefund && (
-          <InfoCard title="Refund Status" C={C}>
-            <Row label="Eligible Amount" value={formatCurrency(booking.refund.eligibleAmount || 0)} C={C} />
-            <Row label="Refunded Amount" value={formatCurrency(booking.refund.refundedAmount || 0)} C={C} />
+          <InfoCard title={t('bookings.refundTitle')} C={C}>
+            <Row label={t('bookings.eligibleAmount')} value={formatCurrency(booking.refund.eligibleAmount || 0)} C={C} />
+            <Row label={t('bookings.refundedAmount')} value={formatCurrency(booking.refund.refundedAmount || 0)} C={C} />
             <View style={styles.row}>
-              <Text style={[styles.rowLabel, { color: C.textSecondary }]}>Status</Text>
-              <StatusBadge status={booking.refund.status} colorMap={refundStatusColor} small />
+              <Text style={[styles.rowLabel, { color: C.textSecondary }]}>{t('bookings.status')}</Text>
+              <StatusBadge status={booking.refund.status} colorMap={refundStatusColor} label={refundStatusLabel(booking.refund.status, t)} small />
             </View>
           </InfoCard>
         )}
-
-        {/* Timeline */}
-        <InfoCard title="Booking Timeline" C={C}>
-          <Timeline events={timelineEvents} />
-        </InfoCard>
 
         {/* Actions */}
         {canRetryPayment && (
@@ -281,7 +302,7 @@ export default function BookingDetailScreen({ navigation, route }) {
           >
             <Ionicons name="refresh" size={20} color="#fff" />
             <Text style={styles.actionBtnText}>
-              {acting ? 'Please wait…' : 'Retry Payment'}
+              {acting ? t('bookings.pleaseWait') : t('orders.retryPayment')}
             </Text>
           </TouchableOpacity>
         )}
@@ -295,7 +316,7 @@ export default function BookingDetailScreen({ navigation, route }) {
           >
             <Ionicons name="card" size={20} color="#fff" />
             <Text style={styles.actionBtnText}>
-              {acting ? 'Please wait…' : `Pay Remaining ${formatCurrency(booking.remainingAmount || 0)}`}
+              {acting ? t('bookings.pleaseWait') : t('bookings.payRemaining', { amount: formatCurrency(booking.remainingAmount || 0) })}
             </Text>
           </TouchableOpacity>
         )}
@@ -307,7 +328,7 @@ export default function BookingDetailScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <Ionicons name="star" size={20} color="#fff" />
-            <Text style={styles.actionBtnText}>Rate this Pooja</Text>
+            <Text style={styles.actionBtnText}>{t('bookings.rate')}</Text>
           </TouchableOpacity>
         )}
 
@@ -317,7 +338,7 @@ export default function BookingDetailScreen({ navigation, route }) {
           activeOpacity={0.85}
         >
           <Ionicons name="document-text-outline" size={18} color={C.text} />
-          <Text style={[styles.outlineBtnText, { color: C.text }]}>Download Invoice</Text>
+          <Text style={[styles.outlineBtnText, { color: C.text }]}>{t('orders.downloadInvoice')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -326,7 +347,7 @@ export default function BookingDetailScreen({ navigation, route }) {
           activeOpacity={0.85}
         >
           <Ionicons name="share-outline" size={18} color={C.text} />
-          <Text style={[styles.outlineBtnText, { color: C.text }]}>Share Booking</Text>
+          <Text style={[styles.outlineBtnText, { color: C.text }]}>{t('bookings.share')}</Text>
         </TouchableOpacity>
 
         {canCancel && (
@@ -336,7 +357,7 @@ export default function BookingDetailScreen({ navigation, route }) {
             activeOpacity={0.85}
           >
             <Ionicons name="close-circle-outline" size={18} color="#DC2626" />
-            <Text style={[styles.outlineBtnText, { color: '#DC2626' }]}>Cancel Booking</Text>
+            <Text style={[styles.outlineBtnText, { color: '#DC2626' }]}>{t('bookings.cancelBooking')}</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -345,12 +366,19 @@ export default function BookingDetailScreen({ navigation, route }) {
       <Modal visible={ratingModal} transparent animationType="slide" onRequestClose={() => setRatingModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: C.surface }]}>
-            <Text style={[styles.modalTitle, { color: C.text }]}>Rate Your Experience</Text>
+            <Text style={[styles.modalTitle, { color: C.text }]}>{t('bookings.ratingTitle')}</Text>
 
             {/* Stars */}
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map((v) => (
-                <TouchableOpacity key={v} onPress={() => setRatingVal(v)} activeOpacity={0.8}>
+                <TouchableOpacity
+                  key={v}
+                  onPress={() => setRatingVal(v)}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={v > 1 ? t('bookings.stars', { n: v }) : t('bookings.star', { n: v })}
+                  accessibilityState={{ selected: v === ratingVal }}
+                >
                   <Ionicons name={v <= ratingVal ? 'star' : 'star-outline'} size={36} color="#D97706" />
                 </TouchableOpacity>
               ))}
@@ -358,7 +386,7 @@ export default function BookingDetailScreen({ navigation, route }) {
 
             <TextInput
               style={[styles.reviewInput, { borderColor: C.border, color: C.text, backgroundColor: C.background }]}
-              placeholder="Share your experience (optional)…"
+              placeholder={t('bookings.reviewPlaceholder')}
               placeholderTextColor={C.textSecondary}
               value={ratingText}
               onChangeText={setRatingText}
@@ -367,7 +395,7 @@ export default function BookingDetailScreen({ navigation, route }) {
 
             <View style={styles.modalBtns}>
               <TouchableOpacity style={[styles.cancelBtn, { borderColor: C.border }]} onPress={() => setRatingModal(false)}>
-                <Text style={[styles.cancelBtnText, { color: C.text }]}>Cancel</Text>
+                <Text style={[styles.cancelBtnText, { color: C.text }]}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.submitBtn, { backgroundColor: C.primary }]}
@@ -375,7 +403,7 @@ export default function BookingDetailScreen({ navigation, route }) {
                 disabled={submitting}
                 activeOpacity={0.85}
               >
-                <Text style={styles.submitBtnText}>{submitting ? 'Submitting…' : 'Submit'}</Text>
+                <Text style={styles.submitBtnText}>{submitting ? t('bookings.submitting') : t('bookings.submit')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -386,23 +414,23 @@ export default function BookingDetailScreen({ navigation, route }) {
       <Modal visible={cancelModal} transparent animationType="slide" onRequestClose={() => setCancelModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, { backgroundColor: C.surface }]}>
-            <Text style={[styles.modalTitle, { color: C.text }]}>Cancel Booking</Text>
+            <Text style={[styles.modalTitle, { color: C.text }]}>{t('bookings.cancelBooking')}</Text>
 
             {previewLoading ? (
               <ActivityIndicator color={C.primary} />
             ) : refundPreview ? (
               <View style={{ gap: 8 }}>
-                <Row label="Total Paid" value={formatCurrency(refundPreview.grandTotal || 0)} C={C} />
-                <Row label="Refundable Amount" value={formatCurrency(refundPreview.refundableAmount || 0)} C={C} highlight />
-                {refundPreview.nonRefundableTotal > 0 && <Row label="Non-Refundable" value={formatCurrency(refundPreview.nonRefundableTotal)} C={C} />}
+                <Row label={t('bookings.totalPaid')} value={formatCurrency(refundPreview.grandTotal || 0)} C={C} />
+                <Row label={t('bookings.refundable')} value={formatCurrency(refundPreview.refundableAmount || 0)} C={C} highlight />
+                {refundPreview.nonRefundableTotal > 0 && <Row label={t('bookings.nonRefundable')} value={formatCurrency(refundPreview.nonRefundableTotal)} C={C} />}
               </View>
             ) : (
-              <Text style={{ color: C.textSecondary, fontSize: 13 }}>Refund preview unavailable</Text>
+              <Text style={{ color: C.textSecondary, fontSize: 13 }}>{t('bookings.previewUnavailable')}</Text>
             )}
 
             <TextInput
               style={[styles.reviewInput, { borderColor: C.border, color: C.text, backgroundColor: C.background }]}
-              placeholder="Reason for cancellation (optional)…"
+              placeholder={t('bookings.reasonPlaceholder')}
               placeholderTextColor={C.textSecondary}
               value={cancelReason}
               onChangeText={setCancelReason}
@@ -411,7 +439,7 @@ export default function BookingDetailScreen({ navigation, route }) {
 
             <View style={styles.modalBtns}>
               <TouchableOpacity style={[styles.cancelBtn, { borderColor: C.border }]} onPress={() => setCancelModal(false)}>
-                <Text style={[styles.cancelBtnText, { color: C.text }]}>Keep Booking</Text>
+                <Text style={[styles.cancelBtnText, { color: C.text }]}>{t('bookings.keepBooking')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.submitBtn, { backgroundColor: '#DC2626' }]}
@@ -419,7 +447,7 @@ export default function BookingDetailScreen({ navigation, route }) {
                 disabled={cancelling}
                 activeOpacity={0.85}
               >
-                <Text style={styles.submitBtnText}>{cancelling ? 'Cancelling…' : 'Confirm Cancel'}</Text>
+                <Text style={styles.submitBtnText}>{cancelling ? t('bookings.cancelling') : t('bookings.confirmCancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>

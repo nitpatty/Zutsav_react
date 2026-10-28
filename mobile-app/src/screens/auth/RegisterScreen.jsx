@@ -13,19 +13,20 @@ import BackgroundDecorations from '../../components/auth/BackgroundDecorations';
 import ZutsavLogoMark from '../../components/auth/ZutsavLogoMark';
 import GradientButton from '../../components/auth/GradientButton';
 import { AUTH_COLORS } from '../../components/auth/colors';
+import { useTranslation } from '../../i18n';
 
 const ROLE_OPTIONS = [
   {
     key: 'user',
-    label: 'Devotee',
+    labelKey: 'auth.devotee',
     icon: 'heart',
-    desc: 'Book poojas and spiritual services',
+    descKey: 'auth.devoteeDesc',
   },
   {
     key: 'pandit',
-    label: 'Pandit',
+    labelKey: 'auth.pandit',
     icon: 'flame',
-    desc: 'Offer pooja services and astrology',
+    descKey: 'auth.panditDesc',
   },
 ];
 
@@ -53,6 +54,7 @@ function RegisterInput({ icon, value, onChangeText, placeholder, keyboardType, a
 
 export default function RegisterScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
 
   // Accept referral code from deep-link route params or global referral code store
   const initialRef = route?.params?.referralCode || global.__zutsav_referral_code || '';
@@ -67,15 +69,15 @@ export default function RegisterScreen({ navigation, route }) {
 
   const handleRegister = () => {
     if (!name.trim() || !phone.trim() || !email.trim()) {
-      Toast.show({ type: 'error', text1: 'Name, phone, and email are required' });
+      Toast.show({ type: 'error', text1: t('auth.fieldsRequired') });
       return;
     }
     if (!/^[6-9]\d{9}$/.test(phone)) {
-      Toast.show({ type: 'error', text1: 'Enter a valid 10-digit Indian phone number' });
+      Toast.show({ type: 'error', text1: t('auth.invalidPhone') });
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      Toast.show({ type: 'error', text1: 'Enter a valid email address' });
+      Toast.show({ type: 'error', text1: t('auth.invalidEmail') });
       return;
     }
     navigation.navigate('VerificationChannel', {
@@ -107,37 +109,35 @@ export default function RegisterScreen({ navigation, route }) {
             <View style={styles.lotusIconWrap}>
               <Ionicons name="flower" size={18} color={AUTH_COLORS.forgotText} />
             </View>
-            <Text style={styles.heading}>Create Your Spiritual{'\n'}Journey</Text>
-            <Text style={styles.subtitle}>
-              Join thousands of devotees and experience authentic{'\n'}poojas, temples, astrology, and festivals.
-            </Text>
+            <Text style={styles.heading}>{t('auth.registerHeading')}</Text>
+            <Text style={styles.subtitle}>{t('auth.registerSubtitle')}</Text>
           </Animated.View>
 
           <Animated.View entering={FadeInUp.duration(700).delay(200)} style={styles.card}>
-            <Text style={styles.fieldLabel}>Full Name</Text>
+            <Text style={styles.fieldLabel}>{t('auth.fullName')}</Text>
             <RegisterInput
               icon="person-outline"
               value={name}
               onChangeText={setName}
-              placeholder="Your full name"
+              placeholder={t('auth.fullNamePlaceholder')}
               autoCapitalize="words"
               returnKeyType="next"
               style={{ marginBottom: 16 }}
             />
 
-            <Text style={styles.fieldLabel}>Mobile Number</Text>
+            <Text style={styles.fieldLabel}>{t('auth.mobileNumber')}</Text>
             <RegisterInput
               icon="call-outline"
               value={phone}
               onChangeText={setPhone}
-              placeholder="10-digit mobile number"
+              placeholder={t('auth.mobilePlaceholder')}
               keyboardType="phone-pad"
               maxLength={10}
               returnKeyType="next"
               style={{ marginBottom: 16 }}
             />
 
-            <Text style={styles.fieldLabel}>Email Address</Text>
+            <Text style={styles.fieldLabel}>{t('auth.emailAddress')}</Text>
             <RegisterInput
               icon="mail-outline"
               value={email}
@@ -149,7 +149,7 @@ export default function RegisterScreen({ navigation, route }) {
               style={{ marginBottom: 16 }}
             />
 
-            <Text style={styles.fieldLabel}>Referral Code (optional)</Text>
+            <Text style={styles.fieldLabel}>{t('auth.referralCodeOptional')}</Text>
             <RegisterInput
               icon="gift-outline"
               value={referralCode}
@@ -161,7 +161,7 @@ export default function RegisterScreen({ navigation, route }) {
               style={{ marginBottom: 20 }}
             />
 
-            <Text style={styles.fieldLabel}>Register As</Text>
+            <Text style={styles.fieldLabel}>{t('auth.registerAs')}</Text>
             <View style={styles.roleRow}>
               {ROLE_OPTIONS.map((opt) => {
                 const active = role === opt.key;
@@ -176,8 +176,8 @@ export default function RegisterScreen({ navigation, route }) {
                     <View style={[styles.roleIconWrap, active && styles.roleIconWrapActive]}>
                       <Ionicons name={opt.icon} size={20} color={active ? '#B8860B' : AUTH_COLORS.subtitle} />
                     </View>
-                    <Text style={[styles.roleLabel, active && styles.roleLabelActive]}>{opt.label}</Text>
-                    <Text style={[styles.roleDesc, active && styles.roleDescActive]}>{opt.desc}</Text>
+                    <Text style={[styles.roleLabel, active && styles.roleLabelActive]}>{t(opt.labelKey)}</Text>
+                    <Text style={[styles.roleDesc, active && styles.roleDescActive]}>{t(opt.descKey)}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -185,14 +185,14 @@ export default function RegisterScreen({ navigation, route }) {
 
             <View style={styles.buttonWrap}>
               <GradientButton
-                title="Continue  →"
+                title={t('auth.continueArrow')}
                 onPress={handleRegister}
               />
             </View>
 
             <TouchableOpacity style={styles.loginRow} onPress={() => navigation.navigate('Login')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Text style={styles.loginText}>
-                Already have an account? <Text style={styles.loginLink}>Login</Text>
+                {t('auth.haveAccount')} <Text style={styles.loginLink}>{t('auth.login')}</Text>
               </Text>
             </TouchableOpacity>
           </Animated.View>

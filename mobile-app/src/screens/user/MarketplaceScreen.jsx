@@ -13,12 +13,15 @@ import { formatCurrency } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import EmptyState from '../../components/EmptyState';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useLanguageStore } from '../../i18n/languageStore';
+import { useTranslation } from '../../i18n';
 
+// `key` is the value sent to the API and never changes; only the label is translated.
 const SORTS = [
-  { key: '',           label: 'Featured' },
-  { key: 'price_asc',  label: 'Price ↑' },
-  { key: 'price_desc', label: 'Price ↓' },
-  { key: 'name_asc',   label: 'Name' },
+  { key: '',           labelKey: 'shop.sortFeatured' },
+  { key: 'price_asc',  labelKey: 'shop.sortPriceAsc' },
+  { key: 'price_desc', labelKey: 'shop.sortPriceDesc' },
+  { key: 'name_asc',   labelKey: 'shop.sortName' },
 ];
 
 // A product with variants prices/stocks entirely from its variants —
@@ -41,6 +44,8 @@ function totalStock(product) {
 }
 
 export default function MarketplaceScreen() {
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -56,6 +61,7 @@ export default function MarketplaceScreen() {
   const [page,       setPage]       = useState(1);
   const [hasMore,    setHasMore]    = useState(true);
   const loadingMoreRef = useRef(false);
+  const requestRef = useRef(0); // only the latest products request may update the list (a slow old-language reply is dropped)
 
   useEffect(() => {
     api.get('/marketplace/categories')
@@ -64,6 +70,7 @@ export default function MarketplaceScreen() {
   }, []);
 
   const fetchProducts = useCallback(async (pg = 1, q = search, cat = category, srt = sort, silent = false) => {
+    const request = ++requestRef.current;
     try {
       if (!silent) setLoading(pg === 1);
       const params = { page: pg, limit: 12, isActive: true };
@@ -72,18 +79,18 @@ export default function MarketplaceScreen() {
       if (srt) params.sort = srt;
       const { data } = await api.get('/marketplace/products', { params });
       const list = data.data || data.products || [];
+      if (request !== requestRef.current) return;
       setProducts((prev) => pg === 1 ? list : [...prev, ...list]);
       setHasMore(list.length === 12);
       setPage(pg);
     } catch {
-      if (!silent) Toast.show({ type: 'error', text1: 'Could not load products' });
+      if (request === requestRef.current && !silent) Toast.show({ type: 'error', text1: t('shop.loadFailed') });
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (request === requestRef.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [search, category, sort]);
+  }, [search, category, sort, t]);
 
-  useEffect(() => { fetchProducts(1); }, [category, sort]);
+  useEffect(() => { fetchProducts(1); }, [category, sort, contentLanguage]);
 
   const onRefresh = () => { setRefreshing(true); fetchProducts(1, search, category, sort, true); };
   const onEndReached = () => {
@@ -108,7 +115,7 @@ export default function MarketplaceScreen() {
     } else {
       addItem({ productId: product._id, variantId: null, name: product.name, price: product.salePrice ?? product.price, image: product.images?.[0], stock: product.stock });
     }
-    Toast.show({ type: 'success', text1: `${product.name} added to cart` });
+    Toast.show({ type: 'success', text1: t('shop.addedToCart', { name: product.name }) });
   };
 
   const renderItem = ({ item }) => {
@@ -132,25 +139,25 @@ export default function MarketplaceScreen() {
         )}
         {discountPct > 0 && (
           <View style={styles.discountBadge}>
-            <Text style={styles.discountText}>{discountPct}% OFF</Text>
+            <Text style={styles.discountText}>{t('shop.discountOff', { pct: discountPct })}</Text>
           </View>
         )}
         {stock === 0 && (
           <View style={styles.outOfStock}>
-            <Text style={styles.outOfStockText}>Out of Stock</Text>
+            <Text style={styles.outOfStockText}>{t('shop.outOfStock')}</Text>
           </View>
         )}
         <View style={styles.info}>
           <Text style={[styles.name, { color: C.text }]} numberOfLines={2}>{item.name}</Text>
           <View style={styles.priceRow}>
-            <Text style={[styles.price, { color: C.primary }]}>{isRange ? 'From ' : ''}{formatCurrency(price)}</Text>
+            <Text style={[styles.price, { color: C.primary }]}>{isRange ? t('shop.priceFrom', { price: formatCurrency(price) }) : formatCurrency(price)}</Text>
             {original && <Text style={styles.originalPrice}>{formatCurrency(original)}</Text>}
           </View>
           {stock > 0 ? (
             qty > 0 ? (
               <View style={[styles.inCartBadge, { backgroundColor: C.primary + '20' }]}>
                 <Ionicons name="checkmark-circle" size={14} color={C.primary} />
-                <Text style={[styles.inCartText, { color: C.primary }]}>{qty} in cart</Text>
+                <Text style={[styles.inCartText, { color: C.primary }]}>{t('shop.inCart', { n: qty })}</Text>
               </View>
             ) : (
               <TouchableOpacity
@@ -159,7 +166,7 @@ export default function MarketplaceScreen() {
                 activeOpacity={0.8}
               >
                 <Ionicons name="add" size={16} color="#fff" />
-                <Text style={styles.addBtnText}>Add</Text>
+                <Text style={styles.addBtnText}>{t('shop.add')}</Text>
               </TouchableOpacity>
             )
           ) : null}
@@ -171,10 +178,10 @@ export default function MarketplaceScreen() {
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
       <ScreenHeader
-        title="Shop"
+        title={t('nav.shop')}
         showBack={false}
         right={
-          <TouchableOpacity onPress={() => navigation.navigate('Cart')}>
+          <TouchableOpacity onPress={() => navigation.navigate('Cart')} accessibilityRole="button" accessibilityLabel={t('shop.openCart')}>
             <Ionicons name="bag-handle-outline" size={24} color={C.text} />
           </TouchableOpacity>
         }
@@ -187,7 +194,7 @@ export default function MarketplaceScreen() {
             style={[styles.searchInput, { color: C.text }]}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search products…"
+            placeholder={t('shop.searchPlaceholder')}
             placeholderTextColor={C.textSecondary}
             returnKeyType="search"
             onSubmitEditing={() => fetchProducts(1, search, category, sort)}
@@ -201,7 +208,7 @@ export default function MarketplaceScreen() {
 
         <FlatList
           horizontal
-          data={[{ _id: 'all', name: 'All', slug: 'all' }, ...categories]}
+          data={[{ _id: 'all', name: t('shop.all'), slug: 'all' }, ...categories]}
           keyExtractor={(c) => c._id}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 8, paddingVertical: 10 }}
@@ -230,7 +237,7 @@ export default function MarketplaceScreen() {
               onPress={() => setSort(s.key)}
               activeOpacity={0.8}
             >
-              <Text style={{ color: sort === s.key ? C.primary : C.textSecondary, fontSize: 11, fontWeight: '600' }}>{s.label}</Text>
+              <Text style={{ color: sort === s.key ? C.primary : C.textSecondary, fontSize: 11, fontWeight: '600' }}>{t(s.labelKey)}</Text>
             </TouchableOpacity>
           )}
         />
@@ -249,7 +256,7 @@ export default function MarketplaceScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
           onEndReached={onEndReached}
           onEndReachedThreshold={0.3}
-          ListEmptyComponent={<EmptyState icon="cube-outline" title="No products found" />}
+          ListEmptyComponent={<EmptyState icon="cube-outline" title={t('shop.empty')} />}
           ListFooterComponent={loading && page > 1 ? <LoadingSpinner /> : null}
         />
       )}

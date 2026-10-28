@@ -4,12 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDateTime } from '../../utils/helpers';
+import { mapLivestreams } from '../../utils/livestream';
 import EmptyState from '../../components/EmptyState';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useLanguageStore } from '../../i18n/languageStore';
+import { useTranslation } from '../../i18n';
 
 export default function LivestreamsScreen() {
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
+  const { t } = useTranslation();
   const { theme } = useThemeStore();
   const C = theme.colors;
   const [streams,    setStreams]    = useState([]);
@@ -19,52 +23,64 @@ export default function LivestreamsScreen() {
   const fetch = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      const { data } = await api.get('/livestreams?status=live&sort=-createdAt');
-      setStreams(data.data || data.livestreams || []);
-    } catch { if (!silent) Toast.show({ type: 'error', text1: 'Could not load livestreams' }); }
+      // The endpoint already returns only active streams, newest first.
+      const { data } = await api.get('/livestreams');
+      setStreams(mapLivestreams(data));
+    } catch { if (!silent) Toast.show({ type: 'error', text1: t('livestreams.loadFailed') }); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => { fetch(); }, [contentLanguage]);
+
+  const openStream = async (item) => {
+    if (!item.url) return;
+    try {
+      await Linking.openURL(item.url);
+    } catch {
+      Toast.show({ type: 'error', text1: t('livestreams.openFailed') });
+    }
+  };
 
   const renderItem = ({ item }) => (
     <TouchableOpacity
-      style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}
-      onPress={() => item.streamUrl && Linking.openURL(item.streamUrl)}
+      style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }, !item.url && { opacity: 0.6 }]}
+      onPress={() => openStream(item)}
+      disabled={!item.url}
+      accessibilityRole="button"
+      accessibilityLabel={item.url ? t('livestreams.watchLabel', { title: item.title || t('livestreams.defaultTitle') }) : t('livestreams.unavailableLabel', { title: item.title || t('livestreams.defaultTitle') })}
       activeOpacity={0.85}
     >
       <View style={styles.cardTop}>
         <View style={styles.liveBadge}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveText}>LIVE</Text>
+          <Ionicons name="logo-youtube" size={13} color="#DC2626" />
+          <Text style={styles.liveText}>{item.url ? t('livestreams.watch') : t('livestreams.unavailableBadge')}</Text>
         </View>
-        <Text style={[styles.title, { color: C.text }]}>{item.title}</Text>
+        <Text style={[styles.title, { color: C.text }]}>{item.title || t('livestreams.defaultTitle')}</Text>
       </View>
-      {item.description && <Text style={[styles.desc, { color: C.textSecondary }]} numberOfLines={2}>{item.description}</Text>}
-      <View style={styles.meta}>
-        <Ionicons name="person" size={13} color={C.textSecondary} />
-        <Text style={[styles.metaText, { color: C.textSecondary }]}>{item.panditName || item.hostedBy || 'Pandit'}</Text>
-        {item.viewers > 0 && (
-          <>
-            <Ionicons name="eye" size={13} color={C.textSecondary} />
-            <Text style={[styles.metaText, { color: C.textSecondary }]}>{item.viewers} watching</Text>
-          </>
-        )}
-      </View>
+      {item.description ? <Text style={[styles.desc, { color: C.textSecondary }]} numberOfLines={2}>{item.description}</Text> : null}
+      {item.templeName ? (
+        <View style={styles.meta}>
+          <Ionicons name="business" size={13} color={C.textSecondary} />
+          <Text style={[styles.metaText, { color: C.textSecondary }]}>
+            {item.templeName}{item.templeLocation ? ` · ${item.templeLocation}` : ''}
+          </Text>
+        </View>
+      ) : null}
+      {!item.url ? <Text style={[styles.metaText, { color: C.textSecondary }]}>{t('livestreams.linkUnavailable')}</Text> : null}
     </TouchableOpacity>
   );
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Live Poojas" />
+      <ScreenHeader title={t('livestreams.title')} />
       {loading ? <LoadingSpinner fullScreen /> : (
         <FlatList
           data={streams}
-          keyExtractor={(s) => s._id}
+          keyExtractor={(s) => s.id}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(true); }} tintColor={C.primary} />}
-          ListEmptyComponent={<EmptyState icon="videocam-outline" title="No live streams right now" subtitle="Check back later for live poojas" />}
+          ListEmptyComponent={<EmptyState icon="videocam-outline" title={t('livestreams.empty')} subtitle={t('livestreams.emptyHint')} />}
         />
       )}
     </View>

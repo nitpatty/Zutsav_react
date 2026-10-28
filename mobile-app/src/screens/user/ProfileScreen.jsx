@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Image, Alert
@@ -14,18 +14,22 @@ import { useThemeStore } from '../../store/themeStore';
 import ScreenHeader from '../../components/ScreenHeader';
 import NotificationBell from '../../components/NotificationBell';
 import { OutlineButton } from '../../components/shared/AppButton';
+import { useTranslation } from '../../i18n';
 
 export default function ProfileScreen() {
   const navigation = useNavigation();
+  const { t } = useTranslation();
   const { user, logout, refreshUser } = useAuthStore();
   const { theme } = useThemeStore();
   const C = theme.colors;
 
   const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const removingRef = useRef(false);   // state lags a re-render; the ref makes a double tap a no-op
 
   const handlePickAvatar = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Toast.show({ type: 'error', text1: 'Gallery permission denied' }); return; }
+    if (!perm.granted) { Toast.show({ type: 'error', text1: t('profile.galleryDenied') }); return; }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.7 });
     if (result.canceled) return;
     const asset = result.assets[0];
@@ -34,59 +38,97 @@ export default function ProfileScreen() {
       const form = new FormData();
       form.append('photo', { uri: asset.uri, type: 'image/jpeg', name: 'avatar.jpg' });
       await api.post('/users/profile/photo', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-      await refreshUser();
-      Toast.show({ type: 'success', text1: 'Photo updated' });
+      try {
+        await refreshUser();
+      } catch {
+        // Upload succeeded; only the profile re-fetch failed (refreshUser rethrows
+        // transient errors instead of logging the user out). Don't report "failed".
+        Toast.show({ type: 'info', text1: t('profile.photoUpdated'), text2: t('profile.photoRefreshFailed') });
+        return;
+      }
+      Toast.show({ type: 'success', text1: t('profile.photoUpdated') });
     } catch {
-      Toast.show({ type: 'error', text1: 'Upload failed' });
+      Toast.show({ type: 'error', text1: t('profile.uploadFailed') });
     } finally {
       setUploading(false);
     }
   };
 
+  // Same flow as the website's "Remove" (ProfilePhoto.jsx): confirm first, then DELETE the existing photo endpoint.
+  const handleRemoveAvatar = async () => {
+    if (removingRef.current) return;
+    removingRef.current = true;
+    setRemoving(true);
+    try {
+      await api.delete('/users/profile/photo');
+      try {
+        await refreshUser();
+      } catch {
+        // The photo is removed; only the profile re-fetch failed (refreshUser rethrows transient errors).
+        Toast.show({ type: 'info', text1: t('profile.photoRemoved'), text2: t('profile.photoRefreshFailed') });
+        return;
+      }
+      Toast.show({ type: 'success', text1: t('profile.photoRemoved') });
+    } catch {
+      Toast.show({ type: 'error', text1: t('profile.photoRemoveFailed') });
+    } finally {
+      removingRef.current = false;
+      setRemoving(false);
+    }
+  };
+
+  const confirmRemoveAvatar = () => {
+    if (removingRef.current || uploading) return;
+    Alert.alert(t('profile.removePhotoTitle'), t('profile.removePhotoConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('profile.removePhoto'), style: 'destructive', onPress: handleRemoveAvatar },
+    ]);
+  };
+
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: logout },
+    Alert.alert(t('settings.logout'), t('profile.logoutConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('settings.logout'), style: 'destructive', onPress: logout },
     ]);
   };
 
   const sections = [
     {
-      title: 'Personal',
+      title: t('profile.sectionPersonal'),
       items: [
-        { icon: 'person-outline',    label: 'Personal Information', onPress: () => navigation.navigate('PersonalInfo') },
-        { icon: 'location-outline',  label: 'Saved Addresses',      onPress: () => navigation.navigate('AddressBook') },
-        { icon: 'people-outline',    label: 'Family Members',       onPress: () => navigation.navigate('FamilyMembers') },
-        { icon: 'lock-closed-outline', label: 'Change Password',    onPress: () => navigation.navigate('ChangePassword') },
+        { icon: 'person-outline',    label: t('profile.personalInfo'), onPress: () => navigation.navigate('PersonalInfo') },
+        { icon: 'location-outline',  label: t('profile.savedAddresses'),      onPress: () => navigation.navigate('AddressBook') },
+        { icon: 'people-outline',    label: t('profile.familyMembers'),       onPress: () => navigation.navigate('FamilyMembers') },
+        { icon: 'lock-closed-outline', label: t('settings.changePassword'),    onPress: () => navigation.navigate('ChangePassword') },
       ],
     },
     {
-      title: 'Activity',
+      title: t('profile.sectionActivity'),
       items: [
-        { icon: 'receipt-outline',       label: 'My Orders',      onPress: () => navigation.navigate('ShopTab', { screen: 'Orders' }) },
-        { icon: 'calendar-outline',      label: 'My Bookings',    onPress: () => navigation.navigate('BookingsTab') },
-        { icon: 'gift-outline',          label: 'My Referrals',   onPress: () => navigation.navigate('MyReferrals') },
-        { icon: 'wallet-outline',        label: 'Wallet',         onPress: () => navigation.navigate('Wallet') },
-        { icon: 'notifications-outline', label: 'Notifications', onPress: () => navigation.navigate('Notifications') },
+        { icon: 'receipt-outline',       label: t('profile.myOrders'),      onPress: () => navigation.navigate('ShopTab', { screen: 'Orders' }) },
+        { icon: 'calendar-outline',      label: t('profile.myBookings'),    onPress: () => navigation.navigate('BookingsTab') },
+        { icon: 'gift-outline',          label: t('profile.myReferrals'),   onPress: () => navigation.navigate('MyReferrals') },
+        { icon: 'wallet-outline',        label: t('profile.wallet'),         onPress: () => navigation.navigate('Wallet') },
+        { icon: 'notifications-outline', label: t('settings.notifications'), onPress: () => navigation.navigate('Notifications') },
       ],
     },
     {
-      title: 'Preferences',
+      title: t('profile.sectionPreferences'),
       items: [
-        { icon: 'settings-outline', label: 'Settings', onPress: () => navigation.navigate('Settings') },
+        { icon: 'settings-outline', label: t('settings.title'), onPress: () => navigation.navigate('Settings') },
       ],
     },
     {
-      title: 'Privacy & Security',
+      title: t('profile.sectionPrivacy'),
       items: [
-        { icon: 'trash-outline', label: 'Delete Account', onPress: () => navigation.navigate('DeleteAccount'), danger: true },
+        { icon: 'trash-outline', label: t('settings.deleteAccount'), onPress: () => navigation.navigate('DeleteAccount'), danger: true },
       ],
     },
   ];
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Profile" showBack={false} right={<NotificationBell color={C.text} />} />
+      <ScreenHeader title={t('nav.profile')} showBack={false} right={<NotificationBell color={C.text} />} />
 
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
         {/* Avatar + info */}
@@ -105,17 +147,31 @@ export default function ProfileScreen() {
               <Ionicons name={uploading ? 'hourglass' : 'camera'} size={13} color={C.primaryDark} />
             </View>
           </TouchableOpacity>
+          {user?.profilePhoto ? (
+            <TouchableOpacity
+              onPress={confirmRemoveAvatar}
+              disabled={removing || uploading}
+              style={[styles.removePhotoBtn, (removing || uploading) && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.removePhoto')}
+              accessibilityState={{ disabled: removing || uploading }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name={removing ? 'hourglass' : 'trash-outline'} size={13} color="#fff" />
+              <Text style={styles.removePhotoText}>{t('profile.removePhoto')}</Text>
+            </TouchableOpacity>
+          ) : null}
 
           <View style={styles.userInfo}>
             <Text style={styles.userName}>{user?.name}</Text>
             <Text style={styles.userPhone}>{user?.phone}</Text>
             {user?.email && <Text style={styles.userEmail}>{user.email}</Text>}
             <View style={styles.roleBadge}>
-              <Text style={styles.roleText}>{user?.role === 'pandit' ? 'Pandit' : 'Devotee'}</Text>
+              <Text style={styles.roleText}>{user?.role === 'pandit' ? t('auth.pandit') : t('auth.devotee')}</Text>
             </View>
             <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate('PersonalInfo')} activeOpacity={0.85}>
               <Ionicons name="pencil" size={13} color="#fff" />
-              <Text style={styles.editBtnText}>Edit Profile</Text>
+              <Text style={styles.editBtnText}>{t('profile.editProfile')}</Text>
             </TouchableOpacity>
           </View>
         </LinearGradient>
@@ -145,7 +201,7 @@ export default function ProfileScreen() {
 
         <View style={{ marginHorizontal: 16, marginTop: 24 }}>
           <OutlineButton
-            title="Logout"
+            title={t('settings.logout')}
             icon={<Ionicons name="log-out-outline" size={18} color={C.error || '#DC2626'} />}
             onPress={handleLogout}
             tone={C.error || '#DC2626'}
@@ -176,6 +232,11 @@ const styles = StyleSheet.create({
     width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center',
     borderWidth: 2, borderColor: '#fff',
   },
+  removePhotoBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.22)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6,
+  },
+  removePhotoText:   { fontSize: 12, fontWeight: '700', color: '#fff' },
   userInfo:          { alignItems: 'center', gap: 3 },
   userName:          { fontSize: 20, fontWeight: '800', color: '#fff' },
   userPhone:         { fontSize: 13.5, color: 'rgba(255,255,255,0.85)' },

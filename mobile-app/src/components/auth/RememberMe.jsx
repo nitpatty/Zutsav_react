@@ -1,15 +1,17 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useTranslation } from '../../i18n';
 import { Ionicons } from '@expo/vector-icons';
 import { AUTH_COLORS } from './colors';
 
 export default function RememberMe({ checked, onToggle }) {
+  const { t } = useTranslation();
   return (
     <TouchableOpacity style={styles.row} onPress={onToggle} activeOpacity={0.7}>
       <View style={[styles.box, checked && styles.boxChecked]}>
         {checked && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
       </View>
-      <Text style={styles.label}>Remember me</Text>
+      <Text style={styles.label}>{t('auth.rememberMe')}</Text>
     </TouchableOpacity>
   );
 }

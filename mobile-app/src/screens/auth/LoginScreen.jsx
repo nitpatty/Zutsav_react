@@ -13,10 +13,14 @@ import BackgroundDecorations from '../../components/auth/BackgroundDecorations';
 import ZutsavLogoMark from '../../components/auth/ZutsavLogoMark';
 import LoginCard from '../../components/auth/LoginCard';
 import { AUTH_COLORS } from '../../components/auth/colors';
+import { useTranslation, useFormatters } from '../../i18n';
+import { apiErrorMessage } from '../../utils/apiMessage';
 
 export default function LoginScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { login, setSession } = useAuthStore();
+  const { t } = useTranslation();
+  const { formatDateWithOptions } = useFormatters();
 
   const [identifier, setIdentifier] = useState('');
   const [password,   setPassword]   = useState('');
@@ -39,7 +43,7 @@ export default function LoginScreen({ navigation, route }) {
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password) {
-      Toast.show({ type: 'error', text1: 'Enter email/phone and password' });
+      Toast.show({ type: 'error', text1: t('auth.enterCredentials') });
       return;
     }
     try {
@@ -50,7 +54,7 @@ export default function LoginScreen({ navigation, route }) {
       }
       // RootNavigator re-renders automatically on successful login
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Login failed' });
+      Toast.show({ type: 'error', text1: apiErrorMessage(err, t('auth.loginFailed')) });
     } finally {
       setLoading(false);
     }
@@ -63,9 +67,9 @@ export default function LoginScreen({ navigation, route }) {
         headers: { Authorization: `Bearer ${deletionData.token}` },
       });
       await setSession(deletionData.token, { ...deletionData.user, accountStatus: 'active' });
-      Toast.show({ type: 'success', text1: 'Account restored successfully!' });
+      Toast.show({ type: 'success', text1: t('auth.accountRestored') });
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not restore account' });
+      Toast.show({ type: 'error', text1: apiErrorMessage(err, t('auth.restoreFailed')) });
     } finally {
       setRestoring(false);
     }
@@ -79,23 +83,23 @@ export default function LoginScreen({ navigation, route }) {
 
   if (deletionData) {
     const scheduled = deletionData.scheduledDeletionDate
-      ? new Date(deletionData.scheduledDeletionDate).toLocaleDateString('en-IN', { day:'2-digit', month:'long', year:'numeric' })
+      ? formatDateWithOptions(new Date(deletionData.scheduledDeletionDate), { day:'2-digit', month:'long', year:'numeric' })
       : '';
     return (
       <View style={[styles.restoreOverlay, { paddingTop: insets.top }]}>
         <StatusBar barStyle="light-content" backgroundColor="#1B1F3B" />
         <View style={styles.restoreCard}>
           <Ionicons name="warning" size={48} color="#D97706" />
-          <Text style={styles.restoreTitle}>Account Deletion Pending</Text>
+          <Text style={styles.restoreTitle}>{t('auth.deletionPendingTitle')}</Text>
           <Text style={styles.restoreSub}>
-            Your account is scheduled for permanent deletion on {scheduled}.
-            {'\n\n'}If you restore it now, all your data will be preserved.
+            {t('auth.deletionPendingBody', { date: scheduled })}
+            {'\n\n'}{t('auth.deletionRestoreNote')}
           </Text>
           <TouchableOpacity style={styles.restoreBtn} onPress={handleRestoreAccount} disabled={restoring} activeOpacity={0.8}>
-            <Text style={styles.restoreBtnText}>{restoring ? 'Restoring…' : 'Restore My Account'}</Text>
+            <Text style={styles.restoreBtnText}>{restoring ? t('auth.restoring') : t('auth.restoreMyAccount')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.continueBtn} onPress={handleContinueLogout} activeOpacity={0.8}>
-            <Text style={styles.continueBtnText}>Continue with Deletion</Text>
+            <Text style={styles.continueBtnText}>{t('auth.continueWithDeletion')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -114,8 +118,8 @@ export default function LoginScreen({ navigation, route }) {
         >
           <Animated.View entering={FadeIn.duration(800)} style={styles.header}>
             <ZutsavLogoMark ringSize={92} wordmarkSize={30} />
-            <Text style={styles.heading}>Your Gateway to{'\n'}Divine Experiences</Text>
-            <Text style={styles.subtitle}>Continue your spiritual journey.</Text>
+            <Text style={styles.heading}>{t('auth.loginHeading')}</Text>
+            <Text style={styles.subtitle}>{t('auth.loginSubtitle')}</Text>
           </Animated.View>
 
           <Animated.View entering={FadeInUp.duration(700).delay(200)}>

@@ -1,0 +1,8 @@
+<!--
+  LOCAL-NETWORK TESTING VARIANT ONLY (`./gradlew assembleLocalTest`). This file is merged into the `localTest` build type and nowhere else:
+  the `release` and `debug` variants and src/main/AndroidManifest.xml (usesCleartextTraffic="false") are unchanged.
+  The only addition is a network-security-config that allows cleartext HTTP to ONE LAN host; every other host stays HTTPS-only.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:networkSecurityConfig="@xml/network_security_config_localtest" />
+</manifest>

@@ -5,80 +5,97 @@ import { useNavigation } from '@react-navigation/native';
 import { useThemeStore } from '../../store/themeStore';
 import { useAuthStore } from '../../store/authStore';
 import ScreenHeader from '../../components/ScreenHeader';
+import LanguagePicker from '../../components/shared/LanguagePicker';
+import { useTranslation } from '../../i18n';
 
 const THEMES = [
-  { id: 'spiritual', label: 'Sacred Spiritual', color: '#1B1F3B' },
-  { id: 'executive', label: 'Modern Executive', color: '#1E3A5F' },
-  { id: 'dark',      label: 'Dark Mode',        color: '#111827' },
-  { id: 'minimal',   label: 'Minimal White',    color: '#6B7280' },
+  { id: 'spiritual', labelKey: 'settings.themeSpiritual', color: '#1B1F3B' },
+  { id: 'executive', labelKey: 'settings.themeExecutive', color: '#1E3A5F' },
+  { id: 'dark',      labelKey: 'settings.themeDark',      color: '#111827' },
+  { id: 'minimal',   labelKey: 'settings.themeMinimal',   color: '#6B7280' },
 ];
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const { theme, setTheme, themeId } = useThemeStore();
   const { logout } = useAuthStore();
+  const { t } = useTranslation();
   const C = theme.colors;
 
   const handleLogout = () => {
     Alert.alert(
-      'Logout?',
-      'Are you sure you want to log out from your account?',
+      t('settings.logoutTitle'),
+      t('settings.logoutConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', style: 'destructive', onPress: logout },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('settings.logout'), style: 'destructive', onPress: logout },
       ]
     );
   };
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Settings" />
+      <ScreenHeader title={t('settings.title')} />
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 120 }}>
 
         <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-          <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Appearance</Text>
-          {THEMES.map((t) => (
+          <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>{t('settings.appearance')}</Text>
+          {THEMES.map((th) => (
             <TouchableOpacity
-              key={t.id}
+              key={th.id}
               style={[styles.item, { borderBottomColor: C.border }]}
-              onPress={() => setTheme(t.id)}
+              onPress={() => setTheme(th.id)}
               activeOpacity={0.8}
             >
-              <View style={[styles.themeColor, { backgroundColor: t.color }]} />
-              <Text style={[styles.itemLabel, { color: C.text }]}>{t.label}</Text>
-              {themeId === t.id && <Ionicons name="checkmark-circle" size={20} color={C.primary} />}
+              <View style={[styles.themeColor, { backgroundColor: th.color }]} />
+              <Text style={[styles.itemLabel, { color: C.text }]}>{t(th.labelKey)}</Text>
+              {themeId === th.id && <Ionicons name="checkmark-circle" size={20} color={C.primary} />}
             </TouchableOpacity>
           ))}
         </View>
 
         <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-          <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>Account</Text>
+          <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>{t('settings.language')}</Text>
+          <LanguagePicker />
+        </View>
+
+        <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
+          <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>{t('settings.account')}</Text>
           <TouchableOpacity style={[styles.item, { borderBottomColor: C.border }]} onPress={() => navigation.navigate('ChangePassword')} activeOpacity={0.8}>
             <Ionicons name="lock-closed-outline" size={20} color={C.text} />
-            <Text style={[styles.itemLabel, { color: C.text }]}>Change Password</Text>
+            <Text style={[styles.itemLabel, { color: C.text }]}>{t('settings.changePassword')}</Text>
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity style={[styles.item, { borderBottomColor: C.border }]} onPress={() => navigation.navigate('Notifications')} activeOpacity={0.8}>
             <Ionicons name="notifications-outline" size={20} color={C.text} />
-            <Text style={[styles.itemLabel, { color: C.text }]}>Notifications</Text>
+            <Text style={[styles.itemLabel, { color: C.text }]}>{t('settings.notifications')}</Text>
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity style={[styles.item, { borderBottomColor: C.border }]} onPress={() => navigation.navigate('DeleteAccount')} activeOpacity={0.8}>
             <Ionicons name="trash-outline" size={20} color="#DC2626" />
-            <Text style={[styles.itemLabel, { color: '#DC2626' }]}>Delete Account</Text>
+            <Text style={[styles.itemLabel, { color: '#DC2626' }]}>{t('settings.deleteAccount')}</Text>
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.item} onPress={handleLogout} activeOpacity={0.8}>
             <Ionicons name="log-out-outline" size={20} color="#DC2626" />
-            <Text style={[styles.itemLabel, { color: '#DC2626' }]}>Logout</Text>
+            <Text style={[styles.itemLabel, { color: '#DC2626' }]}>{t('settings.logout')}</Text>
           </TouchableOpacity>
         </View>
 
         <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
-          <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>About</Text>
+          <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>{t('settings.legalResources')}</Text>
+          <TouchableOpacity style={styles.item} onPress={() => navigation.navigate('LegalResources')} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel={t('settings.legalResources')}>
+            <Ionicons name="document-text-outline" size={20} color={C.text} />
+            <Text style={[styles.itemLabel, { color: C.text }]}>{t('settings.legalResources')}</Text>
+            <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.section, { backgroundColor: C.surface, borderColor: C.border }]}>
+          <Text style={[styles.sectionTitle, { color: C.textSecondary }]}>{t('settings.about')}</Text>
           <View style={styles.item}>
             <Ionicons name="information-circle-outline" size={20} color={C.text} />
-            <Text style={[styles.itemLabel, { color: C.text }]}>Version</Text>
+            <Text style={[styles.itemLabel, { color: C.text }]}>{t('settings.version')}</Text>
             <Text style={[styles.itemValue, { color: C.textSecondary }]}>1.0.0</Text>
           </View>
         </View>

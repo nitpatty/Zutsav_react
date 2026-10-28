@@ -6,14 +6,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useThemeStore } from '../../store/themeStore';
-import { useTranslation } from '../../i18n';
+import { useTranslation, useFormatters } from '../../i18n';
 import api from '../../api/axios';
 import ScreenHeader from '../../components/ScreenHeader';
 
 /* ── Helper: format date ─────────────────────────────────────── */
-function fmtDate(dateStr) {
+function fmtDateWith(dateStr, formatDateWithOptions) {
   if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('en-IN', {
+  return formatDateWithOptions(new Date(dateStr), {
     day: 'numeric', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
@@ -27,11 +27,14 @@ function getTxConfig(type, t) {
     COIN_REDEMPTION: { icon: 'pricetag-outline', color: '#9333EA', bg: '#F3E8FF', label: t('wallet.typeRedemption') },
     ADMIN_ADJUSTMENT: { icon: 'shield-checkmark-outline', color: '#D97706', bg: '#FEF3C7', label: t('wallet.typeAdjustment') },
   };
-  return configs[type] || { icon: 'coins-outline', color: '#6B7280', bg: '#F3F4F6', label: type };
+  // Unknown / future types: a generic, valid Ionicons glyph and the raw type as the label.
+  return configs[type] || { icon: 'help-circle-outline', color: '#6B7280', bg: '#F3F4F6', label: type };
 }
 
 /* ── Transaction Row ─────────────────────────────────────────── */
 function TransactionRow({ tx, C, t }) {
+  const { formatDateWithOptions } = useFormatters();
+  const fmtDate = (dateStr) => fmtDateWith(dateStr, formatDateWithOptions);
   const isCredit = tx.direction === 'CREDIT';
   const typeConfig = getTxConfig(tx.type, t);
 
@@ -80,6 +83,7 @@ export default function WalletScreen() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [txLoading, setTxLoading] = useState(true);
+  const [txError, setTxError] = useState(false); // history request failed — distinct from a successful empty list
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -100,11 +104,15 @@ export default function WalletScreen() {
   const fetchTransactions = useCallback(async (pageNum = 1) => {
     try {
       setTxLoading(true);
+      setTxError(false);
       const { data } = await api.get(`/wallet/transactions?page=${pageNum}&limit=20`);
       setTransactions(data.transactions || []);
       setTotal(data.total || 0);
       setPage(pageNum);
-    } catch {}
+    } catch {
+      // Not an empty history: the request failed (a 401 also reaches the shared client's session-expiry handling).
+      setTxError(true);
+    }
     finally {
       setTxLoading(false);
     }
@@ -167,14 +175,16 @@ export default function WalletScreen() {
           <View style={[styles.coinCard, { backgroundColor: C.surface, borderColor: C.border }]}>
             <View style={styles.coinCardRow}>
               <Ionicons name="logo-bitcoin" size={18} color="#D97706" />
-              <Text style={[styles.coinCardTitle, { color: C.text }]}>Coin Redemption</Text>
+              <Text style={[styles.coinCardTitle, { color: C.text }]}>{t('wallet.coinCardTitle')}</Text>
             </View>
             <Text style={[styles.coinCardLine, { color: C.textSecondary }]}>
-              1 coin = ₹{Number(wallet.coinMonetaryValue)} · Redeemable at checkout for Pooja bookings
+              {t('wallet.coinRate', { rate: Number(wallet.coinMonetaryValue) })}
             </Text>
             {Number(wallet.coinRedemptionMinCoins) > 0 && (
               <Text style={[styles.coinCardLine, { color: wallet.balance >= wallet.coinRedemptionMinCoins ? '#16A34A' : '#D97706' }]}>
-                Requires at least {wallet.coinRedemptionMinCoins} coins{wallet.balance >= wallet.coinRedemptionMinCoins ? ' — you qualify ✓' : ` — you have ${wallet.balance}`}
+                {wallet.balance >= wallet.coinRedemptionMinCoins
+                  ? t('wallet.minQualifies', { min: wallet.coinRedemptionMinCoins })
+                  : t('wallet.minShort', { min: wallet.coinRedemptionMinCoins, balance: wallet.balance })}
               </Text>
             )}
           </View>
@@ -190,14 +200,21 @@ export default function WalletScreen() {
             </View>
           )}
 
-          {!txLoading && transactions.length === 0 && (
+          {!txLoading && txError && (
+            <View style={styles.centerBox}>
+              <Ionicons name="information-circle-outline" size={36} color={C.textLight} />
+              <Text style={[styles.emptyText, { color: C.textSecondary }]}>{t('wallet.historyError')}</Text>
+            </View>
+          )}
+
+          {!txLoading && !txError && transactions.length === 0 && (
             <View style={styles.centerBox}>
               <Ionicons name="receipt-outline" size={36} color={C.textLight} />
               <Text style={[styles.emptyText, { color: C.textSecondary }]}>{t('wallet.noTransactionsTitle')}</Text>
             </View>
           )}
 
-          {!txLoading && transactions.length > 0 && (
+          {!txLoading && !txError && transactions.length > 0 && (
             <View style={[styles.txList, { backgroundColor: C.surface, borderColor: C.border }]}>
               {transactions.map((tx) => (
                 <TransactionRow key={tx._id} tx={tx} C={C} t={t} />

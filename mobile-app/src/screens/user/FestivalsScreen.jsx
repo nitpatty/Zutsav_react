@@ -5,25 +5,26 @@ import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDate, daysUntil } from '../../utils/helpers';
+import { daysUntil } from '../../utils/helpers';
 import EmptyState from '../../components/EmptyState';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
-
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+import { useLanguageStore } from '../../i18n/languageStore';
+import { useTranslation, useFormatters } from '../../i18n';
 
 function CountdownBadge({ date, C }) {
+  const { t } = useTranslation();
   const diff = daysUntil(date);
   if (diff < 0 || diff > 14) return null;
   return (
     <View style={[styles.countdownBadge, { backgroundColor: diff === 0 ? '#DC2626' : C.primary }]}>
-      <Text style={styles.countdownText}>{diff === 0 ? 'Today!' : `${diff}d`}</Text>
+      <Text style={styles.countdownText}>{diff === 0 ? t('festivals.today') : t('festivals.daysShort', { n: diff })}</Text>
     </View>
   );
 }
 
 function MonthCalendar({ year, month, festivals, selectedDay, onSelectDay, C }) {
+  const { calendarLabels } = useFormatters();
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells = Array.from({ length: firstDay + daysInMonth }, (_, i) => i < firstDay ? null : i - firstDay + 1);
@@ -35,7 +36,7 @@ function MonthCalendar({ year, month, festivals, selectedDay, onSelectDay, C }) 
   return (
     <View style={[styles.calendar, { backgroundColor: C.surface, borderColor: C.border }]}>
       <View style={styles.calDaysRow}>
-        {DAYS.map((d) => <Text key={d} style={[styles.calDayLabel, { color: C.textSecondary }]}>{d}</Text>)}
+        {calendarLabels.weekdays.map((d, i) => <Text key={i} style={[styles.calDayLabel, { color: C.textSecondary }]}>{d}</Text>)}
       </View>
       <View style={styles.calGrid}>
         {cells.map((day, i) => {
@@ -60,6 +61,9 @@ function MonthCalendar({ year, month, festivals, selectedDay, onSelectDay, C }) 
 }
 
 export default function FestivalsScreen() {
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
+  const { t } = useTranslation();
+  const { formatDate, calendarLabels } = useFormatters();
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -80,11 +84,11 @@ export default function FestivalsScreen() {
       if (!silent) setLoading(true);
       const { data } = await api.get('/festivals', { params: { year: viewYear, month: viewMonth + 1 } });
       setFestivals(data.data || data.festivals || []);
-    } catch { if (!silent) Toast.show({ type: 'error', text1: 'Could not load festivals' }); }
+    } catch { if (!silent) Toast.show({ type: 'error', text1: t('festivals.loadFailed') }); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  useEffect(() => { setSelectedDay(null); fetch(); }, [viewYear, viewMonth]);
+  useEffect(() => { setSelectedDay(null); fetch(); }, [viewYear, viewMonth, contentLanguage]);
 
   const goPrevMonth = () => { if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); } else setViewMonth((m) => m - 1); };
   const goNextMonth = () => { if (viewMonth === 11) { setViewMonth(0); setViewYear((y) => y + 1); } else setViewMonth((m) => m + 1); };
@@ -109,7 +113,7 @@ export default function FestivalsScreen() {
         <Ionicons name="flame" size={22} color={C.primary} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.name, { color: C.text }]}>{item.name || item.tithiDate || 'Panchang'}</Text>
+        <Text style={[styles.name, { color: C.text }]}>{item.name || item.tithiDate || t('panchang.title')}</Text>
         {item.date && <Text style={[styles.date, { color: C.primary }]}>{formatDate(item.date, 'EEEE, dd MMMM yyyy')}</Text>}
         {item.description && <Text style={[styles.desc, { color: C.textSecondary }]} numberOfLines={2}>{item.description}</Text>}
       </View>
@@ -119,13 +123,13 @@ export default function FestivalsScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Festivals" />
+      <ScreenHeader title={t('festivals.title')} />
 
       <View style={[styles.monthNav, { borderBottomColor: C.border }]}>
         <TouchableOpacity onPress={goPrevMonth} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={20} color={C.primary} />
         </TouchableOpacity>
-        <Text style={[styles.monthLabel, { color: C.text }]}>{MONTHS[viewMonth]} {viewYear}</Text>
+        <Text style={[styles.monthLabel, { color: C.text }]}>{calendarLabels.monthTitle(viewYear, viewMonth)}</Text>
         <TouchableOpacity onPress={goNextMonth} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-forward" size={20} color={C.primary} />
         </TouchableOpacity>
@@ -146,7 +150,7 @@ export default function FestivalsScreen() {
             style={[styles.searchInput, { color: C.text }]}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search this month's festivals…"
+            placeholder={t('festivals.searchPlaceholder')}
             placeholderTextColor={C.textSecondary}
           />
         </View>
@@ -163,7 +167,7 @@ export default function FestivalsScreen() {
             <MonthCalendar year={viewYear} month={viewMonth} festivals={festivals} selectedDay={selectedDay} onSelectDay={setSelectedDay} C={C} />
           ) : null}
           ListHeaderComponentStyle={{ marginBottom: 12 }}
-          ListEmptyComponent={<EmptyState icon="calendar-outline" title="No festivals found" />}
+          ListEmptyComponent={<EmptyState icon="calendar-outline" title={t('festivals.empty')} />}
         />
       )}
     </View>

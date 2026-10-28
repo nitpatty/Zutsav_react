@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  RefreshControl, Animated, ActivityIndicator, Linking
+  RefreshControl, Animated, ActivityIndicator
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -9,15 +9,20 @@ import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDate, formatCurrency, resolveBookingBadge } from '../../utils/helpers';
+import { useAuthStore } from '../../store/authStore';
+import { openPaymentPage, resumeBookingPayment, isValidTransactionId } from '../../utils/paymentRecovery';
+import PendingPaymentBanner from '../../components/shared/PendingPaymentBanner';
+import { formatCurrency, resolveBookingBadge, paymentStatusColor } from '../../utils/helpers';
+import { canUserCancel } from '../../utils/bookingRules';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import { SkeletonCard } from '../../components/shared/Skeleton';
+import { useTranslation, useFormatters } from '../../i18n';
+import { bookingStatusLabel, paymentStatusLabel } from '../../utils/bookingStatusLabels';
 
 const STATUSES = ['all', 'paid', 'pandit_assigned', 'pandit_accepted', 'completed', 'cancelled', 'pending_payment'];
-const STATUS_TAB_LABEL = { pending_payment: 'Failed Payments' };
 
 const STATUS_META = {
   pending_payment:      { label: 'Pending',       bar: '#F59E0B', step: 0 },
@@ -31,16 +36,16 @@ const STATUS_META = {
 };
 
 const JOURNEY = [
-  { id: 0, label: 'Booked' },
-  { id: 1, label: 'Confirmed' },
-  { id: 2, label: 'Assigned' },
-  { id: 3, label: 'Verifying' },
-  { id: 4, label: 'Complete' },
+  { id: 0, labelKey: 'bookings.jBooked' },
+  { id: 1, labelKey: 'bookings.jConfirmed' },
+  { id: 2, labelKey: 'bookings.jAssigned' },
+  { id: 3, labelKey: 'bookings.jVerifying' },
+  { id: 4, labelKey: 'bookings.jComplete' },
 ];
 
-const CANCELLABLE = ['pending_payment', 'paid', 'pandit_assigned', 'pandit_accepted', 'pending_reassignment', 'completion_requested'];
 
 function JourneyTracker({ status }) {
+  const { t } = useTranslation();
   const { theme } = useThemeStore();
   const C = theme.colors;
 
@@ -48,7 +53,7 @@ function JourneyTracker({ status }) {
     return (
       <View style={[styles.journeyCancel, { borderColor: '#FECACA', backgroundColor: '#FEF2F2' }]}>
         <View style={[styles.journeyDot, { backgroundColor: '#EF4444' }]} />
-        <Text style={[styles.journeyCancelText, { color: '#DC2626' }]}>Booking Cancelled</Text>
+        <Text style={[styles.journeyCancelText, { color: '#DC2626' }]}>{t('bookings.cancelledBanner')}</Text>
       </View>
     );
   }
@@ -56,7 +61,7 @@ function JourneyTracker({ status }) {
     return (
       <View style={[styles.journeyCancel, { borderColor: '#FED7AA', backgroundColor: '#FFF7ED' }]}>
         <View style={[styles.journeyDot, { backgroundColor: '#F97316' }]} />
-        <Text style={[styles.journeyCancelText, { color: '#EA580C' }]}>Finding the right pandit for you…</Text>
+        <Text style={[styles.journeyCancelText, { color: '#EA580C' }]}>{t('bookings.findingBanner')}</Text>
       </View>
     );
   }
@@ -83,7 +88,7 @@ function JourneyTracker({ status }) {
             <Text style={{
               fontSize: 8, fontWeight: '600',
               color: i <= step ? '#1B1F3B' : '#D1D5DB',
-            }}>{s.label}</Text>
+            }}>{t(s.labelKey)}</Text>
           </View>
           {i < JOURNEY.length - 1 && (
             <View style={[styles.jConnector, { backgroundColor: i < step ? '#D4AF37' : '#E5E7EB' }]} />
@@ -95,6 +100,7 @@ function JourneyTracker({ status }) {
 }
 
 function PayRemainingBtn({ booking, C }) {
+  const { t } = useTranslation();
   const navigation = useNavigation();
   return (
     <TouchableOpacity
@@ -103,14 +109,16 @@ function PayRemainingBtn({ booking, C }) {
       activeOpacity={0.85}
     >
       <Ionicons name="card" size={14} color="#fff" />
-      <Text style={styles.payRemainText}>Pay Remaining {formatCurrency(booking.remainingAmount)}</Text>
+      <Text style={styles.payRemainText}>{t('bookings.payRemaining', { amount: formatCurrency(booking.remainingAmount) })}</Text>
     </TouchableOpacity>
   );
 }
 
 // Retries payment against the SAME booking — never creates a new booking.
 function RetryPaymentBtn({ booking }) {
+  const { t } = useTranslation();
   const navigation = useNavigation();
+  const userId = useAuthStore((s) => s.user?._id);
   const [loading, setLoading] = useState(false);
 
   const handleRetry = async () => {
@@ -118,18 +126,29 @@ function RetryPaymentBtn({ booking }) {
     try {
       const { data } = await api.post(`/bookings/${booking._id}/retry-payment`);
       if (data.alreadyInFlight) {
-        Toast.show({ type: 'info', text1: 'Payment already in progress for this booking' });
+        // A live attempt exists on the server: verify THAT transaction instead of dead-ending (never start another).
+        const resumed = await resumeBookingPayment({ navigation, userId, bookingId: booking._id, merchantTransactionId: data.merchantTransactionId });
+        if (!resumed) Toast.show({ type: 'info', text1: t('bookings.inProgressToast') });
         setLoading(false);
         return;
       }
-      await Linking.openURL(data.redirectUrl);
+      if (!isValidTransactionId(data.merchantTransactionId)) throw new Error('Unexpected retry response');
+      const opened = await openPaymentPage({
+        userId,
+        context: { type: 'booking', merchantTransactionId: data.merchantTransactionId, bookingId: booking._id },
+        redirectUrl: data.redirectUrl,
+      });
+      if (!opened.opened) {
+        Toast.show({ type: 'error', text1: opened.reason === 'invalid_url' ? t('orders.retryInvalidLink') : t('bookings.startFailed') });
+        return;
+      }
       navigation.navigate('PaymentVerify', {
         merchantTransactionId: data.merchantTransactionId,
         bookingId: booking._id,
         type: 'booking',
       });
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not start payment' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('bookings.startFailed') });
     } finally {
       setLoading(false);
     }
@@ -143,12 +162,14 @@ function RetryPaymentBtn({ booking }) {
       activeOpacity={0.85}
     >
       <Ionicons name="refresh" size={14} color="#fff" />
-      <Text style={styles.payRemainText}>{loading ? 'Redirecting…' : 'Retry Payment'}</Text>
+      <Text style={styles.payRemainText}>{loading ? t('bookings.redirecting') : t('orders.retryPayment')}</Text>
     </TouchableOpacity>
   );
 }
 
 export default function BookingsScreen() {
+  const { t } = useTranslation();
+  const { formatDate } = useFormatters();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { theme } = useThemeStore();
@@ -173,12 +194,12 @@ export default function BookingsScreen() {
       setHasMore(list.length === 15);
       setPage(pg);
     } catch {
-      if (!silent) Toast.show({ type: 'error', text1: 'Could not load bookings' });
+      if (!silent) Toast.show({ type: 'error', text1: t('bookings.loadFailed') });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [filter]);
+  }, [filter, t]);
 
   useEffect(() => { fetchBookings(1); }, [filter]);
 
@@ -193,7 +214,7 @@ export default function BookingsScreen() {
   const renderItem = ({ item }) => {
     const meta = STATUS_META[item.status] || STATUS_META.pending_payment;
     const hasPartial = item.status !== 'pending_payment' && (item.paymentMode === 'PARTIAL' || item.paymentStatus === 'PARTIALLY_PAID');
-    const canCancel = CANCELLABLE.includes(item.status);
+    const canCancel = canUserCancel(item.status);
     const hasKitDelivery = item.withKit && item.kitDelivery;
     const needsPay = item.paymentStatus === 'PARTIALLY_PAID' && item.remainingAmount > 0 && item.status !== 'cancelled';
     const badge = resolveBookingBadge(item);
@@ -215,7 +236,7 @@ export default function BookingsScreen() {
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 4 }}>
                 <Text style={[styles.poojaName, { color: C.text }]} numberOfLines={1}>
-                  {item.poojaId?.name || 'Pooja'}
+                  {item.poojaId?.name || t('home.poojaFallback')}
                 </Text>
                 {item.bookingNumber && (
                   <Text style={{ fontSize: 9, color: C.textSecondary, fontFamily: 'monospace' }}>
@@ -238,7 +259,7 @@ export default function BookingsScreen() {
             </View>
             <View style={{ alignItems: 'flex-end', gap: 4 }}>
               <Text style={[styles.amount, { color: C.primary }]}>{formatCurrency(item.grandTotal || item.totalAmount || item.amount)}</Text>
-              <StatusBadge status={badge.value} colorMap={badge.colorMap} small />
+              <StatusBadge status={badge.value} colorMap={badge.colorMap} label={badge.colorMap === paymentStatusColor ? paymentStatusLabel(badge.value, t) : bookingStatusLabel(badge.value, t)} small />
             </View>
           </View>
 
@@ -248,8 +269,8 @@ export default function BookingsScreen() {
               <Ionicons name="alert-circle" size={12} color="#DC2626" />
               <Text style={{ fontSize: 11, color: '#B91C1C', flex: 1 }}>
                 {item.paymentStatus === 'FAILED'
-                  ? `Payment didn't go through${lastAttempt?.failureReason ? ` (${lastAttempt.failureReason})` : ''}. Your booking is saved.`
-                  : 'Payment wasn\'t completed. Your booking is saved — retry anytime.'}
+                  ? (lastAttempt?.failureReason ? t('bookings.failedWithReason', { reason: lastAttempt.failureReason }) : t('bookings.failedPlain'))
+                  : t('bookings.notCompleted')}
               </Text>
             </View>
           )}
@@ -260,7 +281,7 @@ export default function BookingsScreen() {
             <View style={[styles.notice, { backgroundColor: '#D1FAE520', borderColor: '#10B981' }]}>
               <Ionicons name="checkmark-circle" size={12} color="#10B981" />
               <Text style={{ fontSize: 11, color: '#059669', flex: 1 }}>
-                <Text style={{ fontWeight: '700' }}>{item.panditId.name}</Text> has confirmed attendance.
+                {t('bookings.panditConfirmed', { name: item.panditId.name })}
               </Text>
             </View>
           )}
@@ -269,7 +290,7 @@ export default function BookingsScreen() {
           {item.status === 'pending_reassignment' && (
             <View style={[styles.notice, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }]}>
               <Ionicons name="time" size={12} color="#EA580C" />
-              <Text style={{ fontSize: 11, color: '#EA580C', flex: 1 }}>Finding a new pandit. You will be notified.</Text>
+              <Text style={{ fontSize: 11, color: '#EA580C', flex: 1 }}>{t('bookings.findingNew')}</Text>
             </View>
           )}
 
@@ -285,10 +306,10 @@ export default function BookingsScreen() {
             ]}>
               <Ionicons name="cube" size={12} color="#6B7280" />
               <Text style={{ fontSize: 11, color: '#6B7280', flex: 1 }}>
-                Samagri Kit — {item.kitDelivery.status === 'delivered' ? 'Delivered' :
-                  item.kitDelivery.status === 'shipped' ? `Shipped${item.kitDelivery.trackingId ? ` · AWB: ${item.kitDelivery.trackingId}` : ''}` :
-                  item.kitDelivery.status === 'out_for_delivery' ? 'Out for Delivery' :
-                  item.kitDelivery.status === 'packed' ? 'Packed' : 'Being prepared'}
+                {t('bookings.kitLine', { status: item.kitDelivery.status === 'delivered' ? t('orders.statusDelivered') :
+                  item.kitDelivery.status === 'shipped' ? (item.kitDelivery.trackingId ? t('bookings.kitShippedAwb', { id: item.kitDelivery.trackingId }) : t('orders.statusShipped')) :
+                  item.kitDelivery.status === 'out_for_delivery' ? t('bookings.kitOutForDelivery') :
+                  item.kitDelivery.status === 'packed' ? t('orders.statusPacked') : t('bookings.kitPreparing') })}
               </Text>
             </View>
           )}
@@ -297,12 +318,12 @@ export default function BookingsScreen() {
           {hasPartial && item.status !== 'pending_payment' && (
             <View style={[styles.partialBox, { backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }]}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: 11, color: '#9A3412' }}>Amount Paid</Text>
+                <Text style={{ fontSize: 11, color: '#9A3412' }}>{t('bookings.amountPaid')}</Text>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#16A34A' }}>{formatCurrency(item.amountPaid || 0)}</Text>
               </View>
               {item.remainingAmount > 0 && (
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-                  <Text style={{ fontSize: 11, color: '#9A3412', fontWeight: '600' }}>Remaining</Text>
+                  <Text style={{ fontSize: 11, color: '#9A3412', fontWeight: '600' }}>{t('bookings.remaining')}</Text>
                   <Text style={{ fontSize: 11, fontWeight: '700', color: '#DC2626' }}>{formatCurrency(item.remainingAmount)}</Text>
                 </View>
               )}
@@ -335,7 +356,7 @@ export default function BookingsScreen() {
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons name="document-text-outline" size={13} color={C.primary} />
-                <Text style={{ fontSize: 11, fontWeight: '600', color: C.primary }}>View Invoice</Text>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: C.primary }}>{t('bookings.viewInvoice')}</Text>
               </TouchableOpacity>
               {canCancel && (
                 <TouchableOpacity
@@ -344,7 +365,7 @@ export default function BookingsScreen() {
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Ionicons name="close-circle-outline" size={13} color="#DC2626" />
-                  <Text style={{ fontSize: 11, fontWeight: '600', color: '#DC2626' }}>Cancel</Text>
+                  <Text style={{ fontSize: 11, fontWeight: '600', color: '#DC2626' }}>{t('common.cancel')}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -356,7 +377,8 @@ export default function BookingsScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="My Bookings" showBack={false} />
+      <ScreenHeader title={t('bookings.title')} showBack={false} />
+      <PendingPaymentBanner navigation={navigation} kind="booking" onResolved={() => fetchBookings(1, true)} />
 
       {/* Filter chips */}
       <View style={[styles.filterWrap, { backgroundColor: C.surface }]}>
@@ -373,7 +395,7 @@ export default function BookingsScreen() {
               activeOpacity={0.85}
             >
               <Text style={[styles.chipText, { color: filter === s ? '#fff' : C.primaryDark }]}>
-                {s === 'all' ? 'All' : STATUS_TAB_LABEL[s] || s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                {s === 'all' ? t('shop.all') : s === 'pending_payment' ? t('bookings.tabFailed') : bookingStatusLabel(s, t)}
               </Text>
             </TouchableOpacity>
           )}
@@ -394,7 +416,7 @@ export default function BookingsScreen() {
           onEndReached={onEndReached}
           onEndReachedThreshold={0.3}
           ListEmptyComponent={
-            <EmptyState icon="calendar-outline" title="No bookings" subtitle="Book a pooja to get started" actionLabel="Browse Poojas" onAction={() => navigation.navigate('HomeTab')} />
+            <EmptyState icon="calendar-outline" title={t('bookings.emptyTitle')} subtitle={t('bookings.emptySub')} actionLabel={t('bookings.browsePoojas')} onAction={() => navigation.navigate('HomeTab')} />
           }
           ListFooterComponent={loading && page > 1 ? <LoadingSpinner /> : null}
         />

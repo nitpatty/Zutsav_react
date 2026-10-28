@@ -4,9 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useNotificationStore } from '../store/notificationStore';
 import { useThemeStore } from '../store/themeStore';
+import { useTranslation } from '../i18n';
 
 export default function NotificationBell({ color, notifScreen = 'Notifications' }) {
   const navigation = useNavigation();
+  const { t } = useTranslation();
   const { unreadCount } = useNotificationStore();
   const { theme } = useThemeStore();
   const iconColor = color || theme.colors.text;
@@ -14,6 +16,8 @@ export default function NotificationBell({ color, notifScreen = 'Notifications' 
   return (
     <TouchableOpacity
       style={styles.btn}
+      accessibilityRole="button"
+      accessibilityLabel={t('settings.notifications')}
       onPress={() => navigation.navigate(notifScreen)}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >

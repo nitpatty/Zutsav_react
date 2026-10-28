@@ -14,19 +14,21 @@ import BackgroundDecorations from '../../components/auth/BackgroundDecorations';
 import ZutsavLogoMark from '../../components/auth/ZutsavLogoMark';
 import GradientButton from '../../components/auth/GradientButton';
 import { AUTH_COLORS } from '../../components/auth/colors';
+import { useTranslation } from '../../i18n';
+import { apiErrorMessage } from '../../utils/apiMessage';
 
 const CHANNELS = [
   {
     key: 'whatsapp',
     icon: 'logo-whatsapp',
-    label: 'WhatsApp',
-    desc: 'Receive your OTP instantly on your registered WhatsApp number.',
+    label: 'WhatsApp', // brand name — not translated
+    descKey: 'auth.whatsappDesc',
   },
   {
     key: 'email',
     icon: 'mail-outline',
-    label: 'Email',
-    desc: 'Receive your OTP on your registered email address.',
+    labelKey: 'auth.channelEmail',
+    descKey: 'auth.emailDesc',
   },
 ];
 
@@ -46,6 +48,7 @@ function maskEmail(email) {
 export default function VerificationChannelScreen({ navigation, route }) {
   const { name, phone, email, role, referralCode } = route.params || {};
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
 
   const [channel, setChannel] = useState('whatsapp');
   const [loading, setLoading] = useState(false);
@@ -57,11 +60,11 @@ export default function VerificationChannelScreen({ navigation, route }) {
 
   const handleSendOTP = async () => {
     if (channel === 'whatsapp' && !phone) {
-      Toast.show({ type: 'error', text1: 'Mobile number is required for WhatsApp' });
+      Toast.show({ type: 'error', text1: t('auth.whatsappRequired') });
       return;
     }
     if (channel === 'email' && !email) {
-      Toast.show({ type: 'error', text1: 'Email address is required for Email OTP' });
+      Toast.show({ type: 'error', text1: t('auth.emailRequiredForOtp') });
       return;
     }
     try {
@@ -72,8 +75,7 @@ export default function VerificationChannelScreen({ navigation, route }) {
         email,
         channel,
       });
-      const target = channel === 'email' ? 'email' : 'WhatsApp';
-      Toast.show({ type: 'success', text1: `OTP sent to your ${target}!` });
+      Toast.show({ type: 'success', text1: channel === 'email' ? t('auth.otpSentEmail') : t('auth.otpSentWhatsApp') });
       navigation.navigate('OTP', {
         phone,
         email,
@@ -86,7 +88,7 @@ export default function VerificationChannelScreen({ navigation, route }) {
     } catch (err) {
       Toast.show({
         type: 'error',
-        text1: err.response?.data?.message || 'Could not send OTP. Please try again.',
+        text1: apiErrorMessage(err, t('auth.otpSendFailed')),
       });
     } finally {
       setLoading(false);
@@ -114,10 +116,8 @@ export default function VerificationChannelScreen({ navigation, route }) {
             <View style={styles.iconWrap}>
               <Ionicons name="shield-checkmark" size={18} color={AUTH_COLORS.forgotText} />
             </View>
-            <Text style={styles.heading}>Verify Your{'\n'}Identity</Text>
-            <Text style={styles.subtitle}>
-              Choose how you'd like to receive your{'\n'}verification code.
-            </Text>
+            <Text style={styles.heading}>{t('auth.verifyHeading')}</Text>
+            <Text style={styles.subtitle}>{t('auth.chooseChannel')}</Text>
           </Animated.View>
 
           <Animated.View entering={FadeInUp.duration(700).delay(200)} style={styles.card}>
@@ -154,10 +154,10 @@ export default function VerificationChannelScreen({ navigation, route }) {
                     </View>
 
                     <Text style={[styles.channelLabel, active && styles.channelLabelActive]}>
-                      {opt.label}
+                      {opt.labelKey ? t(opt.labelKey) : opt.label}
                     </Text>
                     <Text style={[styles.channelDesc, active && styles.channelDescActive]}>
-                      {opt.desc}
+                      {t(opt.descKey)}
                     </Text>
                     <Text style={[styles.channelTarget, active && styles.channelTargetActive]}>
                       {target}
@@ -169,7 +169,7 @@ export default function VerificationChannelScreen({ navigation, route }) {
 
             <View style={styles.buttonWrap}>
               <GradientButton
-                title={loading ? 'Sending OTP…' : 'Send OTP'}
+                title={loading ? t('auth.sendingOtp') : t('auth.sendOtp')}
                 onPress={handleSendOTP}
                 loading={loading}
                 disabled={loading}
@@ -178,7 +178,7 @@ export default function VerificationChannelScreen({ navigation, route }) {
 
             <TouchableOpacity style={styles.changeMethodRow} onPress={goBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Ionicons name="arrow-back" size={14} color={AUTH_COLORS.forgotText} />
-              <Text style={styles.changeMethodText}>Back to registration</Text>
+              <Text style={styles.changeMethodText}>{t('auth.backToRegistration')}</Text>
             </TouchableOpacity>
           </Animated.View>
         </ScrollView>

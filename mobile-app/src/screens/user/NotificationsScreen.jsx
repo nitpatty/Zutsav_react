@@ -6,9 +6,10 @@ import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import { useNotificationStore } from '../../store/notificationStore';
-import { timeAgo } from '../../utils/helpers';
 import EmptyState from '../../components/EmptyState';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useLanguageStore } from '../../i18n/languageStore';
+import { useTranslation, useFormatters } from '../../i18n';
 
 // Maps a notification's `type` to what it's about, so a tap can resolve the
 // real Mongo id (via the by-number lookup endpoints) and navigate there.
@@ -29,6 +30,9 @@ const NOTIFICATION_TARGET = {
 // wrapper screens (e.g. PanditNotificationsScreen) inject their own
 // tab-qualified navigation without forking this whole screen.
 export default function NotificationsScreen({ customHandlers } = {}) {
+  const { t } = useTranslation();
+  const { timeAgo } = useFormatters();
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -38,7 +42,7 @@ export default function NotificationsScreen({ customHandlers } = {}) {
   } = useNotificationStore();
   const [search, setSearch] = useState('');
 
-  useEffect(() => { fetchNotifications(); }, []);
+  useEffect(() => { fetchNotifications(); }, [contentLanguage]);
 
   const visibleNotifications = search.trim()
     ? notifications.filter((n) => {
@@ -48,9 +52,9 @@ export default function NotificationsScreen({ customHandlers } = {}) {
     : notifications;
 
   const handleClearAll = () => {
-    Alert.alert('Clear All Notifications', 'This will permanently delete all your notifications.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear All', style: 'destructive', onPress: () => clearAll().catch(() => Toast.show({ type: 'error', text1: 'Could not clear notifications' })) },
+    Alert.alert(t('notifications.clearTitle'), t('notifications.clearMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('notifications.clearConfirm'), style: 'destructive', onPress: () => clearAll().catch(() => Toast.show({ type: 'error', text1: t('notifications.clearFailed') })) },
     ]);
   };
 
@@ -90,7 +94,7 @@ export default function NotificationsScreen({ customHandlers } = {}) {
         <Text style={[styles.body, { color: C.textSecondary }]}>{item.body || item.message}</Text>
         <Text style={[styles.time, { color: C.textSecondary }]}>{timeAgo(item.createdAt)}</Text>
       </View>
-      <TouchableOpacity onPress={() => deleteNotification(item._id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.deleteBtn}>
+      <TouchableOpacity onPress={() => deleteNotification(item._id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.deleteBtn} accessibilityRole="button" accessibilityLabel={t('notifications.deleteLabel')}>
         <Ionicons name="trash-outline" size={18} color={C.textSecondary} />
       </TouchableOpacity>
     </TouchableOpacity>
@@ -99,16 +103,16 @@ export default function NotificationsScreen({ customHandlers } = {}) {
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
       <ScreenHeader
-        title="Notifications"
+        title={t('settings.notifications')}
         right={
           <View style={styles.headerActions}>
             {notifications.some((n) => !n.isRead) && (
-              <TouchableOpacity onPress={markAllRead} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={markAllRead} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('notifications.markAllRead')}>
                 <Ionicons name="checkmark-done" size={22} color={C.primary} />
               </TouchableOpacity>
             )}
             {notifications.length > 0 && (
-              <TouchableOpacity onPress={handleClearAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={handleClearAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('notifications.clearAllLabel')}>
                 <Ionicons name="trash-bin-outline" size={20} color={C.textSecondary} />
               </TouchableOpacity>
             )}
@@ -123,7 +127,7 @@ export default function NotificationsScreen({ customHandlers } = {}) {
               style={[styles.searchInput, { color: C.text }]}
               value={search}
               onChangeText={setSearch}
-              placeholder="Search notifications…"
+              placeholder={t('notifications.searchPlaceholder')}
               placeholderTextColor={C.textSecondary}
             />
           </View>
@@ -134,7 +138,7 @@ export default function NotificationsScreen({ customHandlers } = {}) {
         keyExtractor={(n) => n._id}
         renderItem={renderItem}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchNotifications} tintColor={C.primary} />}
-        ListEmptyComponent={<EmptyState icon="notifications-outline" title={search.trim() ? 'No matching notifications' : 'No notifications yet'} />}
+        ListEmptyComponent={<EmptyState icon="notifications-outline" title={search.trim() ? t('notifications.emptyMatch') : t('notifications.empty')} />}
       />
     </View>
   );

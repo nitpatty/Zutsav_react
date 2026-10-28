@@ -6,31 +6,33 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useThemeStore } from '../../store/themeStore';
-import { useTranslation } from '../../i18n';
+import { useTranslation, useFormatters } from '../../i18n';
 import api from '../../api/axios';
 import ScreenHeader from '../../components/ScreenHeader';
 
 /* ── Helper: format date ─────────────────────────────────────── */
-function fmtDate(dateStr) {
+function fmtDateWith(dateStr, formatDateWithOptions) {
   if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('en-IN', {
+  return formatDateWithOptions(new Date(dateStr), {
     day: 'numeric', month: 'short', year: 'numeric',
   });
 }
 
 /* ── Helper: time remaining ──────────────────────────────────── */
-function timeRemaining(expiresAt) {
+function timeRemaining(expiresAt, t) {
   if (!expiresAt) return '';
   const diff = new Date(expiresAt) - new Date();
-  if (diff <= 0) return 'Expired';
+  if (diff <= 0) return t('referrals.expired');
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
   const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  if (days > 0) return `${days}d ${hours}h left`;
-  return `${hours}h left`;
+  if (days > 0) return t('referrals.timeLeftDaysHours', { days, hours });
+  return t('referrals.timeLeftHours', { hours });
 }
 
 /* ── Referral Code Card ──────────────────────────────────────── */
 function ReferralCard({ code, onCopy, onShare, C, t }) {
+  const { formatDateWithOptions } = useFormatters();
+  const fmtDate = (dateStr) => fmtDateWith(dateStr, formatDateWithOptions);
   const statusConfig = {
     AVAILABLE: { label: t('referrals.statusAvailable'), color: '#16A34A', bg: '#DCFCE7' },
     USED: { label: t('referrals.statusUsed'), color: '#2563EB', bg: '#DBEAFE' },
@@ -74,7 +76,7 @@ function ReferralCard({ code, onCopy, onShare, C, t }) {
           <View style={styles.dateItem}>
             <Ionicons name="time-outline" size={12} color="#D97706" />
             <Text style={[styles.dateText, { color: '#D97706' }]}>
-              {t('referrals.expiresDate')}: {fmtDate(code.expiresAt)} · {timeRemaining(code.expiresAt)}
+              {t('referrals.expiresDate')}: {fmtDate(code.expiresAt)} · {timeRemaining(code.expiresAt, t)}
             </Text>
           </View>
         )}
@@ -123,6 +125,8 @@ function ReferralCard({ code, onCopy, onShare, C, t }) {
           <TouchableOpacity
             style={[styles.actionBtn, { borderColor: C.border }]}
             onPress={() => onShare(code, 'native')}
+            accessibilityRole="button"
+            accessibilityLabel={t('referrals.shareOther')}
             activeOpacity={0.7}
           >
             <Ionicons name="share-outline" size={16} color={C.textSecondary} />
@@ -200,7 +204,7 @@ export default function MyReferralsScreen() {
   };
 
   const handleShare = async (code, method) => {
-    const message = `Join Zutsav using my referral link:\n\n${code.referralLink}`;
+    const message = t('referrals.shareMessage', { link: code.referralLink });
     try {
       await Share.share({ message, url: code.referralLink });
     } catch {}

@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  TextInput, FlatList, Image, Alert, Linking, Modal, ActivityIndicator, Switch
+  TextInput, FlatList, Image, Alert, Modal, ActivityIndicator, Switch
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
@@ -14,7 +14,14 @@ import { getUrgentWindow, formatDateLabel, formatTimeLabel } from '../../utils/b
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
 import AddressPicker from '../../components/shared/AddressPicker';
+import { pairForSave } from '../../utils/locationPin';
+import { parsePaymentRedirectUrl } from '../../utils/paymentUrl';
+import { openPaymentPage, isValidTransactionId } from '../../utils/paymentRecovery';
+import { createBookingSubmitGuard } from '../../utils/bookingSubmitGuard';
+import { readBookingCharge } from '../../utils/bookingCharge';
 import KitItemsSheet from '../../components/shared/KitItemsSheet';
+import { useTranslation, useFormatters } from '../../i18n';
+import { useLanguageStore } from '../../i18n/languageStore';
 
 // ── Time slots (same as website) — full day, 30-minute steps, midnight to midnight ──
 const TIME_SLOTS = [
@@ -26,10 +33,9 @@ const TIME_SLOTS = [
 ];
 // ── Months / weekdays for calendar ───────────────────────────
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const FULL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 
 function CalendarPicker({ value, onChange, minDaysFromNow = 0, maxDaysFromNow = null, minDate: minDateProp = null, maxDate: maxDateProp = null, C }) {
+  const { formatDateWithOptions, calendarLabels } = useFormatters();
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const [vy, setVY] = useState(today.getFullYear());
   const [vm, setVM] = useState(today.getMonth());
@@ -68,13 +74,13 @@ function CalendarPicker({ value, onChange, minDaysFromNow = 0, maxDaysFromNow = 
         <TouchableOpacity onPress={() => vm === 0 ? (setVM(11), setVY(y => y - 1)) : setVM(m => m - 1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={18} color={C.primary} />
         </TouchableOpacity>
-        <Text style={[styles.calMonth, { color: C.text }]}>{FULL_MONTHS[vm]} {vy}</Text>
+        <Text style={[styles.calMonth, { color: C.text }]}>{calendarLabels.monthTitle(vy, vm)}</Text>
         <TouchableOpacity onPress={() => vm === 11 ? (setVM(0), setVY(y => y + 1)) : setVM(m => m + 1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-forward" size={18} color={C.primary} />
         </TouchableOpacity>
       </View>
       <View style={styles.calDays}>
-        {DAYS.map(d => <Text key={d} style={[styles.calDayLabel, { color: C.textSecondary }]}>{d}</Text>)}
+        {calendarLabels.weekdays.map((d, i) => <Text key={i} style={[styles.calDayLabel, { color: C.textSecondary }]}>{d}</Text>)}
       </View>
       <View style={styles.calGrid}>
         {cells.map((day, i) => {
@@ -98,7 +104,7 @@ function CalendarPicker({ value, onChange, minDaysFromNow = 0, maxDaysFromNow = 
       {value && (
         <View style={[styles.calSelected, { borderTopColor: C.border }]}>
           <Text style={[styles.calSelectedText, { color: C.primary }]}>
-            {new Date(value + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            {formatDateWithOptions(new Date(value + 'T00:00:00'), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </Text>
         </View>
       )}
@@ -119,17 +125,28 @@ const STEP = {
   REVIEW:     'review',
 };
 
+// Display labels only (the step ids above are internal). Keys are translated where they are rendered.
 const STEP_LABEL = {
-  [STEP.OVERVIEW]:   { icon: '🙏', label: 'Pooja' },
-  [STEP.TYPE]:       { icon: '⚡', label: 'Type' },
-  [STEP.KIT_PREF]:  { icon: '📦', label: 'Samagri' },
-  [STEP.KIT_SELECT]: { icon: '🛍️', label: 'Kit' },
-  [STEP.DATE]:       { icon: '📅', label: 'Date' },
-  [STEP.TIME]:       { icon: '🕐', label: 'Time' },
-  [STEP.LANGUAGE]:   { icon: '🌐', label: 'Language' },
-  [STEP.DETAILS]:    { icon: '📋', label: 'Details' },
-  [STEP.REVIEW]:     { icon: '✨', label: 'Review' },
+  [STEP.OVERVIEW]:   { icon: '🙏', labelKey: 'home.poojaFallback' },
+  [STEP.TYPE]:       { icon: '⚡', labelKey: 'booking.stepType' },
+  [STEP.KIT_PREF]:  { icon: '📦', labelKey: 'booking.stepSamagri' },
+  [STEP.KIT_SELECT]: { icon: '🛍️', labelKey: 'booking.stepKit' },
+  [STEP.DATE]:       { icon: '📅', labelKey: 'booking.date' },
+  [STEP.TIME]:       { icon: '🕐', labelKey: 'booking.time' },
+  [STEP.LANGUAGE]:   { icon: '🌐', labelKey: 'booking.language' },
+  [STEP.DETAILS]:    { icon: '📋', labelKey: 'booking.stepDetails' },
+  [STEP.REVIEW]:     { icon: '✨', labelKey: 'booking.stepReview' },
 };
+
+// A language switch refreshes ONLY localized display text. Prices, ids, languages, durations and every other business
+// field of the pooja/kits already in the draft are kept exactly as they are.
+const POOJA_DISPLAY_FIELDS = ['name', 'shortDesc', 'description', 'vidhi', 'samagriNotes', 'benefitsContent', 'additionalInfo', 'requirements', 'benefits', 'faqs'];
+const KIT_DISPLAY_FIELDS = ['name', 'description'];
+const pickFields = (source, fields) => fields.reduce((acc, f) => (source && source[f] !== undefined ? { ...acc, [f]: source[f] } : acc), {});
+const mergeKitDisplay = (current, fresh) => current.map((kit) => {
+  const match = fresh.find((k) => k && k._id === kit._id);
+  return match ? { ...kit, ...pickFields(match, KIT_DISPLAY_FIELDS) } : kit;
+});
 
 function buildSteps(isUrgent, withKit, hasKits) {
   return [
@@ -147,6 +164,9 @@ function buildSteps(isUrgent, withKit, hasKits) {
 
 export default function BookingFlowScreen({ navigation, route }) {
   const { poojaId, pooja: poojaParam } = route.params || {};
+  const { t } = useTranslation();
+  const { formatDateWithOptions } = useFormatters();
+  const contentLanguage = useLanguageStore((s) => s.language); // refresh server-translated pooja/kit text when the UI language changes
   const { theme } = useThemeStore();
   const { user } = useAuthStore();
   const C = theme.colors;
@@ -155,6 +175,10 @@ export default function BookingFlowScreen({ navigation, route }) {
   const [pooja,     setPooja]     = useState(poojaParam || null);
   const [loading,   setLoading]   = useState(!poojaParam);
   const [submitting, setSubmitting] = useState(false);
+  const submitGuardRef = useRef(null);
+  if (!submitGuardRef.current) submitGuardRef.current = createBookingSubmitGuard(); // per screen instance: never blocks a later, new booking
+  const poojaRequestRef = useRef(0); // only the latest pooja request may update the screen (a slow old-language reply is dropped)
+  const kitsRequestRef = useRef(0);
 
   // Pricing
   const [rates,         setRates]         = useState({ commissionPercent: 0, commissionFixed: 0, commissionType: 'percent', gstPercent: 0 });
@@ -217,10 +241,11 @@ export default function BookingFlowScreen({ navigation, route }) {
   // Load pooja
   useEffect(() => {
     if (!poojaParam && poojaId) {
+      const request = ++poojaRequestRef.current;
       api.get(`/poojas/${poojaId}`)
-        .then(({ data }) => setPooja(data.pooja || data.data))
-        .catch(() => Toast.show({ type: 'error', text1: 'Could not load pooja details' }))
-        .finally(() => setLoading(false));
+        .then(({ data }) => { if (request === poojaRequestRef.current) setPooja(data.pooja || data.data); })
+        .catch(() => { if (request === poojaRequestRef.current) Toast.show({ type: 'error', text1: t('booking.poojaLoadFailed') }); })
+        .finally(() => { if (request === poojaRequestRef.current) setLoading(false); });
     }
   }, [poojaId]);
 
@@ -245,10 +270,11 @@ export default function BookingFlowScreen({ navigation, route }) {
       }).catch(() => {});
 
     setKitsLoading(true);
+    const kitsRequest = ++kitsRequestRef.current;
     api.get(`/marketplace/kits/by-pooja/${pooja._id}`)
-      .then(({ data }) => setKits(data.kits || []))
+      .then(({ data }) => { if (kitsRequest === kitsRequestRef.current) setKits(data.kits || []); })
       .catch(() => {})
-      .finally(() => setKitsLoading(false));
+      .finally(() => { if (kitsRequest === kitsRequestRef.current) setKitsLoading(false); });
 
     if (pooja.languages?.length === 1) setLanguage(pooja.languages[0]);
   }, [pooja?._id]);
@@ -260,6 +286,36 @@ export default function BookingFlowScreen({ navigation, route }) {
       .then(({ data }) => setWalletInfo(data.wallet))
       .catch(() => {});
   }, [user?._id]);
+
+  // UI language changed while the booking is open: re-read the SAME pooja and its kits through the existing GET endpoints
+  // (the client adds ?lang=) and replace display text only. The draft (step, date, time, kits, details, address, coins,
+  // payment mode) and every price are untouched; a reply for a superseded language is ignored. GETs only — never a booking
+  // or payment request. Not run on first mount.
+  const seenLanguage = useRef(contentLanguage);
+  const poojaRef = useRef(pooja);
+  poojaRef.current = pooja;
+  useEffect(() => {
+    if (seenLanguage.current === contentLanguage) return;
+    seenLanguage.current = contentLanguage;
+    const id = poojaRef.current?._id || poojaId;
+    if (!id) return;
+    const poojaRequest = ++poojaRequestRef.current;
+    api.get(`/poojas/${id}`)
+      .then(({ data }) => {
+        if (poojaRequest !== poojaRequestRef.current) return;
+        const fresh = data.pooja || data.data;
+        if (fresh) setPooja((prev) => (prev ? { ...prev, ...pickFields(fresh, POOJA_DISPLAY_FIELDS) } : fresh));
+      })
+      .catch(() => { if (poojaRequest === poojaRequestRef.current && !poojaRef.current) Toast.show({ type: 'error', text1: t('booking.poojaLoadFailed') }); })
+      .finally(() => { if (poojaRequest === poojaRequestRef.current) setLoading(false); });
+    const kitPoojaId = poojaRef.current?._id;
+    if (kitPoojaId) {
+      const kitsRequest = ++kitsRequestRef.current;
+      api.get(`/marketplace/kits/by-pooja/${kitPoojaId}`)
+        .then(({ data }) => { if (kitsRequest === kitsRequestRef.current) setKits((prev) => mergeKitDisplay(prev, data.kits || [])); })
+        .catch(() => {});
+    }
+  }, [contentLanguage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <LoadingSpinner fullScreen />;
   if (!pooja) return null;
@@ -315,11 +371,11 @@ export default function BookingFlowScreen({ navigation, route }) {
   const handleSubmit = async () => {
     if (paymentMode === 'PARTIAL') {
       if (!partialAmount || partialAmount < partialConfig.minAmount) {
-        Toast.show({ type: 'error', text1: `Minimum partial payment is ₹${partialConfig.minAmount}` });
+        Toast.show({ type: 'error', text1: t('booking.minPartial', { min: partialConfig.minAmount }) });
         return;
       }
       if (partialAmount >= grandTotal) {
-        Toast.show({ type: 'error', text1: 'Partial amount must be less than the grand total' });
+        Toast.show({ type: 'error', text1: t('booking.partialLessThanTotal') });
         return;
       }
     }
@@ -328,10 +384,14 @@ export default function BookingFlowScreen({ navigation, route }) {
       name: userDetails.name, phone: userDetails.phone, email: userDetails.email,
       address: userDetails.address, pincode: userDetails.pincode, state: userDetails.state, city: userDetails.city,
       district: userDetails.district,
-      latitude: userDetails.latitude ?? null, longitude: userDetails.longitude ?? null,
+      ...pairForSave(userDetails), // both coordinates, or both null — never half a pair
     };
-    try {
-      setSubmitting(true);
+    // One booking per tap sequence: rapid taps are ignored, and once the booking exists a second tap re-presents ITS
+    // payment prompt instead of creating another (utils/bookingSubmitGuard). Client-side only — see that file.
+    const guard = submitGuardRef.current;
+    if (guard.isBusy()) return;
+    setSubmitting(true);
+    const outcome = await guard.submit(async () => {
       const { data } = await api.post('/bookings/create-phonepe-order', {
         poojaId:      pooja._id,
         scheduledDate,
@@ -346,34 +406,86 @@ export default function BookingFlowScreen({ navigation, route }) {
         coinRedemptionCoins: coinCoins > 0 ? coinCoins : undefined,
         userDetails:  ud,
       });
+      const bookingId = data?.booking?._id;
+      return {
+        created: bookingId ? {
+          bookingId,
+          merchantTransactionId: data.merchantTransactionId,
+          redirectUrl: data.redirectUrl || null,
+          charge: readBookingCharge(data), // server-authoritative only — never the local estimate (utils/bookingCharge)
+        } : null,
+      };
+    });
+    if (outcome.status !== 'busy') setSubmitting(false);
 
-      if (data.redirectUrl) {
-        Alert.alert('Complete Payment',
-          `Pay ${formatCurrency(data.chargeAmount || grandTotal)} via PhonePe. After payment, return to the app.`,
-          [
-            { text: 'Pay Now', onPress: async () => {
-              try { await Linking.openURL(data.redirectUrl); } catch {}
-              navigation.replace('PaymentVerify', { merchantTransactionId: data.merchantTransactionId, bookingId: data.booking._id, type: 'booking' });
-            }},
-            { text: 'Cancel', style: 'cancel', onPress: () => navigation.replace('BookingDetail', { bookingId: data.booking._id }) },
-          ]
-        );
-      } else {
-        Toast.show({ type: 'success', text1: 'Booking created!' });
-        navigation.replace('BookingDetail', { bookingId: data.booking._id });
-      }
-    } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Booking failed' });
-    } finally {
-      setSubmitting(false);
+    if (outcome.status === 'existing') { continueWithBooking(outcome.created); return; }
+    if (outcome.status === 'uncertain' || (outcome.status === 'failed' && outcome.uncertain)) { confirmUncertainBooking(); return; }
+    if (outcome.status === 'failed') {
+      Toast.show({ type: 'error', text1: outcome.error?.response?.data?.message || t('booking.bookingFailed') });
+      return;
     }
+    if (outcome.status === 'done') {
+      if (outcome.result.created) continueWithBooking(outcome.result.created);
+      else Toast.show({ type: 'error', text1: t('booking.bookingFailed') });
+    }
+  };
+
+  // After the booking exists: pay now (validated https link, recovery record saved first), or go to the booking.
+  const continueWithBooking = (created) => {
+    const { charge } = created;
+    if (charge.kind === 'settled') {
+      // Explicit paidWithCoins result with nothing to charge; the booking screen shows the server's real status.
+      Toast.show({ type: 'success', text1: t('booking.bookingCreated') });
+      navigation.replace('BookingDetail', { bookingId: created.bookingId });
+      return;
+    }
+    if (charge.kind !== 'pay') {
+      // The booking exists but the server did not give a usable payable amount / payment link: never invent one and
+      // never open the gateway. The booking screen offers the server-side payment retry.
+      Toast.show({ type: 'error', text1: t('booking.amountUnconfirmed') });
+      navigation.replace('BookingDetail', { bookingId: created.bookingId });
+      return;
+    }
+    if (!parsePaymentRedirectUrl(created.redirectUrl).ok || !isValidTransactionId(created.merchantTransactionId)) {
+      Toast.show({ type: 'error', text1: t('booking.invalidLink') });
+      navigation.replace('BookingDetail', { bookingId: created.bookingId });
+      return;
+    }
+    Alert.alert(t('cart.payTitle'),
+      t('cart.payMessage', { amount: formatCurrency(charge.chargeAmount) }),
+      [
+        { text: t('cart.payNow'), onPress: async () => {
+          await openPaymentPage({
+            userId: user?._id,
+            context: { type: 'booking', merchantTransactionId: created.merchantTransactionId, bookingId: created.bookingId },
+            redirectUrl: created.redirectUrl,
+          });
+          navigation.replace('PaymentVerify', { merchantTransactionId: created.merchantTransactionId, bookingId: created.bookingId, type: 'booking' });
+        }},
+        { text: t('common.cancel'), style: 'cancel', onPress: () => navigation.replace('BookingDetail', { bookingId: created.bookingId }) },
+      ],
+      { cancelable: false } // an accidental dismissal must not leave a half-finished booking on screen
+    );
+  };
+
+  // The request ended without any answer from the server: the booking MAY exist. Never silently create another.
+  const confirmUncertainBooking = () => {
+    Alert.alert(
+      t('booking.uncertainTitle'),
+      t('booking.uncertainBody'),
+      [
+        { text: t('booking.checkMyBookings'), onPress: () => navigation.navigate('BookingsTab', { screen: 'BookingsList' }) },
+        { text: t('booking.tryAgainAnyway'), style: 'destructive', onPress: () => submitGuardRef.current.acknowledgeUncertain() },
+      ],
+      { cancelable: false }
+    );
   };
 
   const isDetailsValid = userDetails.name && userDetails.phone && userDetails.address && userDetails.pincode;
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title={pooja.name} subtitle={stepId === STEP.OVERVIEW ? '' : `Step ${barIdx + 1} of ${barSteps.length}`} />
+      <ScreenHeader title={pooja.name} subtitle={stepId === STEP.OVERVIEW ? '' : t('booking.stepOf', { n: barIdx + 1, total: barSteps.length })} />
 
       {/* Progress bar (hidden on overview) */}
       {stepId !== STEP.OVERVIEW && (
@@ -390,7 +502,7 @@ export default function BookingFlowScreen({ navigation, route }) {
                       : <Text style={{ fontSize: 10 }}>{STEP_LABEL[sid]?.icon}</Text>
                     }
                   </View>
-                  <Text style={[styles.stepChipLabel, { color: curr ? C.primary : C.textSecondary }]}>{STEP_LABEL[sid]?.label}</Text>
+                  <Text style={[styles.stepChipLabel, { color: curr ? C.primary : C.textSecondary }]}>{STEP_LABEL[sid] ? t(STEP_LABEL[sid].labelKey) : ''}</Text>
                 </View>
               );
             })}
@@ -418,7 +530,7 @@ export default function BookingFlowScreen({ navigation, route }) {
 
               {pooja.requirements?.length > 0 && (
                 <View style={[styles.infoBox, { backgroundColor: '#FEF3C720', borderColor: '#D97706' }]}>
-                  <Text style={[styles.infoBoxTitle, { color: '#92400E' }]}>Requirements / Samagri</Text>
+                  <Text style={[styles.infoBoxTitle, { color: '#92400E' }]}>{t('booking.requirements')}</Text>
                   {pooja.requirements.slice(0, 6).map((r, i) => (
                     <View key={i} style={styles.bulletRow}>
                       <View style={[styles.bullet, { backgroundColor: '#D97706' }]} />
@@ -426,14 +538,14 @@ export default function BookingFlowScreen({ navigation, route }) {
                     </View>
                   ))}
                   {pooja.requirements.length > 6 && (
-                    <Text style={{ color: '#D97706', fontSize: 12, marginTop: 4 }}>+{pooja.requirements.length - 6} more items</Text>
+                    <Text style={{ color: '#D97706', fontSize: 12, marginTop: 4 }}>{t('booking.moreItems', { n: pooja.requirements.length - 6 })}</Text>
                   )}
                 </View>
               )}
 
               {pooja.benefits?.length > 0 && (
                 <View style={[styles.infoBox, { backgroundColor: '#D1FAE520', borderColor: '#059669' }]}>
-                  <Text style={[styles.infoBoxTitle, { color: '#065F46' }]}>Spiritual Benefits</Text>
+                  <Text style={[styles.infoBoxTitle, { color: '#065F46' }]}>{t('booking.benefits')}</Text>
                   {pooja.benefits.slice(0, 5).map((b, i) => (
                     <View key={i} style={styles.bulletRow}>
                       <Ionicons name="checkmark-circle" size={12} color="#059669" />
@@ -445,7 +557,7 @@ export default function BookingFlowScreen({ navigation, route }) {
 
               <View style={[styles.priceRow, { borderTopColor: C.border }]}>
                 <View style={styles.priceBlock}>
-                  <Text style={[styles.priceLabel, { color: C.textSecondary }]} numberOfLines={1}>Starting from</Text>
+                  <Text style={[styles.priceLabel, { color: C.textSecondary }]} numberOfLines={1}>{t('booking.startingFrom')}</Text>
                   <Text
                     style={[styles.priceAmount, { color: C.primaryDark || C.primary }]}
                     numberOfLines={1}
@@ -454,14 +566,14 @@ export default function BookingFlowScreen({ navigation, route }) {
                   >
                     {formatCurrency(poojaPrice)}
                   </Text>
-                  <Text style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }} numberOfLines={2}>Platform fee & taxes shown at checkout</Text>
+                  <Text style={{ fontSize: 11, color: C.textSecondary, marginTop: 2 }} numberOfLines={2}>{t('booking.feesNote')}</Text>
                 </View>
                 <TouchableOpacity
                   style={[styles.bookNowBtn, { backgroundColor: C.primaryDark || C.primary, shadowColor: C.primaryDark || C.primary }]}
                   onPress={goNext}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.bookNowText} numberOfLines={1}>Book Now</Text>
+                  <Text style={styles.bookNowText} numberOfLines={1}>{t('home.bookNow')}</Text>
                   <Ionicons name="arrow-forward" size={16} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -472,14 +584,14 @@ export default function BookingFlowScreen({ navigation, route }) {
         {/* ── TYPE ─────────────────────────────────────────────── */}
         {stepId === STEP.TYPE && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="⚡" title="Select Booking Type" sub="Choose how soon you need this ceremony" C={C} />
+            <StepHeader icon="⚡" title={t('booking.typeTitle')} sub={t('booking.typeSub')} C={C} />
             <TypeCard
               selected={!isUrgent}
               onPress={() => handleSetUrgent(false)}
               icon="📅"
-              title="Normal Booking"
-              desc="Schedule at your preferred date and time. Samagri kit delivery available."
-              tags={['Scheduled ceremony','Kit available']}
+              title={t('booking.normalTitle')}
+              desc={t('booking.normalDesc')}
+              tags={[t('booking.normalTag1'), t('booking.normalTag2')]}
               color={C.primary}
               C={C}
             />
@@ -487,9 +599,9 @@ export default function BookingFlowScreen({ navigation, route }) {
               selected={isUrgent}
               onPress={() => handleSetUrgent(true)}
               icon="⚡"
-              title="Urgent Booking"
-              desc="Need a pandit immediately or within a few hours. No kit delivery."
-              tags={['Same-day ceremony','No kit delivery']}
+              title={t('booking.urgentTitle')}
+              desc={t('booking.urgentDesc')}
+              tags={[t('booking.urgentTag1'), t('booking.urgentTag2')]}
               color="#DC2626"
               C={C}
             />
@@ -500,10 +612,10 @@ export default function BookingFlowScreen({ navigation, route }) {
         {/* ── KIT PREF ─────────────────────────────────────────── */}
         {stepId === STEP.KIT_PREF && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="📦" title="Samagri Kit" sub="Would you like to add a puja kit?" C={C} />
+            <StepHeader icon="📦" title={t('booking.kitPrefTitle')} sub={t('booking.kitPrefSub')} C={C} />
             <View style={styles.kitPrefRow}>
-              <KitPrefCard selected={!withKit} onPress={() => { setWithKit(false); setKitId(''); }} icon="🙏" title="Without Kit" sub="I'll arrange samagri myself" C={C} />
-              <KitPrefCard selected={withKit} onPress={() => setWithKit(true)} icon="📦" title="With Kit" sub="Delivered to your address" badge="CONVENIENT" C={C} />
+              <KitPrefCard selected={!withKit} onPress={() => { setWithKit(false); setKitIds([]); }} icon="🙏" title={t('booking.withoutKit')} sub={t('booking.withoutKitSub')} C={C} />
+              <KitPrefCard selected={withKit} onPress={() => setWithKit(true)} icon="📦" title={t('booking.withKit')} sub={t('booking.withKitSub')} badge={t('booking.convenient')} C={C} />
             </View>
             <NavRow onBack={goBack} onNext={goNext} C={C} />
           </View>
@@ -512,7 +624,7 @@ export default function BookingFlowScreen({ navigation, route }) {
         {/* ── KIT SELECT ───────────────────────────────────────── */}
         {stepId === STEP.KIT_SELECT && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="🛍️" title="Select Samagri Kits" sub="Choose one or more kits for your ceremony" C={C} />
+            <StepHeader icon="🛍️" title={t('booking.kitSelectTitle')} sub={t('booking.kitSelectSub')} C={C} />
             {kitsLoading ? <ActivityIndicator color={C.primary} style={{ marginTop: 20 }} /> : kits.map(kit => {
               const selected = kitIds.includes(kit._id);
               return (
@@ -543,29 +655,29 @@ export default function BookingFlowScreen({ navigation, route }) {
                     activeOpacity={0.7}
                   >
                     <Ionicons name="eye-outline" size={14} color={C.info || '#2563EB'} />
-                    <Text style={[styles.viewItemsText, { color: C.info || '#2563EB' }]}>View Items</Text>
+                    <Text style={[styles.viewItemsText, { color: C.info || '#2563EB' }]}>{t('booking.viewItems')}</Text>
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
               );
             })}
-            {kitIds.length === 0 && <Text style={{ color: '#DC2626', fontSize: 12 }}>Select at least one kit to continue</Text>}
+            {kitIds.length === 0 && <Text style={{ color: '#DC2626', fontSize: 12 }}>{t('booking.kitRequiredHint')}</Text>}
             <KitItemsSheet visible={!!viewItemsKit} kit={viewItemsKit} onClose={() => setViewItemsKit(null)} />
-            <NavRow onBack={goBack} onNext={() => { if (kitIds.length === 0) { Toast.show({ type: 'error', text1: 'Select at least one kit' }); return; } goNext(); }} C={C} />
+            <NavRow onBack={goBack} onNext={() => { if (kitIds.length === 0) { Toast.show({ type: 'error', text1: t('booking.kitRequiredToast') }); return; } goNext(); }} C={C} />
           </View>
         )}
 
         {/* ── DATE ─────────────────────────────────────────────── */}
         {stepId === STEP.DATE && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="📅" title="Select Ceremony Date" sub={isUrgent ? (urgentWindow?.cutoffReached ? 'Day after tomorrow only' : 'Tomorrow or day after only') : 'Minimum 3 days in advance'} C={C} />
+            <StepHeader icon="📅" title={t('booking.dateTitle')} sub={isUrgent ? (urgentWindow?.cutoffReached ? t('booking.dateSubUrgentLate') : t('booking.dateSubUrgent')) : t('booking.dateSubNormal')} C={C} />
             <View style={[styles.infoBox, { backgroundColor: isUrgent ? '#FEE2E220' : '#FEF3C720', borderColor: isUrgent ? '#DC2626' : '#D97706' }]}>
               <Text style={{ color: isUrgent ? '#991B1B' : '#92400E', fontSize: 12 }}>
                 {isUrgent
                   ? (urgentWindow?.cutoffReached
-                      ? `⚡ Urgent bookings available for ${formatDateLabel(urgentWindow.earliestDate)} (day after tomorrow) only — same-day and next-day booking has closed for today.`
-                      : `⚡ Urgent bookings available for tomorrow and the day after only. Same-day booking closes at ${formatTimeLabel(urgentWindow.cutoffTime)} IST.`)
-                  : 'ℹ️ Normal bookings require at least 3 days advance notice.'}
+                      ? t('booking.dateInfoUrgentLate', { date: formatDateLabel(urgentWindow.earliestDate) })
+                      : t('booking.dateInfoUrgent', { time: formatTimeLabel(urgentWindow.cutoffTime) }))
+                  : t('booking.dateInfoNormal')}
               </Text>
             </View>
             <CalendarPicker
@@ -577,14 +689,14 @@ export default function BookingFlowScreen({ navigation, route }) {
               maxDaysFromNow={isUrgent ? undefined : null}
               C={C}
             />
-            <NavRow onBack={goBack} onNext={() => { if (!scheduledDate) { Toast.show({ type: 'error', text1: 'Please select a date' }); return; } goNext(); }} C={C} />
+            <NavRow onBack={goBack} onNext={() => { if (!scheduledDate) { Toast.show({ type: 'error', text1: t('booking.dateRequired') }); return; } goNext(); }} C={C} />
           </View>
         )}
 
         {/* ── TIME ─────────────────────────────────────────────── */}
         {stepId === STEP.TIME && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="🕐" title="Select Start Time" sub="Choose when the ceremony should begin" C={C} />
+            <StepHeader icon="🕐" title={t('booking.timeTitle')} sub={t('booking.timeSub')} C={C} />
             <View style={styles.timeGrid}>
               {TIME_SLOTS.map(slot => (
                 <TouchableOpacity
@@ -602,19 +714,19 @@ export default function BookingFlowScreen({ navigation, route }) {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Ionicons name="checkmark-circle" size={14} color="#059669" />
                   <Text style={{ color: '#065F46', fontSize: 12 }}>
-                    {new Date(scheduledDate + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} at {formatSlotTime(scheduledTime)}
+                    {t('booking.dateAtTime', { date: formatDateWithOptions(new Date(scheduledDate + 'T00:00:00'), { weekday: 'long', day: 'numeric', month: 'long' }), time: formatSlotTime(scheduledTime) })}
                   </Text>
                 </View>
               </View>
             )}
-            <NavRow onBack={goBack} onNext={() => { if (!scheduledTime) { Toast.show({ type: 'error', text1: 'Please select a time slot' }); return; } goNext(); }} C={C} />
+            <NavRow onBack={goBack} onNext={() => { if (!scheduledTime) { Toast.show({ type: 'error', text1: t('booking.timeRequired') }); return; } goNext(); }} C={C} />
           </View>
         )}
 
         {/* ── LANGUAGE ─────────────────────────────────────────── */}
         {stepId === STEP.LANGUAGE && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="🌐" title="Select Language" sub="Language for mantras and ceremony" C={C} />
+            <StepHeader icon="🌐" title={t('booking.languageTitle')} sub={t('booking.languageSub')} C={C} />
             {(pooja.languages?.length > 0 ? pooja.languages : ['Hindi', 'Sanskrit', 'English']).map(lang => (
               <TouchableOpacity
                 key={lang}
@@ -628,51 +740,51 @@ export default function BookingFlowScreen({ navigation, route }) {
                 <Text style={[styles.langText, { color: language === lang ? C.primary : C.text }]}>{lang}</Text>
               </TouchableOpacity>
             ))}
-            <NavRow onBack={goBack} onNext={() => { if (!language) { Toast.show({ type: 'error', text1: 'Please select a language' }); return; } goNext(); }} C={C} />
+            <NavRow onBack={goBack} onNext={() => { if (!language) { Toast.show({ type: 'error', text1: t('booking.languageRequired') }); return; } goNext(); }} C={C} />
           </View>
         )}
 
         {/* ── DETAILS ──────────────────────────────────────────── */}
         {stepId === STEP.DETAILS && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="📋" title="Your Details" sub="Ceremony location and contact info" C={C} />
+            <StepHeader icon="📋" title={t('booking.detailsTitle')} sub={t('booking.detailsSub')} C={C} />
 
             <View style={styles.fieldRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Full Name *</Text>
-                <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={userDetails.name} onChangeText={v => setUserDetails(p => ({ ...p, name: v }))} placeholder="Your name" placeholderTextColor={C.textSecondary} />
+                <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('profile.fullNameRequired')}</Text>
+                <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={userDetails.name} onChangeText={v => setUserDetails(p => ({ ...p, name: v }))} placeholder={t('cart.namePlaceholder')} placeholderTextColor={C.textSecondary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Phone *</Text>
-                <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={userDetails.phone} onChangeText={v => setUserDetails(p => ({ ...p, phone: v.replace(/\D/g, '').slice(0, 10) }))} placeholder="10-digit mobile" placeholderTextColor={C.textSecondary} keyboardType="phone-pad" maxLength={10} />
+                <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('cart.phoneRequired')}</Text>
+                <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={userDetails.phone} onChangeText={v => setUserDetails(p => ({ ...p, phone: v.replace(/\D/g, '').slice(0, 10) }))} placeholder={t('cart.phonePlaceholder')} placeholderTextColor={C.textSecondary} keyboardType="phone-pad" maxLength={10} />
               </View>
             </View>
 
             {user && (
               <View style={{ gap: 8 }}>
-                <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Ceremony Address</Text>
+                <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('booking.ceremonyAddress')}</Text>
                 <AddressPicker
                   mode="picker"
                   allowInlineNew
-                  value={{ address: userDetails.address, pincode: userDetails.pincode, state: userDetails.state, city: userDetails.city, district: userDetails.district }}
+                  value={{ address: userDetails.address, pincode: userDetails.pincode, state: userDetails.state, city: userDetails.city, district: userDetails.district, latitude: userDetails.latitude, longitude: userDetails.longitude }}
                   onChange={(fields) => setUserDetails(p => ({ ...p, ...fields }))}
                 />
               </View>
             )}
 
             <View>
-              <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Special Note (optional)</Text>
-              <TextInput style={[styles.input, { borderColor: C.border, color: C.text, height: 70, textAlignVertical: 'top' }]} value={specialNote} onChangeText={setSpecialNote} placeholder="Any special requirements for the pandit…" placeholderTextColor={C.textSecondary} multiline />
+              <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('booking.noteLabel')}</Text>
+              <TextInput style={[styles.input, { borderColor: C.border, color: C.text, height: 70, textAlignVertical: 'top' }]} value={specialNote} onChangeText={setSpecialNote} placeholder={t('booking.notePlaceholder')} placeholderTextColor={C.textSecondary} multiline />
             </View>
 
-            <NavRow onBack={goBack} onNext={() => { if (!isDetailsValid) { Toast.show({ type: 'error', text1: 'Please fill all required fields' }); return; } goNext(); }} C={C} />
+            <NavRow onBack={goBack} onNext={() => { if (!isDetailsValid) { Toast.show({ type: 'error', text1: t('booking.detailsRequired') }); return; } goNext(); }} C={C} />
           </View>
         )}
 
         {/* ── REVIEW ───────────────────────────────────────────── */}
         {stepId === STEP.REVIEW && (
           <View style={{ gap: 12 }}>
-            <StepHeader icon="✨" title="Review & Pay" sub="Confirm your ceremony booking" C={C} />
+            <StepHeader icon="✨" title={t('booking.reviewTitle')} sub={t('booking.reviewSub')} C={C} />
 
             {/* Booking summary */}
             <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
@@ -680,15 +792,15 @@ export default function BookingFlowScreen({ navigation, route }) {
                 {pooja.image && <Image source={{ uri: imageUrl(pooja.image) }} style={styles.reviewImg} />}
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={[styles.reviewPoojaName, { color: C.text }]}>{pooja.name}</Text>
-                  {isUrgent && <Text style={styles.urgentBadge}>⚡ Urgent</Text>}
+                  {isUrgent && <Text style={styles.urgentBadge}>{t('booking.urgentBadge')}</Text>}
                 </View>
               </View>
               <View style={[styles.reviewGrid, { borderTopColor: C.border }]}>
                 {[
-                  ['Date', scheduledDate ? new Date(scheduledDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''],
-                  ['Time', scheduledTime ? formatSlotTime(scheduledTime) : ''],
-                  ['Language', language],
-                  ['Address', userDetails.address ? `${userDetails.address}${userDetails.city ? ', ' + userDetails.city : ''}` : ''],
+                  [t('booking.date'), scheduledDate ? formatDateWithOptions(new Date(scheduledDate + 'T00:00:00'), { day: 'numeric', month: 'short', year: 'numeric' }) : ''],
+                  [t('booking.time'), scheduledTime ? formatSlotTime(scheduledTime) : ''],
+                  [t('booking.language'), language],
+                  [t('booking.address'), userDetails.address ? `${userDetails.address}${userDetails.city ? ', ' + userDetails.city : ''}` : ''],
                 ].filter(([, v]) => v).map(([l, v]) => (
                   <View key={l} style={styles.reviewItem}>
                     <Text style={[styles.reviewItemLabel, { color: C.textSecondary }]}>{l}:</Text>
@@ -700,32 +812,32 @@ export default function BookingFlowScreen({ navigation, route }) {
 
             {/* Price breakdown */}
             <View style={[styles.pbCard, { backgroundColor: C.surface, shadowColor: C.shadow || '#000' }]}>
-              <Text style={[styles.cardTitle, styles.pbTitle, { color: C.text }]}>Price Breakdown</Text>
+              <Text style={[styles.cardTitle, styles.pbTitle, { color: C.text }]}>{t('booking.priceBreakdown')}</Text>
               <View style={styles.pbRowsWrap}>
-                <PriceRow label="Pooja Service" amount={roundToPaise((pricing.poojaAmount || 0) + (pricing.urgentSurcharge || 0))} C={C} sub="Religious services are GST-exempt" />
+                <PriceRow label={t('booking.poojaService')} amount={roundToPaise((pricing.poojaAmount || 0) + (pricing.urgentSurcharge || 0))} C={C} sub={t('booking.gstExempt')} />
                 {pricing.platformFee > 0 && (
                   <PriceRow
-                    label={rates.commissionType === 'fixed' ? `Platform Fee (₹${rates.commissionFixed} fixed)` : `Platform Fee (${rates.commissionPercent}%)`}
-                    amount={pricing.platformFee} C={C} muted sub="Convenience fee"
+                    label={rates.commissionType === 'fixed' ? t('booking.platformFeeFixed', { amount: rates.commissionFixed }) : t('booking.platformFeePercent', { rate: rates.commissionPercent })}
+                    amount={pricing.platformFee} C={C} muted sub={t('booking.convenienceFee')}
                   />
                 )}
-                {pricing.platformGST > 0 && <PriceRow label={`GST on Platform Fee (${rates.gstPercent}%)`} amount={pricing.platformGST} C={C} muted />}
+                {pricing.platformGST > 0 && <PriceRow label={t('booking.gstPlatform', { rate: rates.gstPercent })} amount={pricing.platformGST} C={C} muted />}
                 {pricing.kitAmount > 0 && (selectedKits.length > 1
                   ? selectedKits.map((k) => (
-                      <PriceRow key={k._id} label={`Samagri Kit — ${k.name}`} amount={k.discountPrice || 0} C={C} muted />
+                      <PriceRow key={k._id} label={t('booking.kitLine', { name: k.name })} amount={k.discountPrice || 0} C={C} muted />
                     ))
-                  : <PriceRow label={`Samagri Kit — ${selectedKits[0]?.name}`} amount={pricing.kitAmount} C={C} muted sub="Delivered to ceremony address" />
+                  : <PriceRow label={t('booking.kitLine', { name: selectedKits[0]?.name })} amount={pricing.kitAmount} C={C} muted sub={t('booking.kitDelivered')} />
                 )}
-                {pricing.kitGST > 0 && <PriceRow label={`GST on Kit (${rates.gstPercent}%)`} amount={pricing.kitGST} C={C} muted />}
+                {pricing.kitGST > 0 && <PriceRow label={t('booking.gstKit', { rate: rates.gstPercent })} amount={pricing.kitGST} C={C} muted />}
                 {coinCoins > 0 && (
-                  <PriceRow label={`Coins Applied (${coinCoins} coins)`} amount={-coinValue} C={C} color="#16A34A" />
+                  <PriceRow label={t('booking.coinsApplied', { n: coinCoins })} amount={-coinValue} C={C} color="#16A34A" />
                 )}
               </View>
 
               <View style={[styles.pbDivider, { backgroundColor: C.border }]} />
 
               <View style={[styles.pbTotalWrap, { backgroundColor: (C.success || '#16A34A') + '0F' }]}>
-                <Text style={[styles.pbTotalLabel, { color: C.text }]}>{(coinCoins > 0 ? 'Amount to Pay' : 'Grand Total')}</Text>
+                <Text style={[styles.pbTotalLabel, { color: C.text }]}>{(coinCoins > 0 ? t('booking.amountToPay') : t('booking.grandTotal'))}</Text>
                 <Text style={[styles.pbTotalAmount, { color: C.success || '#16A34A' }]}>{formatCurrency(coinCoins > 0 ? payableTotal : grandTotal)}</Text>
               </View>
             </View>
@@ -735,9 +847,9 @@ export default function BookingFlowScreen({ navigation, route }) {
               <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border, padding: 16 }]}>
                 <View style={styles.coinToggleRow}>
                   <View style={styles.coinToggleInfo}>
-                    <Text style={[styles.cardTitle, { color: C.text }]}>Use Coins</Text>
+                    <Text style={[styles.cardTitle, { color: C.text }]}>{t('booking.useCoins')}</Text>
                     <Text style={[styles.coinToggleSub, { color: C.textSecondary }]}>
-                      {coinBalance} coins · ₹{coinRate} each
+                      {t('booking.coinBalance', { balance: coinBalance, rate: coinRate })}
                     </Text>
                   </View>
                   <Switch
@@ -749,19 +861,19 @@ export default function BookingFlowScreen({ navigation, route }) {
                   />
                 </View>
                 {coinMinCoins > 0 && coinBalance < coinMinCoins && (
-                  <Text style={styles.coinThresholdText}>Redemption requires at least {coinMinCoins} coins in your wallet</Text>
+                  <Text style={styles.coinThresholdText}>{t('booking.coinThreshold', { min: coinMinCoins })}</Text>
                 )}
                 {coinEligible && (
                   <>
                     <Text style={[styles.coinHint, { color: C.textSecondary }]}>
-                      Pay up to {formatCurrency(coinValue)} with your coins — the rest is payable via PhonePe
+                      {t('booking.coinHint', { amount: formatCurrency(coinValue) })}
                     </Text>
                     {coinCoins > 0 && (
                       <View style={[styles.coinSummary, { borderColor: (C.success || '#16A34A') + '40', backgroundColor: (C.success || '#16A34A') + '0D' }]}>
                         <Text style={[styles.coinSummaryText, { color: C.success || '#16A34A' }]}>
-                          Coins applied: {coinCoins} (− {formatCurrency(coinValue)})
+                          {t('booking.coinSummary', { n: coinCoins, amount: formatCurrency(coinValue) })}
                         </Text>
-                        <Text style={[styles.coinSummaryText, { color: C.success || '#16A34A' }]}>To pay: {formatCurrency(payableTotal)}</Text>
+                        <Text style={[styles.coinSummaryText, { color: C.success || '#16A34A' }]}>{t('booking.coinToPay', { amount: formatCurrency(payableTotal) })}</Text>
                       </View>
                     )}
                   </>
@@ -772,7 +884,7 @@ export default function BookingFlowScreen({ navigation, route }) {
             {/* Payment option */}
             {partialConfig.enabled && (
               <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border, padding: 16 }]}>
-                <Text style={[styles.cardTitle, { color: C.text }]}>Payment Option</Text>
+                <Text style={[styles.cardTitle, { color: C.text }]}>{t('booking.paymentOption')}</Text>
                 <View style={{ gap: 10, marginTop: 12 }}>
                   <TouchableOpacity
                     style={[
@@ -788,8 +900,8 @@ export default function BookingFlowScreen({ navigation, route }) {
                       {paymentMode === 'FULL' && <View style={[styles.radioDot, { backgroundColor: C.primaryDark || C.primary }]} />}
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.payModeTitle, { color: C.text }]}>Pay Full Amount</Text>
-                      <Text style={[styles.payModeSub, { color: C.textSecondary }]}>Pay {formatCurrency(coinCoins > 0 ? payableTotal : grandTotal)} now · No pending balance</Text>
+                      <Text style={[styles.payModeTitle, { color: C.text }]}>{t('booking.payFull')}</Text>
+                      <Text style={[styles.payModeSub, { color: C.textSecondary }]}>{t('booking.payFullSub', { amount: formatCurrency(coinCoins > 0 ? payableTotal : grandTotal) })}</Text>
                     </View>
                     <Text style={[styles.payModeAmt, { color: C.primaryDark || C.primary }]}>{formatCurrency(coinCoins > 0 ? payableTotal : grandTotal)}</Text>
                   </TouchableOpacity>
@@ -814,8 +926,8 @@ export default function BookingFlowScreen({ navigation, route }) {
                       {paymentMode === 'PARTIAL' && <View style={[styles.radioDot, { backgroundColor: '#D97706' }]} />}
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.payModeTitle, { color: C.text }]}>Pay Partial Amount</Text>
-                      <Text style={[styles.payModeSub, { color: C.textSecondary }]}>Minimum ₹{partialConfig.minAmount} · Pay rest later</Text>
+                      <Text style={[styles.payModeTitle, { color: C.text }]}>{t('booking.payPartial')}</Text>
+                      <Text style={[styles.payModeSub, { color: C.textSecondary }]}>{t('booking.payPartialSub', { min: partialConfig.minAmount })}</Text>
                     </View>
                   </TouchableOpacity>
 
@@ -851,33 +963,33 @@ export default function BookingFlowScreen({ navigation, route }) {
                       )}
 
                       <View>
-                        <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Or enter custom amount</Text>
+                        <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('booking.customAmount')}</Text>
                         <TextInput
                           style={[styles.input, { borderColor: C.border, color: C.text }]}
                           value={partialAmount ? String(partialAmount) : ''}
                           onChangeText={(v) => setPartialAmount(Math.max(0, parseInt(v.replace(/\D/g, ''), 10) || 0))}
-                          placeholder={`Min ₹${partialConfig.minAmount}`}
+                          placeholder={t('booking.minPlaceholder', { min: partialConfig.minAmount })}
                           placeholderTextColor={C.textSecondary}
                           keyboardType="number-pad"
                         />
                         {partialAmount > 0 && partialAmount < partialConfig.minAmount && (
-                          <Text style={{ color: '#DC2626', fontSize: 11, marginTop: 4 }}>Minimum partial payment is ₹{partialConfig.minAmount}</Text>
+                          <Text style={{ color: '#DC2626', fontSize: 11, marginTop: 4 }}>{t('booking.minPartial', { min: partialConfig.minAmount })}</Text>
                         )}
                       </View>
 
                       {partialAmount >= partialConfig.minAmount && partialAmount < pricing.grandTotal && (
                         <View style={[styles.partialSummary, { borderColor: '#FDE68A', backgroundColor: '#FFFBEB' }]}>
                           <View style={styles.priceLineRow}>
-                            <Text style={{ fontSize: 13, color: '#78350F' }}>Pay Now</Text>
+                            <Text style={{ fontSize: 13, color: '#78350F' }}>{t('cart.payNow')}</Text>
                             <Text style={{ fontSize: 13, fontWeight: '700', color: '#D97706' }}>{formatCurrency(partialAmount)}</Text>
                           </View>
                           <View style={styles.priceLineRow}>
-                            <Text style={{ fontSize: 13, color: '#78350F' }}>Pay Later</Text>
+                            <Text style={{ fontSize: 13, color: '#78350F' }}>{t('booking.payLater')}</Text>
                             <Text style={{ fontSize: 13, fontWeight: '700', color: '#DC2626' }}>{formatCurrency(pricing.grandTotal - partialAmount)}</Text>
                           </View>
                           <View style={[styles.divider, { backgroundColor: '#FDE68A', marginVertical: 4 }]} />
                           <View style={styles.priceLineRow}>
-                            <Text style={{ fontSize: 11, color: '#92400E' }}>Total Booking Amount</Text>
+                            <Text style={{ fontSize: 11, color: '#92400E' }}>{t('booking.totalBooking')}</Text>
                             <Text style={{ fontSize: 11, color: '#92400E' }}>{formatCurrency(pricing.grandTotal)}</Text>
                           </View>
                         </View>
@@ -891,7 +1003,7 @@ export default function BookingFlowScreen({ navigation, route }) {
             {/* Trust line */}
             <View style={[styles.trustRow, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
               <Ionicons name="shield-checkmark" size={14} color="#3B82F6" />
-              <Text style={styles.trustText}>Secure payment via PhonePe · UPI, Cards, Net Banking</Text>
+              <Text style={styles.trustText}>{t('booking.trust')}</Text>
             </View>
 
             {/* Pay button */}
@@ -905,15 +1017,15 @@ export default function BookingFlowScreen({ navigation, route }) {
                 ? <ActivityIndicator color="#fff" />
                 : <Text style={styles.payBtnText}>
                     {paymentMode === 'PARTIAL' && partialAmount >= partialConfig.minAmount
-                      ? `Pay ${formatCurrency(partialAmount)} Now 🙏`
-                      : `Pay ${formatCurrency(coinCoins > 0 ? payableTotal : grandTotal)} 🙏`}
+                      ? t('booking.payBtnPartial', { amount: formatCurrency(partialAmount) })
+                      : t('booking.payBtn', { amount: formatCurrency(coinCoins > 0 ? payableTotal : grandTotal) })}
                   </Text>
               }
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.backBtnAlt, { borderColor: C.border }]} onPress={goBack}>
               <Ionicons name="arrow-back" size={16} color={C.text} />
-              <Text style={[styles.backBtnAltText, { color: C.text }]}>Edit Details</Text>
+              <Text style={[styles.backBtnAltText, { color: C.text }]}>{t('booking.editDetails')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -937,15 +1049,16 @@ function StepHeader({ icon, title, sub, C }) {
   );
 }
 
-function NavRow({ onBack, onNext, nextLabel = 'Continue', C }) {
+function NavRow({ onBack, onNext, nextLabel, C }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.navRow}>
       <TouchableOpacity style={[styles.navBack, { borderColor: C.border }]} onPress={onBack} activeOpacity={0.8}>
         <Ionicons name="arrow-back" size={16} color={C.text} />
-        <Text style={[styles.navBackText, { color: C.text }]}>Back</Text>
+        <Text style={[styles.navBackText, { color: C.text }]}>{t('booking.back')}</Text>
       </TouchableOpacity>
       <TouchableOpacity style={[styles.navNext, { backgroundColor: C.primary }]} onPress={onNext} activeOpacity={0.85}>
-        <Text style={styles.navNextText}>{nextLabel}</Text>
+        <Text style={styles.navNextText}>{nextLabel ?? t('booking.continue')}</Text>
         <Ionicons name="arrow-forward" size={16} color="#fff" />
       </TouchableOpacity>
     </View>

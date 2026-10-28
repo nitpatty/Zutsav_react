@@ -7,15 +7,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // variants correctly becomes two separate lines.
 const sameLine = (i, productId, variantId) => i.productId === productId && (i.variantId || null) === (variantId || null);
 
+// Bumped by reset() so a load() already awaiting storage when the user signs out
+// cannot repopulate the cart with the previous account's items afterwards.
+let epoch = 0;
+
 export const useCartStore = create((set, get) => ({
   items: [],
 
   load: async () => {
+    const myEpoch = epoch;
     try {
       const raw = await AsyncStorage.getItem('zutsav_cart');
-      if (raw) set({ items: JSON.parse(raw) });
+      if (raw && myEpoch === epoch) set({ items: JSON.parse(raw) });
     } catch {}
   },
+
+  // In-memory only (storage is cleared by utils/sessionCleanup). Sync + idempotent.
+  reset: () => { epoch += 1; set({ items: [] }); },
 
   _save: async (items) => {
     await AsyncStorage.setItem('zutsav_cart', JSON.stringify(items));

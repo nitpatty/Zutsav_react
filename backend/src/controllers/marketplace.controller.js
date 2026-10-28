@@ -10,6 +10,7 @@ const { urls } = require('../config');
 const translationService = require('../services/translationService');
 const { sanitizeHtml } = require('../utils/sanitizeHtml');
 const couponService = require('../services/couponService');
+const orderPayments = require('../services/orderPayments');
 
 // ── SKU helpers ──────────────────────────────────────────────
 function generateSku(name) {
@@ -442,23 +443,30 @@ exports.verifyPhonePeOrder = async (req, res, next) => {
 
     // Resolve and authorize BEFORE consulting the gateway: only the owner of
     // the order may inspect or advance its payment state.
-    const order = await Order.findOne({ phonePeMerchantTransactionId: merchantTransactionId });
+    // Match the current transaction id OR any earlier/retry attempt of the order.
+    const order = await orderPayments.findOrderByTxn(merchantTransactionId);
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
     if (String(order.userId) !== String(req.user._id))
       return res.status(403).json({ success: false, message: 'Access denied' });
 
     const result = await checkPhonePeStatus(merchantTransactionId);
 
-    if (result.success && order.status === 'pending_payment') {
-      order.status = 'paid';
-      order.phonePeTransactionId = result.transactionId;
-      order.statusTimeline = order.statusTimeline || [];
-      order.statusTimeline.push({ status: 'paid', timestamp: new Date(), note: 'Payment confirmed via PhonePe' });
-      await order.save();
-      await deductStock(order.items, order._id);
+    let responseOrder = order;
+    if (result.success) {
+      // Same single code path as /checkout/verify: atomic pending→paid (stock deducted once by the winner); a payment
+      // the order can no longer accept (expired / cancelled / paid by another attempt) is recorded for reconciliation,
+      // never reported as a normal success and never silently dropped.
+      const applied = await orderPayments.applySuccessfulPayment(order, merchantTransactionId, result.transactionId, 'Payment confirmed via PhonePe');
+      if (applied.won) await deductStock(applied.won.items, applied.won._id);
+      responseOrder = applied.order;
+      if (applied.outcome === 'needs_review') {
+        return res.json({ success: false, code: 'PAYMENT_NEEDS_REVIEW', state: 'COMPLETED', reconciliation: applied.reason, order: responseOrder });
+      }
+    } else if (result.state && result.state !== 'PENDING') {
+      await orderPayments.markAttemptFailed(order, merchantTransactionId, { code: result.code, state: result.state, reason: result.code || result.state });
     }
 
-    res.json({ success: result.success, state: result.state, order: result.success ? order : undefined });
+    res.json({ success: result.success, state: result.state, order: result.success ? responseOrder : undefined });
   } catch (err) {
     next(err);
   }
@@ -478,14 +486,10 @@ exports.phonePeWebhook = async (req, res, next) => {
 
     const isSuccess = decoded?.code === 'PAYMENT_SUCCESS';
     if (isSuccess) {
-      const order = await Order.findOne({ phonePeMerchantTransactionId: txId, status: 'pending_payment' });
+      const order = await orderPayments.findOrderByTxn(txId);
       if (order) {
-        order.status = 'paid';
-        order.phonePeTransactionId = decoded?.data?.transactionId;
-        order.statusTimeline = order.statusTimeline || [];
-        order.statusTimeline.push({ status: 'paid', timestamp: new Date(), note: 'Payment confirmed via PhonePe webhook' });
-        await order.save();
-        await deductStock(order.items, order._id);
+        const applied = await orderPayments.applySuccessfulPayment(order, txId, decoded?.data?.transactionId, 'Payment confirmed via PhonePe webhook');
+        if (applied.won) await deductStock(applied.won.items, applied.won._id);
       }
     }
     res.json({ success: true });

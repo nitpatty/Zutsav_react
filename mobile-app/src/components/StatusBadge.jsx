@@ -2,7 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { formatStatus } from '../utils/helpers';
 
-export default function StatusBadge({ status, colorMap = {}, small = false }) {
+// `label` lets a screen pass an already-localized text; without it the humanized status is shown exactly as before.
+export default function StatusBadge({ status, colorMap = {}, small = false, label }) {
   const color = colorMap[status] || '#6B7280';
   return (
     <View style={[
@@ -11,7 +12,7 @@ export default function StatusBadge({ status, colorMap = {}, small = false }) {
       { backgroundColor: color + '20', borderColor: color + '60' },
     ]}>
       <Text style={[styles.text, small && styles.smallText, { color }]}>
-        {formatStatus(status)}
+        {label ?? formatStatus(status)}
       </Text>
     </View>
   );

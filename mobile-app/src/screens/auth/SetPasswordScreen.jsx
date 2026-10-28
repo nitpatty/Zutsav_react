@@ -8,6 +8,9 @@ import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
 import { useAuthStore } from '../../store/authStore';
+import { useTranslation } from '../../i18n';
+import { useLanguageStore } from '../../i18n/languageStore';
+import { apiErrorMessage } from '../../utils/apiMessage';
 
 // ─── WhatsApp communication consent ────────────────────────────────────────
 // Wording taken VERBATIM from the client's WhatsApp consent reference
@@ -25,6 +28,7 @@ export default function SetPasswordScreen({ navigation, route }) {
   const { phone, email, name, role, channel = 'whatsapp', referralCode } = route.params || {};
   const insets = useSafeAreaInsets();
   const { setSession } = useAuthStore();
+  const { t } = useTranslation();
 
   const [password, setPassword] = useState('');
   const [confirm,  setConfirm]  = useState('');
@@ -38,11 +42,11 @@ export default function SetPasswordScreen({ navigation, route }) {
 
   const handleSetPassword = async () => {
     if (password.length < 6) {
-      Toast.show({ type: 'error', text1: 'Password must be at least 6 characters' });
+      Toast.show({ type: 'error', text1: t('auth.passwordMin') });
       return;
     }
     if (password !== confirm) {
-      Toast.show({ type: 'error', text1: 'Passwords do not match' });
+      Toast.show({ type: 'error', text1: t('auth.passwordsMismatch') });
       return;
     }
     try {
@@ -56,6 +60,8 @@ export default function SetPasswordScreen({ navigation, route }) {
         role: role || 'user',
         channel,
         referralCode: referralCode || undefined,
+        // The UI language in effect (a supported code). The backend applies it only if the new account has no value yet.
+        preferredLanguage: useLanguageStore.getState().language,
         // WhatsApp communication consent (separate from OTP verification)
         serviceConsent,
         marketingConsent,
@@ -67,11 +73,11 @@ export default function SetPasswordScreen({ navigation, route }) {
       // Session already exists on the server response — persist it directly
       // instead of calling login() (which expects credentials, not a token).
       await setSession(data.token, data.user);
-      Toast.show({ type: 'success', text1: 'Account created successfully!' });
+      Toast.show({ type: 'success', text1: t('auth.accountCreated') });
       // RootNavigator swaps to the authenticated stack automatically once
       // authStore.user is set (same mechanism LoginScreen relies on).
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not create account' });
+      Toast.show({ type: 'error', text1: apiErrorMessage(err, t('auth.createAccountFailed')) });
     } finally {
       setLoading(false);
     }
@@ -90,19 +96,19 @@ export default function SetPasswordScreen({ navigation, route }) {
         </TouchableOpacity>
 
         <View style={styles.header}>
-          <Text style={styles.title}>Set Password</Text>
-          <Text style={styles.sub}>Create a secure password for your Zutsav account</Text>
+          <Text style={styles.title}>{t('auth.setPasswordTitle')}</Text>
+          <Text style={styles.sub}>{t('auth.setPasswordSubtitle')}</Text>
         </View>
 
         <View style={styles.form}>
           <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
+            <Text style={styles.label}>{t('auth.password')}</Text>
             <View style={styles.pwdRow}>
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 value={password}
                 onChangeText={setPassword}
-                placeholder="At least 6 characters"
+                placeholder={t('auth.passwordHint')}
                 secureTextEntry={!showPwd}
                 returnKeyType="next"
               />
@@ -113,13 +119,13 @@ export default function SetPasswordScreen({ navigation, route }) {
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Confirm Password</Text>
+            <Text style={styles.label}>{t('auth.confirmPassword')}</Text>
             <View style={styles.pwdRow}>
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 value={confirm}
                 onChangeText={setConfirm}
-                placeholder="Re-enter your password"
+                placeholder={t('auth.reenterPassword')}
                 secureTextEntry={!showConf}
                 returnKeyType="done"
                 onSubmitEditing={handleSetPassword}
@@ -131,7 +137,7 @@ export default function SetPasswordScreen({ navigation, route }) {
           </View>
 
           {confirm.length > 0 && password !== confirm && (
-            <Text style={styles.mismatch}>Passwords do not match</Text>
+            <Text style={styles.mismatch}>{t('auth.passwordsMismatch')}</Text>
           )}
 
           {/* WhatsApp communication consent — separate from OTP verification */}
@@ -173,7 +179,7 @@ export default function SetPasswordScreen({ navigation, route }) {
             disabled={loading || !password || !confirm}
             activeOpacity={0.85}
           >
-            <Text style={styles.submitBtnText}>{loading ? 'Creating Account…' : 'Create Account'}</Text>
+            <Text style={styles.submitBtnText}>{loading ? t('auth.creatingAccount') : t('auth.createAccount')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

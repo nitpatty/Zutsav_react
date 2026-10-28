@@ -5,13 +5,18 @@ import { useNavigation } from '@react-navigation/native';
 import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDate, formatCurrency, orderStatusColor } from '../../utils/helpers';
+import { formatCurrency, orderStatusColor } from '../../utils/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 import ScreenHeader from '../../components/ScreenHeader';
+import PendingPaymentBanner from '../../components/shared/PendingPaymentBanner';
 import { SkeletonCard } from '../../components/shared/Skeleton';
+import { useTranslation, useFormatters } from '../../i18n';
+import { orderStatusLabel } from '../../utils/orderStatusLabels';
 
 export default function OrdersScreen() {
+  const { t } = useTranslation();
+  const { formatDate } = useFormatters();
   const navigation = useNavigation();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -24,9 +29,9 @@ export default function OrdersScreen() {
       if (!silent) setLoading(true);
       const { data } = await api.get('/marketplace/orders/my', { params: { sort: '-createdAt', limit: 50 } });
       setOrders(data.data || data.orders || []);
-    } catch { if (!silent) Toast.show({ type: 'error', text1: 'Could not load orders' }); }
+    } catch { if (!silent) Toast.show({ type: 'error', text1: t('orders.loadFailed') }); }
     finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [t]);
 
   useEffect(() => { fetchOrders(); }, []);
 
@@ -44,9 +49,9 @@ export default function OrdersScreen() {
         <View style={{ flex: 1 }}>
           <View style={styles.top}>
             <Text style={[styles.orderId, { color: C.textSecondary }]}>#{item._id?.slice(-6).toUpperCase()}</Text>
-            <StatusBadge status={item.status} colorMap={orderStatusColor} small />
+            <StatusBadge status={item.status} colorMap={orderStatusColor} label={orderStatusLabel(item.status, t)} small />
           </View>
-          <Text style={[styles.itemCount, { color: C.text }]}>{item.items?.length || 0} item(s)</Text>
+          <Text style={[styles.itemCount, { color: C.text }]}>{t('orders.itemCount', { n: item.items?.length || 0 })}</Text>
           <View style={styles.bottom}>
             <Text style={[styles.date, { color: C.textSecondary }]}>{formatDate(item.createdAt)}</Text>
             <Text style={[styles.amount, { color: C.primary }]}>{formatCurrency(item.totalAmount)}</Text>
@@ -59,7 +64,8 @@ export default function OrdersScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="My Orders" />
+      <ScreenHeader title={t('orders.title')} />
+      <PendingPaymentBanner navigation={navigation} kind="marketplace" onResolved={() => fetchOrders(true)} />
       {loading ? (
         <View style={{ padding: 16, gap: 12 }}>
           {[1, 2, 3].map((i) => <SkeletonCard key={i} C={C} />)}
@@ -71,7 +77,7 @@ export default function OrdersScreen() {
           renderItem={renderItem}
           contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchOrders(true); }} tintColor={C.primary} />}
-          ListEmptyComponent={<EmptyState icon="receipt-outline" title="No orders yet" subtitle="Place an order from our shop" actionLabel="Go to Shop" onAction={() => navigation.navigate('ShopTab')} />}
+          ListEmptyComponent={<EmptyState icon="receipt-outline" title={t('orders.emptyTitle')} subtitle={t('orders.emptySubtitle')} actionLabel={t('cart.goToShop')} onAction={() => navigation.navigate('ShopTab')} />}
         />
       )}
     </View>

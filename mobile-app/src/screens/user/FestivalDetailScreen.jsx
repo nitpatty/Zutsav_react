@@ -3,34 +3,37 @@ import { View, Text, ScrollView, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { imageUrl } from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDate, daysUntil } from '../../utils/helpers';
+import { daysUntil } from '../../utils/helpers';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useTranslation, useFormatters } from '../../i18n';
 
 export default function FestivalDetailScreen({ route }) {
   const { festival } = route.params || {};
+  const { t } = useTranslation();
+  const { formatDate } = useFormatters();
   const { theme } = useThemeStore();
   const C = theme.colors;
 
   if (!festival) return (
     <View style={{ flex: 1, backgroundColor: C.background }}>
-      <ScreenHeader title="Festival" />
+      <ScreenHeader title={t('festivals.detailFallbackTitle')} />
     </View>
   );
 
   const diff = festival.date ? daysUntil(festival.date) : null;
-  const countdownLabel = diff === 0 ? 'Today!' : diff > 0 && diff <= 14 ? `In ${diff} day${diff === 1 ? '' : 's'}` : null;
+  const countdownLabel = diff === 0 ? t('festivals.today') : diff > 0 && diff <= 14 ? t(diff === 1 ? 'festivals.inDay' : 'festivals.inDays', { n: diff }) : null;
 
   const rows = [
-    ['Tithi', festival.tithiDate],
-    ['Panchang', festival.panchang],
-    ['Hindu Month', festival.hinduMonth],
-    ['Paksha', festival.paksha],
-    ['Vrat', festival.vrat],
+    [t('panchang.tithi'), festival.tithiDate],
+    [t('panchang.title'), festival.panchang],
+    [t('festivals.hinduMonth'), festival.hinduMonth],
+    [t('festivals.paksha'), festival.paksha],
+    [t('festivals.vrat'), festival.vrat],
   ].filter(([, v]) => v);
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Festival Detail" />
+      <ScreenHeader title={t('festivals.detailTitle')} />
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }}>
         {festival.image ? (
           <Image source={{ uri: imageUrl(festival.image) }} style={styles.image} resizeMode="cover" />
@@ -41,7 +44,7 @@ export default function FestivalDetailScreen({ route }) {
         )}
 
         <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-          <Text style={[styles.name, { color: C.text }]}>{festival.name || festival.tithiDate || 'Panchang'}</Text>
+          <Text style={[styles.name, { color: C.text }]}>{festival.name || festival.tithiDate || t('panchang.title')}</Text>
           {festival.date && <Text style={[styles.date, { color: C.primary }]}>{formatDate(festival.date, 'EEEE, dd MMMM yyyy')}</Text>}
           {countdownLabel && (
             <View style={[styles.countdownBadge, { backgroundColor: diff === 0 ? '#DC2626' : C.primary }]}>
@@ -52,14 +55,14 @@ export default function FestivalDetailScreen({ route }) {
 
         {festival.description ? (
           <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <Text style={[styles.cardTitle, { color: C.text }]}>About</Text>
+            <Text style={[styles.cardTitle, { color: C.text }]}>{t('festivals.about')}</Text>
             <Text style={[styles.desc, { color: C.textSecondary }]}>{festival.description}</Text>
           </View>
         ) : null}
 
         {rows.length > 0 && (
           <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <Text style={[styles.cardTitle, { color: C.text }]}>Panchang Details</Text>
+            <Text style={[styles.cardTitle, { color: C.text }]}>{t('festivals.panchangDetails')}</Text>
             <View style={{ gap: 8, marginTop: 10 }}>
               {rows.map(([label, value]) => (
                 <View key={label} style={styles.row}>

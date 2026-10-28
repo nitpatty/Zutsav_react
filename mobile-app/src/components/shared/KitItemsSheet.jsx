@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useThemeStore } from '../../store/themeStore';
 import { imageUrl } from '../../api/axios';
 import { formatCurrency } from '../../utils/helpers';
+import { useTranslation } from '../../i18n';
 
 // "View Items" bottom sheet for a Samagri Kit — mirrors the website's
 // KitItemsModal (frontend/src/components/booking/KitItemsModal.jsx). Reuses
@@ -12,6 +13,7 @@ import { formatCurrency } from '../../utils/helpers';
 // there is no extra network request or duplicated data model — only the
 // items already present in `kit.items[].productId` are rendered.
 export default function KitItemsSheet({ visible, kit, onClose }) {
+  const { t } = useTranslation();
   const { theme } = useThemeStore();
   const C = theme.colors;
 
@@ -31,7 +33,7 @@ export default function KitItemsSheet({ visible, kit, onClose }) {
             <View style={{ flex: 1 }}>
               <Text style={[styles.kitName, { color: C.text }]} numberOfLines={1}>{kit?.name}</Text>
               <Text style={[styles.itemCount, { color: C.textSecondary }]}>
-                {items.length} item{items.length === 1 ? '' : 's'} included
+                {t(items.length === 1 ? 'booking.kitItemsOne' : 'booking.kitItemsMany', { n: items.length })}
               </Text>
               <Text style={[styles.price, { color: C.primary }]}>{formatCurrency(kit?.discountPrice || 0)}</Text>
             </View>
@@ -45,7 +47,7 @@ export default function KitItemsSheet({ visible, kit, onClose }) {
           ) : null}
 
           <View style={[styles.divider, { backgroundColor: C.border }]} />
-          <Text style={[styles.sectionTitle, { color: C.text }]}>Included Items</Text>
+          <Text style={[styles.sectionTitle, { color: C.text }]}>{t('booking.includedItems')}</Text>
 
           {items.length > 0 ? (
             <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
@@ -79,12 +81,12 @@ export default function KitItemsSheet({ visible, kit, onClose }) {
           ) : (
             <View style={styles.emptyWrap}>
               <Ionicons name="cube-outline" size={26} color={C.textSecondary} />
-              <Text style={[styles.emptyText, { color: C.textSecondary }]}>Item list not available</Text>
+              <Text style={[styles.emptyText, { color: C.textSecondary }]}>{t('booking.itemListUnavailable')}</Text>
             </View>
           )}
 
           <Text style={[styles.footNote, { color: C.textSecondary }]}>
-            All items are sourced fresh and delivered to your address before the ceremony.
+            {t('booking.kitFootNote')}
           </Text>
         </View>
       </View>

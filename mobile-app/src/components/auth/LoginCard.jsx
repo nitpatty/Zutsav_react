@@ -4,6 +4,7 @@ import CustomInput from './CustomInput';
 import RememberMe from './RememberMe';
 import GradientButton from './GradientButton';
 import { AUTH_COLORS } from './colors';
+import { useTranslation } from '../../i18n';
 
 export default function LoginCard({
   identifier, onChangeIdentifier,
@@ -14,12 +15,13 @@ export default function LoginCard({
   onLogin, loading,
   onRegister, onOtpLogin,
 }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.card}>
       <CustomInput
         value={identifier}
         onChangeText={onChangeIdentifier}
-        placeholder="Email / Phone"
+        placeholder={t('auth.identifierPlaceholder')}
         keyboardType="email-address"
         autoCapitalize="none"
         returnKeyType="next"
@@ -29,7 +31,7 @@ export default function LoginCard({
       <CustomInput
         value={password}
         onChangeText={onChangePassword}
-        placeholder="Password"
+        placeholder={t('auth.passwordPlaceholder')}
         secureTextEntry={!showPassword}
         rightIcon={showPassword ? 'eye-outline' : 'eye-off-outline'}
         onRightIconPress={onToggleShowPassword}
@@ -41,25 +43,25 @@ export default function LoginCard({
       <View style={styles.row}>
         <RememberMe checked={remember} onToggle={onToggleRemember} />
         <TouchableOpacity onPress={onForgotPassword} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={styles.forgot}>Forgot Password?</Text>
+          <Text style={styles.forgot}>{t('auth.forgotPassword')}</Text>
         </TouchableOpacity>
       </View>
 
-      <GradientButton title={loading ? 'Logging in…' : 'Login'} onPress={onLogin} loading={loading} disabled={loading} />
+      <GradientButton title={loading ? t('auth.loggingIn') : t('auth.login')} onPress={onLogin} loading={loading} disabled={loading} />
 
       <View style={styles.dividerRow}>
         <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or</Text>
+        <Text style={styles.dividerText}>{t('auth.or')}</Text>
         <View style={styles.dividerLine} />
       </View>
 
       <TouchableOpacity style={styles.otpBtn} onPress={onOtpLogin} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Text style={styles.otpBtnText}>Continue with OTP</Text>
+        <Text style={styles.otpBtnText}>{t('auth.continueWithOtp')}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.registerRow} onPress={onRegister} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
         <Text style={styles.registerText}>
-          Don't have an account? <Text style={styles.registerLink}>Register</Text>
+          {t('auth.noAccount')} <Text style={styles.registerLink}>{t('auth.register')}</Text>
         </Text>
       </TouchableOpacity>
     </View>

@@ -3,11 +3,11 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, M
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDate } from '../../utils/helpers';
 import ScreenHeader from '../../components/ScreenHeader';
 import { COLORS, SHADOW } from '../../theme/tokens';
+import { useTranslation, useFormatters } from '../../i18n';
+import { useLanguageStore } from '../../i18n/languageStore';
 
-const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const toDateStr = (d) => d.toISOString().split('T')[0];
 
 const asItems = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
@@ -27,9 +27,10 @@ const MOON_PHASES = {
   'Waning Crescent': { icon: 'moon', color: '#7C3AED' },
 };
 
-function formatTimeRange(start, end) {
+// `end` can be the provider's literal "Next Day" marker; the words we print for it are localized, the value is not.
+function formatTimeRange(start, end, t) {
   if (!start) return '';
-  if (end === 'Next Day' || end?.toLowerCase?.() === 'next day') return `${start} – Next Day`;
+  if (end === 'Next Day' || end?.toLowerCase?.() === 'next day') return `${start} – ${t ? t('panchang.nextDay') : 'Next Day'}`;
   if (end) return `${start} – ${end}`;
   return start;
 }
@@ -79,6 +80,8 @@ function PanchangSkeleton() {
 }
 
 function DateHeroCard({ dateObj, panchang, C }) {
+  const { t } = useTranslation();
+  const { formatDate } = useFormatters();
   const today = isToday(dateObj);
   const moonPhase = panchang?.moonPhase || '';
   const moonIcon = MOON_PHASES[moonPhase]?.icon || 'moon-outline';
@@ -103,18 +106,18 @@ function DateHeroCard({ dateObj, panchang, C }) {
         </View>
         {today && (
           <View style={styles.todayBadge}>
-            <Text style={styles.todayText}>Today</Text>
+            <Text style={styles.todayText}>{t('panchang.today')}</Text>
           </View>
         )}
       </View>
       <View style={[styles.heroMetaRow, { borderTopColor: C.border }]}>
-        {panchang?.paksha ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>{panchang.paksha} Paksha</Text> : null}
+        {panchang?.paksha ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>{t('panchang.pakshaValue', { value: panchang.paksha })}</Text> : null}
         {panchang?.masa ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>{panchang.masa}</Text> : null}
         {panchang?.samvat ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>{panchang.samvat}</Text> : null}
         {panchang?.ritu ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>{panchang.ritu}</Text> : null}
         {panchang?.ayana ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>{panchang.ayana}</Text> : null}
-        {panchang?.moonSign ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>Moon: {panchang.moonSign}</Text> : null}
-        {panchang?.sunSign ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>Sun: {panchang.sunSign}</Text> : null}
+        {panchang?.moonSign ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>{t('panchang.moonSign', { value: panchang.moonSign })}</Text> : null}
+        {panchang?.sunSign ? <Text style={[styles.heroMeta, { color: C.textSecondary }]}>{t('panchang.sunSign', { value: panchang.sunSign })}</Text> : null}
       </View>
     </View>
   );
@@ -134,16 +137,18 @@ function QuickInfoCard({ icon, label, value, iconColor, C }) {
 }
 
 function TimedEntryCard({ name, start, end, color, C }) {
+  const { t } = useTranslation();
   if (!name) return null;
   return (
     <View style={[styles.timedCard, { backgroundColor: C.surface, borderColor: C.border, borderLeftColor: color || C.primary }]}>
       <Text style={[styles.timedName, { color: C.text }]}>{name}</Text>
-      <Text style={[styles.timedRange, { color: C.textSecondary }]}>{formatTimeRange(start, end)}</Text>
+      <Text style={[styles.timedRange, { color: C.textSecondary }]}>{formatTimeRange(start, end, t)}</Text>
     </View>
   );
 }
 
 function TimingPeriodCard({ name, start, end, tone }) {
+  const { t } = useTranslation();
   if (!name || !start) return null;
   const isAuspicious = tone === 'auspicious';
   const bg = isAuspicious ? '#F0FDF4' : '#FEF2F2';
@@ -158,11 +163,11 @@ function TimingPeriodCard({ name, start, end, tone }) {
         <Text style={[styles.timingName, { color: nameColor }]}>{name}</Text>
         {!isAuspicious && (
           <View style={styles.avoidBadge}>
-            <Text style={styles.avoidText}>Avoid</Text>
+            <Text style={styles.avoidText}>{t('panchang.avoid')}</Text>
           </View>
         )}
       </View>
-      <Text style={[styles.timingRange, { color: timeColor }]}>{formatTimeRange(start, end)}</Text>
+      <Text style={[styles.timingRange, { color: timeColor }]}>{formatTimeRange(start, end, t)}</Text>
     </View>
   );
 }
@@ -190,6 +195,7 @@ function FestivalCard({ festival, C }) {
 }
 
 function JumpToDateModal({ visible, onClose, onSelect, initialDate }) {
+  const { calendarLabels } = useFormatters();
   const { theme } = useThemeStore();
   const C = theme.colors;
   const [vy, setVY] = useState(initialDate.getFullYear());
@@ -199,7 +205,6 @@ function JumpToDateModal({ visible, onClose, onSelect, initialDate }) {
   const daysInMonth = new Date(vy, vm + 1, 0).getDate();
   const cells = Array.from({ length: firstDay + daysInMonth }, (_, i) => (i < firstDay ? null : i - firstDay + 1));
   const today = new Date();
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -209,14 +214,14 @@ function JumpToDateModal({ visible, onClose, onSelect, initialDate }) {
             <TouchableOpacity onPress={() => (vm === 0 ? (setVM(11), setVY((y) => y - 1)) : setVM((m) => m - 1))}>
               <Ionicons name="chevron-back" size={20} color={C.primary} />
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: C.text }]}>{monthNames[vm]} {vy}</Text>
+            <Text style={[styles.modalTitle, { color: C.text }]}>{calendarLabels.monthTitle(vy, vm)}</Text>
             <TouchableOpacity onPress={() => (vm === 11 ? (setVM(0), setVY((y) => y + 1)) : setVM((m) => m + 1))}>
               <Ionicons name="chevron-forward" size={20} color={C.primary} />
             </TouchableOpacity>
           </View>
           <View style={styles.calDaysRow}>
-            {DAYS.map((d) => (
-              <Text key={d} style={[styles.calDayLabel, { color: C.textSecondary }]}>{d}</Text>
+            {calendarLabels.weekdays.map((d, i) => (
+              <Text key={i} style={[styles.calDayLabel, { color: C.textSecondary }]}>{d}</Text>
             ))}
           </View>
           <View style={styles.calGrid}>
@@ -239,6 +244,9 @@ function JumpToDateModal({ visible, onClose, onSelect, initialDate }) {
 // ── Main Screen ─────────────────────────────────────────────────────────────────
 
 export default function PanchangScreen() {
+  const { t } = useTranslation();
+  const { formatDate } = useFormatters();
+  const contentLanguage = useLanguageStore((s) => s.language);
   const { theme } = useThemeStore();
   const C = theme.colors;
 
@@ -252,9 +260,13 @@ export default function PanchangScreen() {
   const [date, setDate] = useState(new Date());
   const [view, setView] = useState('daily');
   const [pickerVisible, setPickerVisible] = useState(false);
+  // Which language the in-memory festivals fallback was fetched in (never present another language's festivals as current).
+  const cachedLanguageRef = useRef(null);
+  const dailyRequestRef = useRef(0); // only the latest daily request may update the screen (a slow old-language reply is dropped)
 
   const fetchDaily = async (d = date) => {
     const ds = toDateStr(d);
+    const request = ++dailyRequestRef.current;
     setLoading(true);
     try {
       const [panchRes, festRes] = await Promise.all([
@@ -263,21 +275,23 @@ export default function PanchangScreen() {
       ]);
       const p = panchRes.data.panchang || panchRes.data.data || null;
       const f = festRes.data.festivals || [];
+      if (request !== dailyRequestRef.current) return;
       setPanchang(p);
       setCachedPanchang(p);
       setFestivals(f);
       setCachedFestivals(f);
+      cachedLanguageRef.current = useLanguageStore.getState().language;
     } catch {
+      if (request !== dailyRequestRef.current) return;
       if (cachedPanchang) {
         setPanchang(cachedPanchang);
-        setFestivals(cachedFestivals);
+        setFestivals(cachedLanguageRef.current === useLanguageStore.getState().language ? cachedFestivals : []);
       } else {
         setPanchang(null);
         setFestivals([]);
       }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (request === dailyRequestRef.current) { setLoading(false); setRefreshing(false); }
     }
   };
 
@@ -299,6 +313,16 @@ export default function PanchangScreen() {
     if (view === 'daily') fetchDaily(date);
     else fetchWeekly(date);
   }, [view]);
+
+  // The festivals on the daily view are server-translated (?lang=), so a language change reloads them. Not on first
+  // mount (the effect above already loads), and not on the weekly view, which only shows provider data that does not
+  // depend on the language.
+  const seenLanguage = useRef(contentLanguage);
+  useEffect(() => {
+    if (seenLanguage.current === contentLanguage) return;
+    seenLanguage.current = contentLanguage;
+    if (view === 'daily') fetchDaily(date);
+  }, [contentLanguage]);
 
   const changeDate = (days) => {
     const d = new Date(date);
@@ -342,20 +366,20 @@ export default function PanchangScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Panchang" showBack={false} />
+      <ScreenHeader title={t('panchang.title')} showBack={false} />
 
       <View style={[styles.viewToggleRow, { borderBottomColor: C.border }]}>
         <TouchableOpacity
           onPress={() => setView('daily')}
           style={[styles.toggleBtn, view === 'daily' && { backgroundColor: COLORS.primary }]}
         >
-          <Text style={{ color: view === 'daily' ? '#fff' : C.textSecondary, fontSize: 12, fontWeight: '700' }}>Daily</Text>
+          <Text style={{ color: view === 'daily' ? '#fff' : C.textSecondary, fontSize: 12, fontWeight: '700' }}>{t('panchang.daily')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => setView('weekly')}
           style={[styles.toggleBtn, view === 'weekly' && { backgroundColor: COLORS.primary }]}
         >
-          <Text style={{ color: view === 'weekly' ? '#fff' : C.textSecondary, fontSize: 12, fontWeight: '700' }}>Weekly</Text>
+          <Text style={{ color: view === 'weekly' ? '#fff' : C.textSecondary, fontSize: 12, fontWeight: '700' }}>{t('panchang.weekly')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -374,7 +398,7 @@ export default function PanchangScreen() {
       {!isToday(date) && (
         <TouchableOpacity style={[styles.jumpTodayRow, { backgroundColor: C.surface, borderBottomColor: C.border }]} onPress={() => { const t = new Date(); setDate(t); if (view === 'daily') fetchDaily(t); else fetchWeekly(t); }} activeOpacity={0.7}>
           <Ionicons name="today-outline" size={16} color={COLORS.primary} />
-          <Text style={[styles.jumpTodayText, { color: COLORS.primary }]}>Jump to Today</Text>
+          <Text style={[styles.jumpTodayText, { color: COLORS.primary }]}>{t('panchang.jumpToday')}</Text>
         </TouchableOpacity>
       )}
 
@@ -392,18 +416,18 @@ export default function PanchangScreen() {
 
               {/* ── Quick Info Grid ────────────────────────────── */}
               <View style={styles.quickGrid}>
-                <QuickInfoCard icon="sunny" label="Sunrise" value={panchang.sunrise} iconColor="#D97706" C={C} />
-                <QuickInfoCard icon="partly-sunny" label="Sunset" value={panchang.sunset} iconColor="#2563EB" C={C} />
+                <QuickInfoCard icon="sunny" label={t('panchang.sunrise')} value={panchang.sunrise} iconColor="#D97706" C={C} />
+                <QuickInfoCard icon="partly-sunny" label={t('panchang.sunset')} value={panchang.sunset} iconColor="#2563EB" C={C} />
               </View>
               <View style={styles.quickGrid}>
-                <QuickInfoCard icon="star" label="Nakshatra" value={panchang.nakshatra} iconColor="#7C3AED" C={C} />
-                <QuickInfoCard icon="moon-outline" label="Moon Phase" value={panchang.moonPhase} iconColor="#7C3AED" C={C} />
+                <QuickInfoCard icon="star" label={t('panchang.nakshatra')} value={panchang.nakshatra} iconColor="#7C3AED" C={C} />
+                <QuickInfoCard icon="moon-outline" label={t('panchang.moonPhase')} value={panchang.moonPhase} iconColor="#7C3AED" C={C} />
               </View>
 
               {/* ── Tithi Entries ──────────────────────────────── */}
               {tithiEntries.length > 0 && (
                 <View style={styles.sectionBlock}>
-                  <SectionHeader title="Tithi" icon="moon" color="#4F46E5" />
+                  <SectionHeader title={t('panchang.tithi')} icon="moon" color="#4F46E5" />
                   {tithiEntries.map((e, i) => (
                     <TimedEntryCard key={i} name={e.name} start={e.start} end={e.end} color="#4F46E5" C={C} />
                   ))}
@@ -413,7 +437,7 @@ export default function PanchangScreen() {
               {/* ── Yoga Entries ───────────────────────────────── */}
               {yogaEntries.length > 0 && (
                 <View style={styles.sectionBlock}>
-                  <SectionHeader title="Yoga" icon="sparkles" color="#059669" />
+                  <SectionHeader title={t('panchang.yoga')} icon="sparkles" color="#059669" />
                   {yogaEntries.map((e, i) => (
                     <TimedEntryCard key={i} name={e.name} start={e.start} end={e.end} color="#059669" C={C} />
                   ))}
@@ -423,7 +447,7 @@ export default function PanchangScreen() {
               {/* ── Karana Entries ─────────────────────────────── */}
               {karanaEntries.length > 0 && (
                 <View style={styles.sectionBlock}>
-                  <SectionHeader title="Karana" icon="triangle" color="#D97706" />
+                  <SectionHeader title={t('panchang.karana')} icon="triangle" color="#D97706" />
                   {karanaEntries.map((e, i) => (
                     <TimedEntryCard key={i} name={e.name} start={e.start} end={e.end} color="#D97706" C={C} />
                   ))}
@@ -433,7 +457,7 @@ export default function PanchangScreen() {
               {/* ── Auspicious Timings ─────────────────────────── */}
               {auspiciousTimings.length > 0 && (
                 <View style={styles.sectionBlock}>
-                  <SectionHeader title="Auspicious Timings" icon="time-outline" color="#16A34A" />
+                  <SectionHeader title={t('panchang.auspicious')} icon="time-outline" color="#16A34A" />
                   {auspiciousTimings.map((t, i) => (
                     <TimingPeriodCard key={i} name={t.name} start={t.start} end={t.end} tone="auspicious" />
                   ))}
@@ -443,7 +467,7 @@ export default function PanchangScreen() {
               {/* ── Inauspicious Timings ───────────────────────── */}
               {inauspiciousTimings.length > 0 && (
                 <View style={styles.sectionBlock}>
-                  <SectionHeader title="Inauspicious Timings" icon="warning-outline" color="#DC2626" />
+                  <SectionHeader title={t('panchang.inauspicious')} icon="warning-outline" color="#DC2626" />
                   {inauspiciousTimings.map((t, i) => (
                     <TimingPeriodCard key={i} name={t.name} start={t.start} end={t.end} tone="inauspicious" />
                   ))}
@@ -453,7 +477,7 @@ export default function PanchangScreen() {
               {/* ── Festivals ──────────────────────────────────── */}
               {festivals.length > 0 && (
                 <View style={styles.sectionBlock}>
-                  <SectionHeader title="Festivals" icon="calendar" color={COLORS.primary} />
+                  <SectionHeader title={t('festivals.title')} icon="calendar" color={COLORS.primary} />
                   {festivals.map((f) => (
                     <FestivalCard key={f._id || f.name} festival={f} C={C} />
                   ))}
@@ -463,13 +487,13 @@ export default function PanchangScreen() {
           ) : (
             <View style={styles.emptyState}>
               <Ionicons name="cloud-offline-outline" size={48} color={C.textSecondary} />
-              <Text style={[styles.emptyText, { color: C.textSecondary }]}>Panchang temporarily unavailable</Text>
+              <Text style={[styles.emptyText, { color: C.textSecondary }]}>{t('panchang.unavailable')}</Text>
               <TouchableOpacity
                 style={[styles.retryBtn, { backgroundColor: COLORS.primary }]}
                 onPress={() => fetchDaily(date)}
                 activeOpacity={0.8}
               >
-                <Text style={styles.retryText}>Retry</Text>
+                <Text style={styles.retryText}>{t('common.retry')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -494,47 +518,47 @@ export default function PanchangScreen() {
                     <Text style={[styles.weekDate, { color: C.text }]}>{formatDate(weekDate, 'EEE, dd MMM')}</Text>
                     {isToday(weekDate) && (
                       <View style={[styles.weekTodayBadge, { backgroundColor: COLORS.primary + '20' }]}>
-                        <Text style={[styles.weekTodayText, { color: COLORS.primary }]}>Today</Text>
+                        <Text style={[styles.weekTodayText, { color: COLORS.primary }]}>{t('panchang.today')}</Text>
                       </View>
                     )}
                   </View>
                   <View style={styles.weekRow}>
                     {p.tithi ? (
                       <View style={styles.weekChip}>
-                        <Text style={[styles.weekChipLabel, { color: C.textSecondary }]}>Tithi</Text>
+                        <Text style={[styles.weekChipLabel, { color: C.textSecondary }]}>{t('panchang.tithi')}</Text>
                         <Text style={[styles.weekChipValue, { color: C.text }]}>{p.tithi}</Text>
                       </View>
                     ) : null}
                     {p.nakshatra ? (
                       <View style={styles.weekChip}>
-                        <Text style={[styles.weekChipLabel, { color: C.textSecondary }]}>Nakshatra</Text>
+                        <Text style={[styles.weekChipLabel, { color: C.textSecondary }]}>{t('panchang.nakshatra')}</Text>
                         <Text style={[styles.weekChipValue, { color: C.text }]}>{p.nakshatra}</Text>
                       </View>
                     ) : null}
                   </View>
                   {p.rahuKaal?.start ? (
-                    <Text style={styles.weekRahu}>Rahu Kaal: {p.rahuKaal.start} – {p.rahuKaal.end}</Text>
+                    <Text style={styles.weekRahu}>{t('panchang.rahuKaal', { start: p.rahuKaal.start, end: p.rahuKaal.end })}</Text>
                   ) : null}
                   {p.sunrise ? (
-                    <Text style={[styles.weekSun, { color: C.textSecondary }]}>Sunrise: {p.sunrise}  Sunset: {p.sunset}</Text>
+                    <Text style={[styles.weekSun, { color: C.textSecondary }]}>{t('panchang.sunriseSunset', { sunrise: p.sunrise, sunset: p.sunset })}</Text>
                   ) : null}
                 </TouchableOpacity>
               ) : (
                 <View key={i} style={[styles.weekCard, { backgroundColor: C.surface, borderColor: C.border }]}>
-                  <Text style={[styles.emptyText, { color: C.textSecondary }]}>Unavailable</Text>
+                  <Text style={[styles.emptyText, { color: C.textSecondary }]}>{t('panchang.dayUnavailable')}</Text>
                 </View>
               );
             })
           ) : (
             <View style={styles.emptyState}>
               <Ionicons name="cloud-offline-outline" size={48} color={C.textSecondary} />
-              <Text style={[styles.emptyText, { color: C.textSecondary }]}>Week data unavailable</Text>
+              <Text style={[styles.emptyText, { color: C.textSecondary }]}>{t('panchang.weekUnavailable')}</Text>
               <TouchableOpacity
                 style={[styles.retryBtn, { backgroundColor: COLORS.primary }]}
                 onPress={() => fetchWeekly(date)}
                 activeOpacity={0.8}
               >
-                <Text style={styles.retryText}>Retry</Text>
+                <Text style={styles.retryText}>{t('common.retry')}</Text>
               </TouchableOpacity>
             </View>
           )}

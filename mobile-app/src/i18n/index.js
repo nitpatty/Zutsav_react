@@ -1,115 +1,60 @@
 /**
- * Lightweight mobile i18n foundation.
+ * Mobile i18n: a small custom layer (no third-party library).
  *
- * Provides:
- *   - A React context with a `t(key, params)` function
- *   - A Zustand store for persisting the selected language
- *   - English translation resources (expandable to other locales later)
- *
- * Usage:
  *   import { useTranslation } from '../../i18n';
- *   const { t } = useTranslation();
- *   <Text>{t('referrals.pageTitle')}</Text>
+ *   const { t, language } = useTranslation();
+ *   <Text>{t('nav.home')}</Text>              // English fallback for any key a locale does not have yet
+ *   t('auth.deletionPendingBody', { date })   // {{date}} is inserted literally (safe for user-provided values)
+ *
+ * Layout: locales/ (catalogue + dictionaries) · translate.js (lookup, interpolation, stable `t`) ·
+ * languageStore.js (device language + SecureStore) · languagePreference.js (account sync; imports the API client).
+ *
+ * `t` keeps one identity per language — also when no <I18nProvider> is mounted — so it is safe in hook
+ * dependency arrays (WalletScreen's fetch callbacks depend on it).
  */
-
 import React, { createContext, useContext, useMemo } from 'react';
-import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
-import en from './locales/en';
+import { useLanguageStore } from './languageStore';
+import { getTranslator } from './translate';
+import { getFormatters } from './formatters';
+import { toAvailableLocale, DEFAULT_LOCALE } from './locales';
 
-// ── Supported locales ──────────────────────────────────────────────────────
-const LOCALES = { en };
+export { useLanguageStore } from './languageStore';
+export {
+  SUPPORTED_LOCALES, SUPPORTED_LOCALE_CODES, AVAILABLE_LOCALES, DEFAULT_LOCALE,
+  isSupportedLocale, isAvailableLocale, toAvailableLocale,
+} from './locales';
+export { getTranslator, interpolate } from './translate';
+export { getFormatters } from './formatters';
 
-// ── Language store (persisted in SecureStore) ──────────────────────────────
-export const useLanguageStore = create((set, get) => ({
-  language: 'en',
-  ready: false,
-
-  /** Hydrate language from SecureStore on app start */
-  hydrate: async () => {
-    try {
-      const stored = await SecureStore.getItemAsync('zutsav_language');
-      if (stored && LOCALES[stored]) {
-        set({ language: stored, ready: true });
-      } else {
-        set({ ready: true });
-      }
-    } catch {
-      set({ ready: true });
-    }
-  },
-
-  /** Change language and persist */
-  setLanguage: async (lang) => {
-    if (!LOCALES[lang]) return;
-    set({ language: lang });
-    try {
-      await SecureStore.setItemAsync('zutsav_language', lang);
-    } catch {}
-  },
-}));
-
-// ── i18n Context ───────────────────────────────────────────────────────────
 const I18nContext = createContext(null);
 
-/**
- * Resolve a nested key like 'referrals.pageTitle' from a translations object.
- * Supports parameter interpolation: 'Hello {{name}}' → 'Hello World'.
- */
-function resolve(obj, path) {
-  return path.split('.').reduce((acc, part) => acc?.[part], obj);
+function useI18nValue() {
+  const stored = useLanguageStore((s) => s.language);
+  const language = toAvailableLocale(stored) || DEFAULT_LOCALE;
+  // Memoised on the language alone: same `{ t, language }` object until the language really changes.
+  return useMemo(() => ({ t: getTranslator(language), language }), [language]);
 }
 
-function interpolate(str, params) {
-  if (!params || typeof str !== 'string') return str;
-  return Object.entries(params).reduce(
-    (result, [key, val]) => result.replace(new RegExp(`{{${key}}}`, 'g'), val),
-    str,
-  );
-}
-
-/**
- * i18n Provider — wraps the app to make `t()` available.
- */
+/** Makes `t()` available to the tree. Optional: `useTranslation()` also works without it. */
 export function I18nProvider({ children }) {
-  const language = useLanguageStore((s) => s.language);
-
-  const value = useMemo(() => {
-    const translations = LOCALES[language] || LOCALES.en;
-
-    /** Translate a key, with optional parameter interpolation */
-    const t = (key, params) => {
-      const val = resolve(translations, key);
-      if (val === undefined) {
-        // Fallback to English if key not found in current locale
-        const enVal = resolve(LOCALES.en, key);
-        return interpolate(enVal ?? key, params);
-      }
-      return interpolate(val, params);
-    };
-
-    return { t, language };
-  }, [language]);
-
+  const value = useI18nValue();
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
-/**
- * Hook to access translation function and current language.
- */
+/** `{ t, language }` for the current UI language. Re-renders the caller when the language changes. */
 export function useTranslation() {
   const ctx = useContext(I18nContext);
-  if (!ctx) {
-    // Graceful fallback if used outside provider (e.g. testing)
-    return {
-      t: (key, params) => {
-        const val = resolve(LOCALES.en, key);
-        return interpolate(val ?? key, params);
-      },
-      language: 'en',
-    };
-  }
-  return ctx;
+  const fallback = useI18nValue(); // hooks must run unconditionally
+  return ctx || fallback;
+}
+
+/**
+ * Display formatters (dates, weekdays, months, relative time) for the current UI language — same identity until the
+ * language changes. Display only: never feed the returned strings into a request or a calculation. See ./formatters.js.
+ */
+export function useFormatters() {
+  const { language } = useTranslation();
+  return useMemo(() => getFormatters(language), [language]);
 }
 
 export default { I18nProvider, useTranslation, useLanguageStore };

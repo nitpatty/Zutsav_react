@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (android:dataExtractionRules): cloud backup AND device-to-device transfer. See backup_rules.xml —
+  allowBackup is "false"; this keeps the newer API consistent with it. Everything is excluded.
+-->
+<data-extraction-rules>
+  <cloud-backup>
+    <exclude domain="root" path="."/>
+    <exclude domain="file" path="."/>
+    <exclude domain="database" path="."/>
+    <exclude domain="sharedpref" path="."/>
+    <exclude domain="external" path="."/>
+  </cloud-backup>
+  <device-transfer>
+    <exclude domain="root" path="."/>
+    <exclude domain="file" path="."/>
+    <exclude domain="database" path="."/>
+    <exclude domain="sharedpref" path="."/>
+    <exclude domain="external" path="."/>
+  </device-transfer>
+</data-extraction-rules>

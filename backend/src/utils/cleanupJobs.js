@@ -293,6 +293,36 @@ const startPaymentSweepJob = () => {
   console.log('[PaymentSweep] Stale payment attempt sweep job started (runs every 10 min)');
 };
 
+// ── Stale Pending Marketplace Order Sweep ─────────────────────
+
+/**
+ * Closes marketplace orders left unpaid past the configured lifetime. OFF unless
+ * MARKETPLACE_PENDING_ORDER_EXPIRY_MINUTES is set to a valid value (see config/orders.config.js):
+ * when disabled/invalid NO timer is scheduled at all and the reason is logged once. The decision logic
+ * (gateway re-check, atomic transition, never expire on uncertainty) lives in services/staleOrderSweep.js.
+ */
+const startStaleOrderSweepJob = () => {
+  const ordersConfig = require('../config/orders.config');
+  const { sweepStalePendingOrders } = require('../services/staleOrderSweep');
+  const expiry = ordersConfig.resolvePendingOrderExpiry();
+  if (!expiry.enabled) {
+    console.log('[StaleOrderSweep] disabled — ' + expiry.reason);
+    return;
+  }
+  const run = async () => {
+    try {
+      const r = await sweepStalePendingOrders({ expiry });
+      if (r.expired || r.settledPaid || r.errors) {
+        console.log('[StaleOrderSweep] scanned=' + r.scanned + ' expired=' + r.expired + ' settledPaid=' + r.settledPaid + ' skipped(in-progress=' + r.skippedInProgress + ', uncertain=' + r.skippedUncertain + ') errors=' + r.errors);
+      }
+    } catch (err) {
+      console.error('[StaleOrderSweep] sweep error:', err.message);
+    }
+  };
+  setInterval(run, 10 * MS_PER_MINUTE);
+  console.log('[StaleOrderSweep] enabled — ' + expiry.reason + ' (runs every 10 min)');
+};
+
 // ── Translation Lock Sweep ────────────────────────────────────
 
 /**
@@ -335,4 +365,5 @@ module.exports = {
   sweepStaleTranslationLocks,
   startPaymentSweepJob,
   sweepStalePaymentAttempts,
+  startStaleOrderSweepJob,
 };

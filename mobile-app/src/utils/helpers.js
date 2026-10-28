@@ -71,6 +71,7 @@ export const orderStatusColor = {
   delivered:       '#16A34A',
   cancelled:       '#DC2626',
   refunded:        '#9CA3AF',
+  payment_failed:  '#DC2626', // an unpaid order closed by the expiry sweep
 };
 
 export const kycStatusColor = {

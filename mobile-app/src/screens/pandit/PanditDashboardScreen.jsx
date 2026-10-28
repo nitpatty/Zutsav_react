@@ -12,6 +12,7 @@ import useOnReconnect from '../../hooks/useOnReconnect';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import NotificationBell from '../../components/NotificationBell';
 import { useTabBarClearance } from '../../components/pandit/StickyActionBar';
+import ScheduleCalendar from '../../components/pandit/ScheduleCalendar';
 
 import { COLORS, SPACING } from '../../theme/tokens';
 import { Greeting, Heading, Body, Caption, CardTitle } from '../../components/ui/Typography';
@@ -23,6 +24,7 @@ import ActionCard from '../../components/ui/ActionCard';
 import BookingCard from '../../components/ui/BookingCard';
 import SectionHeader from '../../components/ui/SectionHeader';
 import IconContainer from '../../components/ui/IconContainer';
+import { useLanguageStore } from '../../i18n/languageStore';
 
 function greetingForHour() {
   const h = new Date().getHours();
@@ -32,6 +34,7 @@ function greetingForHour() {
 }
 
 export default function PanditDashboardScreen() {
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
   const navigation = useNavigation();
   const { user } = useAuthStore();
   const { notifications, fetch: fetchNotifications } = useNotificationStore();
@@ -44,6 +47,7 @@ export default function PanditDashboardScreen() {
   const [loading,       setLoading]       = useState(true);
   const [refreshing,    setRefreshing]    = useState(false);
   const [togglingOnline, setTogglingOnline] = useState(false);
+  const [calendarRefresh, setCalendarRefresh] = useState(0);   // bumped by pull-to-refresh so the calendar reloads too
 
   const fetchAll = useCallback(async (silent = false) => {
     try {
@@ -81,7 +85,7 @@ export default function PanditDashboardScreen() {
     }
   }, [fetchNotifications]);
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, [contentLanguage]);
   useOnReconnect(() => fetchAll(true));
 
   const handleToggleOnline = async (val) => {
@@ -170,7 +174,7 @@ export default function PanditDashboardScreen() {
       </View>
 
       <ScrollView
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(true); }} tintColor={COLORS.primary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setCalendarRefresh((n) => n + 1); fetchAll(true); }} tintColor={COLORS.primary} />}
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarClearance + 24 }]}
         showsVerticalScrollIndicator={false}
       >
@@ -229,6 +233,16 @@ export default function PanditDashboardScreen() {
               </View>
             ))}
           </View>
+        </View>
+
+        {/* Monthly schedule: availability + bookings from GET /pandits/me/schedule-calendar. Stacked above the booking lists (no desktop
+            two-column layout); tapping a booking opens the existing Pandit booking detail. */}
+        <View style={styles.section}>
+          <SectionHeader title="Schedule Calendar" seeAllLabel="Availability" onSeeAll={() => navigation.navigate('PanditAvailability')} />
+          <ScheduleCalendar
+            refreshKey={calendarRefresh}
+            onOpenBooking={(bookingId) => navigation.navigate('PanditBookingsTab', { screen: 'PanditBookingDetail', params: { bookingId } })}
+          />
         </View>
 
         {today.bookings.length > 0 && (

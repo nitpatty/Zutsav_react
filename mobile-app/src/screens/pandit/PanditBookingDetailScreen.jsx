@@ -9,13 +9,12 @@ import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import { COLORS, RADIUS, SPACING, SHADOW, FONT, ICON_SIZE, SIZES } from '../../theme/tokens';
-import { formatDateTime, formatCurrency, formatStatus, formatAuditAction, bookingStatusColor } from '../../utils/helpers';
+import { formatDateTime, formatCurrency, formatStatus, bookingStatusColor } from '../../utils/helpers';
 import { openMaps } from '../../utils/quickActions';
 import { todayIST, addDays, toDateString } from '../../utils/bookingDateRules';
 import StatusBadge from '../../components/StatusBadge';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
-import Timeline from '../../components/shared/Timeline';
 import { InfoCard, Row } from '../../components/shared/InfoCard';
 import StickyActionBar, { useStickyActionBarHeight } from '../../components/pandit/StickyActionBar';
 
@@ -157,12 +156,6 @@ export default function PanditBookingDetailScreen({ route }) {
   const ud = booking.userDetails || {};
   const addressStr = [ud.address, ud.city, ud.state, ud.pincode].filter(Boolean).join(', ') || '—';
 
-  const timelineEvents = (booking.auditLog || []).map((a) => ({
-    label: formatAuditAction(a.action),
-    note:  a.note,
-    at:    a.at,
-  }));
-
   return (
     <View style={[styles.root, { backgroundColor: COLORS.background }]}>
       <ScreenHeader title="Booking Detail" />
@@ -228,10 +221,6 @@ export default function PanditBookingDetailScreen({ route }) {
             ))}
           </InfoCard>
         )}
-
-        <InfoCard title="Booking Timeline" C={C}>
-          <Timeline events={timelineEvents} />
-        </InfoCard>
 
       </ScrollView>
 

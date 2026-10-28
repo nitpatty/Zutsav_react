@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,6 +51,8 @@ export default function PanditProfileScreen() {
   const [profile,   setProfile]   = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [removing,  setRemoving]  = useState(false);
+  const removingRef = useRef(false);   // state lags a re-render; the ref makes a double tap a no-op
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -90,6 +92,36 @@ export default function PanditProfileScreen() {
     }
   };
 
+  // Same flow as the website's "Remove" (ProfilePhoto.jsx): confirm first, then DELETE /pandits/me/photo.
+  // This removes ONLY the profile photo — not the account, and not any KYC document (those have their own screens).
+  const handleRemoveAvatar = async () => {
+    if (removingRef.current) return;
+    removingRef.current = true;
+    setRemoving(true);
+    try {
+      const { data } = await api.delete('/pandits/me/photo');
+      setProfile((prev) => ({ ...prev, ...(data?.pandit || {}), profilePhoto: null }));
+      Toast.show({ type: 'success', text1: 'Photo removed' });
+    } catch {
+      Toast.show({ type: 'error', text1: 'Failed to remove photo' });
+    } finally {
+      removingRef.current = false;
+      setRemoving(false);
+    }
+  };
+
+  const confirmRemoveAvatar = () => {
+    if (removingRef.current || uploading) return;
+    Alert.alert(
+      'Remove profile photo?',
+      'Your profile photo will be removed from your Pandit profile. You can upload a new one at any time.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove photo', style: 'destructive', onPress: handleRemoveAvatar },
+      ],
+    );
+  };
+
   if (loading || !profile) return <LoadingSpinner fullScreen />;
 
   const completedCount = COMPLETION_FIELDS.filter((fn) => fn(profile)).length;
@@ -112,6 +144,20 @@ export default function PanditProfileScreen() {
               <Ionicons name={uploading ? 'hourglass' : 'camera'} size={14} color="#fff" />
             </View>
           </TouchableOpacity>
+          {profile.profilePhoto ? (
+            <TouchableOpacity
+              onPress={confirmRemoveAvatar}
+              disabled={removing || uploading}
+              style={[styles.removePhotoBtn, (removing || uploading) && { opacity: 0.6 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Remove photo"
+              accessibilityState={{ disabled: removing || uploading }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name={removing ? 'hourglass' : 'trash-outline'} size={13} color="#DC2626" />
+              <Text style={styles.removePhotoText}>Remove photo</Text>
+            </TouchableOpacity>
+          ) : null}
 
           <View style={styles.userInfo}>
             <Text style={[styles.userName, { color: C.text }]}>{profile.name}</Text>
@@ -164,6 +210,11 @@ const styles = StyleSheet.create({
     width: 26, height: 26, borderRadius: 13, justifyContent: 'center', alignItems: 'center',
     borderWidth: 2, borderColor: '#fff',
   },
+  removePhotoBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6,
+  },
+  removePhotoText:   { fontSize: 12, fontWeight: '700', color: '#DC2626' },
   userInfo:          { alignItems: 'center', gap: 4 },
   userName:          { fontSize: 20, fontWeight: '800' },
   userPhone:         { fontSize: 14 },

@@ -9,10 +9,13 @@ import api from '../../api/axios';
 import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useTranslation, useFormatters } from '../../i18n';
 
 const STEPS = ['warning', 'password', 'otp_channel', 'otp_verify', 'confirm'];
 
 export default function DeleteAccountScreen({ navigation }) {
+  const { t } = useTranslation();
+  const { formatDateWithOptions } = useFormatters();
   const { user, logout } = useAuthStore();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -27,13 +30,13 @@ export default function DeleteAccountScreen({ navigation }) {
   const [scheduledDate, setScheduledDate] = useState(null);
 
   const handleCheckPassword = async () => {
-    if (!password) { Toast.show({ type: 'error', text1: 'Enter your current password' }); return; }
+    if (!password) { Toast.show({ type: 'error', text1: t('profile.enterCurrentPassword') }); return; }
     try {
       setLoading(true);
       await api.post('/auth/delete-account/check-password', { password });
       setStep('otp_channel');
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Wrong password' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('account.wrongPassword') });
     } finally {
       setLoading(false);
     }
@@ -41,29 +44,29 @@ export default function DeleteAccountScreen({ navigation }) {
 
   const handleSendOTP = async () => {
     if (otpChannel === 'email' && !user?.email) {
-      Toast.show({ type: 'error', text1: 'No email on file. Use WhatsApp.' }); return;
+      Toast.show({ type: 'error', text1: t('account.noEmail') }); return;
     }
     try {
       setLoading(true);
       await api.post('/auth/delete-account/send-otp', { channel: otpChannel });
       setOtpId(otpChannel === 'email' ? user?.email : user?.phone);
       setStep('otp_verify');
-      Toast.show({ type: 'success', text1: `OTP sent to your ${otpChannel}` });
+      Toast.show({ type: 'success', text1: otpChannel === 'email' ? t('account.otpSentEmail') : t('account.otpSentWhatsapp') });
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not send OTP' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('account.otpSendFailed') });
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerifyOTP = async () => {
-    if (otp.length < 6) { Toast.show({ type: 'error', text1: 'Enter 6-digit OTP' }); return; }
+    if (otp.length < 6) { Toast.show({ type: 'error', text1: t('account.otpRequired') }); return; }
     try {
       setLoading(true);
       await api.post('/auth/verify-otp', { identifier: otpId, otp, purpose: 'account_deletion' });
       setStep('confirm');
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Invalid OTP' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('auth.invalidOtp') });
     } finally {
       setLoading(false);
     }
@@ -74,26 +77,25 @@ export default function DeleteAccountScreen({ navigation }) {
       setLoading(true);
       const { data } = await api.post('/auth/delete-account/confirm', { channel: otpChannel });
       setScheduledDate(data.scheduledDeletionDate);
-      Toast.show({ type: 'info', text1: 'Account scheduled for deletion' });
+      Toast.show({ type: 'info', text1: t('account.scheduledToast') });
       setTimeout(() => logout(), 3000);
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Failed to schedule deletion' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('account.scheduleFailed') });
     } finally {
       setLoading(false);
     }
   };
 
   if (scheduledDate) {
-    const date = new Date(scheduledDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
+    const date = formatDateWithOptions(new Date(scheduledDate), { day: '2-digit', month: 'long', year: 'numeric' });
     return (
       <View style={[styles.root, { backgroundColor: C.background }]}>
-        <ScreenHeader title="Account Deletion" />
+        <ScreenHeader title={t('account.screenTitle')} />
         <View style={styles.doneWrap}>
           <Ionicons name="time" size={56} color="#D97706" />
-          <Text style={[styles.doneTitle, { color: C.text }]}>Deletion Scheduled</Text>
+          <Text style={[styles.doneTitle, { color: C.text }]}>{t('account.doneTitle')}</Text>
           <Text style={[styles.doneSub, { color: C.textSecondary }]}>
-            Your account will be permanently deleted on {date}.{'\n\n'}
-            You can restore it by logging in before that date.
+            {t('account.doneBody', { date })}
           </Text>
         </View>
       </View>
@@ -102,17 +104,16 @@ export default function DeleteAccountScreen({ navigation }) {
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Delete Account" />
+      <ScreenHeader title={t('settings.deleteAccount')} />
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}>
 
         {step === 'warning' && (
           <View style={{ gap: 16 }}>
             <View style={[styles.warnCard, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
               <Ionicons name="warning" size={40} color="#DC2626" />
-              <Text style={styles.warnTitle}>Delete Your Account?</Text>
+              <Text style={styles.warnTitle}>{t('account.warnTitle')}</Text>
               <Text style={styles.warnBody}>
-                This will permanently delete your account after a 30-day grace period. All your bookings, orders, and data will be removed.{'\n\n'}
-                You can restore your account by logging in within 30 days.
+                {t('account.warnBody')}
               </Text>
             </View>
             <TouchableOpacity
@@ -120,28 +121,28 @@ export default function DeleteAccountScreen({ navigation }) {
               onPress={() => setStep('password')}
               activeOpacity={0.85}
             >
-              <Text style={styles.btnText}>Continue with Deletion</Text>
+              <Text style={styles.btnText}>{t('auth.continueWithDeletion')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.outlineBtn, { borderColor: C.border }]}
               onPress={() => navigation.goBack()}
               activeOpacity={0.85}
             >
-              <Text style={[styles.outlineBtnText, { color: C.text }]}>Keep My Account</Text>
+              <Text style={[styles.outlineBtnText, { color: C.text }]}>{t('account.keepAccount')}</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {step === 'password' && (
           <View style={{ gap: 16 }}>
-            <Text style={[styles.stepTitle, { color: C.text }]}>Verify Your Identity</Text>
-            <Text style={[styles.stepSub, { color: C.textSecondary }]}>Enter your current password to continue</Text>
+            <Text style={[styles.stepTitle, { color: C.text }]}>{t('account.verifyIdentity')}</Text>
+            <Text style={[styles.stepSub, { color: C.textSecondary }]}>{t('account.passwordSub')}</Text>
             <View style={[styles.pwdRow, { borderColor: C.border }]}>
               <TextInput
                 style={[styles.pwdInput, { color: C.text }]}
                 value={password}
                 onChangeText={setPassword}
-                placeholder="Current password"
+                placeholder={t('account.passwordPlaceholder')}
                 placeholderTextColor={C.textSecondary}
                 secureTextEntry={!showPwd}
               />
@@ -150,14 +151,14 @@ export default function DeleteAccountScreen({ navigation }) {
               </TouchableOpacity>
             </View>
             <TouchableOpacity style={[styles.btn, { backgroundColor: C.primary }]} onPress={handleCheckPassword} disabled={loading} activeOpacity={0.85}>
-              <Text style={styles.btnText}>{loading ? 'Verifying…' : 'Verify Password'}</Text>
+              <Text style={styles.btnText}>{loading ? t('common.verifying') : t('account.verifyPassword')}</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {step === 'otp_channel' && (
           <View style={{ gap: 16 }}>
-            <Text style={[styles.stepTitle, { color: C.text }]}>Send OTP via</Text>
+            <Text style={[styles.stepTitle, { color: C.text }]}>{t('account.sendVia')}</Text>
             {['email', 'whatsapp'].map((ch) => (
               <TouchableOpacity
                 key={ch}
@@ -167,21 +168,21 @@ export default function DeleteAccountScreen({ navigation }) {
               >
                 <Ionicons name={ch === 'email' ? 'mail' : 'logo-whatsapp'} size={24} color={otpChannel === ch ? C.primary : C.text} />
                 <Text style={[styles.channelLabel, { color: C.text }]}>
-                  {ch === 'email' ? `Email (${user?.email || 'not set'})` : `WhatsApp (+91 ${user?.phone})`}
+                  {ch === 'email' ? t('account.emailOption', { email: user?.email || t('account.notSet') }) : t('account.whatsappOption', { phone: user?.phone ?? '' })}
                 </Text>
                 {otpChannel === ch && <Ionicons name="checkmark-circle" size={20} color={C.primary} />}
               </TouchableOpacity>
             ))}
             <TouchableOpacity style={[styles.btn, { backgroundColor: C.primary }]} onPress={handleSendOTP} disabled={loading} activeOpacity={0.85}>
-              <Text style={styles.btnText}>{loading ? 'Sending…' : 'Send OTP'}</Text>
+              <Text style={styles.btnText}>{loading ? t('common.sending') : t('auth.sendOtp')}</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {step === 'otp_verify' && (
           <View style={{ gap: 16 }}>
-            <Text style={[styles.stepTitle, { color: C.text }]}>Enter OTP</Text>
-            <Text style={[styles.stepSub, { color: C.textSecondary }]}>Enter the 6-digit code sent to your {otpChannel}</Text>
+            <Text style={[styles.stepTitle, { color: C.text }]}>{t('account.enterOtp')}</Text>
+            <Text style={[styles.stepSub, { color: C.textSecondary }]}>{otpChannel === 'email' ? t('account.otpSubEmail') : t('account.otpSubWhatsapp')}</Text>
             <TextInput
               style={[styles.otpInput, { borderColor: C.border, color: C.text }]}
               value={otp}
@@ -192,7 +193,7 @@ export default function DeleteAccountScreen({ navigation }) {
               textAlign="center"
             />
             <TouchableOpacity style={[styles.btn, { backgroundColor: C.primary }]} onPress={handleVerifyOTP} disabled={loading} activeOpacity={0.85}>
-              <Text style={styles.btnText}>{loading ? 'Verifying…' : 'Verify OTP'}</Text>
+              <Text style={styles.btnText}>{loading ? t('common.verifying') : t('auth.verifyOtp')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -201,16 +202,16 @@ export default function DeleteAccountScreen({ navigation }) {
           <View style={{ gap: 16 }}>
             <View style={[styles.warnCard, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
               <Ionicons name="skull" size={40} color="#DC2626" />
-              <Text style={styles.warnTitle}>Final Confirmation</Text>
+              <Text style={styles.warnTitle}>{t('account.confirmTitle')}</Text>
               <Text style={styles.warnBody}>
-                Your account will be permanently deleted in 30 days. This action cannot be undone after 30 days.
+                {t('account.confirmBody')}
               </Text>
             </View>
             <TouchableOpacity style={[styles.btn, { backgroundColor: '#DC2626' }]} onPress={handleConfirmDeletion} disabled={loading} activeOpacity={0.85}>
-              <Text style={styles.btnText}>{loading ? 'Processing…' : 'Yes, Schedule Deletion'}</Text>
+              <Text style={styles.btnText}>{loading ? t('account.processing') : t('account.confirmBtn')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.outlineBtn, { borderColor: C.border }]} onPress={() => navigation.goBack()} activeOpacity={0.85}>
-              <Text style={[styles.outlineBtnText, { color: C.text }]}>Cancel</Text>
+              <Text style={[styles.outlineBtnText, { color: C.text }]}>{t('common.cancel')}</Text>
             </TouchableOpacity>
           </View>
         )}

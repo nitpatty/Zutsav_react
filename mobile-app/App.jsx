@@ -99,18 +99,23 @@ function AppNavigation({ theme }) {
 export default function App() {
   const { hydrate } = useAuthStore();
   const { theme } = useThemeStore();
+  // Do not draw a first frame in English and then flip to the stored language: wait for the (fast) local read.
+  const languageReady = useLanguageStore((s) => s.ready);
 
   useEffect(() => {
     hydrate();
     setupFCM();
     useLanguageStore.getState().hydrate();
+    // hydrate() always settles; this only guards against a storage call that never returns (English is the fallback).
+    const guard = setTimeout(() => useLanguageStore.setState({ ready: true }), 3000);
+    return () => clearTimeout(guard);
   }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <I18nProvider>
-          <AppNavigation theme={theme} />
+          {languageReady ? <AppNavigation theme={theme} /> : null}
         </I18nProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

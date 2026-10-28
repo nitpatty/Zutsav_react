@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Image,
   TouchableOpacity, RefreshControl, TextInput, Share, Linking, useWindowDimensions
@@ -8,11 +8,15 @@ import Toast from 'react-native-toast-message';
 import RenderHtml from 'react-native-render-html';
 import api, { imageUrl } from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
-import { formatDate, timeAgo } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useLanguageStore } from '../../i18n/languageStore';
+import { useTranslation, useFormatters } from '../../i18n';
 
 export default function BlogDetailScreen({ route }) {
+  const { t } = useTranslation();
+  const { formatDate, timeAgo } = useFormatters();
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
   const { slug, blog: blogParam } = route.params || {};
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -32,18 +36,24 @@ export default function BlogDetailScreen({ route }) {
   const [posting,    setPosting]    = useState(false);
   const [sharing,    setSharing]    = useState(false);
 
+  const blogRef = useRef(blog);
+  blogRef.current = blog;
+  const requestRef = useRef(0); // only the latest blog request may update the screen (a slow old-language reply is dropped)
+
   const liked      = !!blog?.isLiked;
   const bookmarked = !!blog?.isBookmarked;
 
   const fetchBlog = async (silent = false) => {
     if (!slug) return;
+    const request = ++requestRef.current;
     try {
       if (!silent) setLoading(true);
       const { data } = await api.get(`/blogs/${slug}`);
+      if (request !== requestRef.current) return;
       setBlog(data.data || data.blog);
     } catch {
-      Toast.show({ type: 'error', text1: 'Could not load blog' });
-    } finally { setLoading(false); setRefreshing(false); }
+      if (request === requestRef.current) Toast.show({ type: 'error', text1: t('blogs.detailLoadFailed') });
+    } finally { if (request === requestRef.current) { setLoading(false); setRefreshing(false); } }
   };
 
   const fetchComments = async () => {
@@ -60,8 +70,10 @@ export default function BlogDetailScreen({ route }) {
     // already have a partial blog from the list card, do it silently so the
     // screen shows that instantly instead of a spinner, then swaps in the
     // full content once the request resolves.
-    if (slug) fetchBlog(!!blogParam);
-  }, [slug]);
+    // A blog already on screen (from the list card, or loaded earlier) stays visible while it is re-read — also when the UI
+    // language changes — so the comment draft, scroll position and like/bookmark state are never replaced by a spinner.
+    if (slug) fetchBlog(!!blogRef.current);
+  }, [slug, contentLanguage]);
 
   useEffect(() => {
     if (blog?._id) fetchComments();
@@ -72,7 +84,7 @@ export default function BlogDetailScreen({ route }) {
       const { data } = await api.post(`/blogs/${blog._id}/like`);
       setBlog((prev) => ({ ...prev, isLiked: data.liked, likesCount: data.likesCount }));
     } catch {
-      Toast.show({ type: 'error', text1: 'Could not update like' });
+      Toast.show({ type: 'error', text1: t('blogs.likeFailed') });
     }
   };
 
@@ -80,9 +92,9 @@ export default function BlogDetailScreen({ route }) {
     try {
       const { data } = await api.post(`/blogs/${blog._id}/bookmark`);
       setBlog((prev) => ({ ...prev, isBookmarked: data.bookmarked }));
-      Toast.show({ type: 'success', text1: data.bookmarked ? 'Saved to bookmarks' : 'Removed from bookmarks' });
+      Toast.show({ type: 'success', text1: data.bookmarked ? t('blogs.bookmarked') : t('blogs.unbookmarked') });
     } catch {
-      Toast.show({ type: 'error', text1: 'Could not update bookmark' });
+      Toast.show({ type: 'error', text1: t('blogs.bookmarkFailed') });
     }
   };
 
@@ -93,7 +105,7 @@ export default function BlogDetailScreen({ route }) {
       setBlog((prev) => ({ ...prev, shares: data.shares }));
       await Share.share({ message: `${blog.title}\n${data.shareUrl}`, url: data.shareUrl });
     } catch {
-      Toast.show({ type: 'error', text1: 'Could not share this post' });
+      Toast.show({ type: 'error', text1: t('blogs.shareFailed') });
     } finally {
       setSharing(false);
     }
@@ -107,7 +119,7 @@ export default function BlogDetailScreen({ route }) {
       setComments((prev) => [data.data || data.comment, ...prev]);
       setNewComment('');
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Comment failed' });
+      Toast.show({ type: 'error', text1: err.response?.data?.message || t('blogs.commentFailed') });
     } finally { setPosting(false); }
   };
 
@@ -145,10 +157,10 @@ export default function BlogDetailScreen({ route }) {
 
           <View style={styles.metaRow}>
             <Text style={[styles.metaText, { color: C.textSecondary }]}>
-              {blog.authorName || 'Zutsav Team'} · {formatDate(blog.publishedAt || blog.createdAt)}
+              {blog.authorName || t('blogs.defaultAuthor')} · {formatDate(blog.publishedAt || blog.createdAt)}
             </Text>
             {blog.readingTime && (
-              <Text style={[styles.metaText, { color: C.textSecondary }]}>{blog.readingTime} min read</Text>
+              <Text style={[styles.metaText, { color: C.textSecondary }]}>{t('blogs.minRead', { n: blog.readingTime })}</Text>
             )}
           </View>
 
@@ -203,6 +215,8 @@ export default function BlogDetailScreen({ route }) {
               style={[styles.actionBtn, { borderColor: liked ? C.primary : C.border, backgroundColor: liked ? C.primary + '15' : 'transparent' }]}
               onPress={handleLike}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={t('blogs.likeLabel')}
             >
               <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? C.primary : C.textSecondary} />
               <Text style={[styles.actionBtnText, { color: liked ? C.primary : C.textSecondary }]}>
@@ -217,7 +231,7 @@ export default function BlogDetailScreen({ route }) {
             >
               <Ionicons name={bookmarked ? 'bookmark' : 'bookmark-outline'} size={20} color={bookmarked ? C.primary : C.textSecondary} />
               <Text style={[styles.actionBtnText, { color: bookmarked ? C.primary : C.textSecondary }]}>
-                {bookmarked ? 'Saved' : 'Save'}
+                {bookmarked ? t('blogs.saved') : t('blogs.save')}
               </Text>
             </TouchableOpacity>
 
@@ -228,14 +242,14 @@ export default function BlogDetailScreen({ route }) {
               activeOpacity={0.8}
             >
               <Ionicons name="share-social-outline" size={20} color={C.textSecondary} />
-              <Text style={[styles.actionBtnText, { color: C.textSecondary }]}>Share</Text>
+              <Text style={[styles.actionBtnText, { color: C.textSecondary }]}>{t('blogs.share')}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Comments section */}
         <View style={[styles.commentsSection, { backgroundColor: C.surface, borderTopColor: C.border }]}>
-          <Text style={[styles.commentsTitle, { color: C.text }]}>Comments ({comments.length})</Text>
+          <Text style={[styles.commentsTitle, { color: C.text }]}>{t('blogs.comments', { n: comments.length })}</Text>
 
           {/* Add comment */}
           <View style={styles.addComment}>
@@ -243,7 +257,7 @@ export default function BlogDetailScreen({ route }) {
               style={[styles.commentInput, { borderColor: C.border, color: C.text, backgroundColor: C.background }]}
               value={newComment}
               onChangeText={setNewComment}
-              placeholder="Share your thoughts…"
+              placeholder={t('blogs.commentPlaceholder')}
               placeholderTextColor={C.textSecondary}
               multiline
             />
@@ -252,6 +266,8 @@ export default function BlogDetailScreen({ route }) {
               onPress={handleComment}
               disabled={posting || !newComment.trim()}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={t('blogs.sendComment')}
             >
               <Ionicons name={posting ? 'hourglass' : 'send'} size={18} color="#fff" />
             </TouchableOpacity>
@@ -262,7 +278,7 @@ export default function BlogDetailScreen({ route }) {
               <View key={c._id} style={[styles.commentCard, { borderBottomColor: C.border }]}>
                 <View style={styles.commentTop}>
                   <Text style={[styles.commentAuthor, { color: C.text }]}>
-                    {c.authorName || 'Anonymous'}
+                    {c.authorName || t('blogs.anonymous')}
                   </Text>
                   <Text style={[styles.commentTime, { color: C.textSecondary }]}>{timeAgo(c.createdAt)}</Text>
                 </View>

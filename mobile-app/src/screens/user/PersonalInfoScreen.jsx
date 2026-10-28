@@ -9,10 +9,15 @@ import PincodeInput from '../../components/shared/PincodeInput';
 import LocationSearch from '../../components/shared/LocationSearch';
 import MapPicker from '../../components/shared/MapPicker';
 import { reverseGeocodeLocation } from '../../services/geocodingService';
+import useLocationPin from '../../hooks/useLocationPin';
+import { changesAddress, coordsFromSelection, fieldsFromSelection, formatPinLabel } from '../../utils/locationPin';
+import { useTranslation } from '../../i18n';
+import { apiErrorMessage } from '../../utils/apiMessage';
 // Matches the website's Profile "Personal Details" card field-for-field:
 // Full Name, Email, Pincode (auto-fetch), State, City, District, Address.
 export default function PersonalInfoScreen() {
   const navigation = useNavigation();
+  const { t } = useTranslation();
   const { user, updateUser } = useAuthStore();
   const { theme } = useThemeStore();
   const C = theme.colors;
@@ -26,16 +31,28 @@ export default function PersonalInfoScreen() {
     district: user?.district || '',
     address:  user?.address  || '',
   });
-  const [coords, setCoords] = useState(
-    user?.latitude && user?.longitude ? { latitude: user.latitude, longitude: user.longitude } : null
-  );
+  // The saved pin belongs to the saved address: it stays valid until the user edits an address field by hand.
+  const pin = useLocationPin({ latitude: user?.latitude, longitude: user?.longitude });
   const [mapVisible, setMapVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // `set` is for programmatic fills (pincode lookup, search suggestion) and never touches the pin;
+  // `edit` is for fields the user types in, and marks the pin stale when an address field actually changes.
   const set = (patch) => setForm((p) => ({ ...p, ...patch }));
+  const edit = (patch) => {
+    if (changesAddress(form, patch)) pin.markStale();
+    set(patch);
+  };
+
+  const handlePlaceSelected = (selection) => {
+    const coords = coordsFromSelection(selection);
+    if (!coords) return; // never attach an invalid point
+    pin.select(coords, 'search');
+    setForm((p) => ({ ...p, ...fieldsFromSelection(selection, p.address) }));
+  };
 
   const handleSave = async () => {
-    if (!form.name.trim()) { Toast.show({ type: 'error', text1: 'Full name is required' }); return; }
+    if (!form.name.trim()) { Toast.show({ type: 'error', text1: t('profile.nameRequired') }); return; }
     try {
       setSaving(true);
       await updateUser({
@@ -46,13 +63,12 @@ export default function PersonalInfoScreen() {
         city:     form.city.trim() || undefined,
         district: form.district.trim() || undefined,
         address:  form.address.trim() || undefined,
-        latitude:  coords ? coords.latitude : null,
-        longitude: coords ? coords.longitude : null,
+        ...pin.coordsForSave(), // both numbers, or both null when the address changed since the pin was set
       });
-      Toast.show({ type: 'success', text1: 'Profile updated' });
+      Toast.show({ type: 'success', text1: t('profile.profileUpdated') });
       navigation.goBack();
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Update failed' });
+      Toast.show({ type: 'error', text1: apiErrorMessage(err, t('profile.updateFailed')) });
     } finally {
       setSaving(false);
     }
@@ -60,22 +76,22 @@ export default function PersonalInfoScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Personal Information" />
+      <ScreenHeader title={t('profile.personalInfo')} />
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 32 }}>
 
         <View>
-          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Full Name *</Text>
+          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('profile.fullNameRequired')}</Text>
           <TextInput
             style={[styles.input, { borderColor: C.border, color: C.text }]}
             value={form.name}
             onChangeText={(v) => set({ name: v })}
-            placeholder="Your full name"
+            placeholder={t('auth.fullNamePlaceholder')}
             placeholderTextColor={C.textSecondary}
           />
         </View>
 
         <View>
-          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Email</Text>
+          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('auth.channelEmail')}</Text>
           <TextInput
             style={[styles.input, { borderColor: C.border, color: C.text }]}
             value={form.email}
@@ -88,55 +104,51 @@ export default function PersonalInfoScreen() {
         </View>
 
         <View>
-          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Pincode</Text>
+          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('address.pincode')}</Text>
           <PincodeInput
             value={form.pincode}
-            onChange={(v) => set({ pincode: v })}
+            onChange={(v) => edit({ pincode: v })}
             onFill={({ state, city, district }) => set({ state, city, district })}
           />
         </View>
 
         <View style={styles.fieldRow}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>City</Text>
-            <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={form.city} onChangeText={(v) => set({ city: v })} placeholder="City" placeholderTextColor={C.textSecondary} />
+            <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('address.city')}</Text>
+            <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={form.city} onChangeText={(v) => edit({ city: v })} placeholder={t('address.city')} placeholderTextColor={C.textSecondary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>District</Text>
-            <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={form.district} onChangeText={(v) => set({ district: v })} placeholder="District" placeholderTextColor={C.textSecondary} />
+            <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('address.district')}</Text>
+            <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={form.district} onChangeText={(v) => edit({ district: v })} placeholder={t('address.district')} placeholderTextColor={C.textSecondary} />
           </View>
         </View>
 
         <View>
-          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>State</Text>
-          <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={form.state} onChangeText={(v) => set({ state: v })} placeholder="State" placeholderTextColor={C.textSecondary} />
+          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('address.state')}</Text>
+          <TextInput style={[styles.input, { borderColor: C.border, color: C.text }]} value={form.state} onChangeText={(v) => edit({ state: v })} placeholder={t('address.state')} placeholderTextColor={C.textSecondary} />
         </View>
 
         <View>
-          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Search Location</Text>
-          <LocationSearch
-            onSelect={async ({ label, lat, lng }) => {
-              setCoords({ latitude: lat, longitude: lng });
-              if (!form.address.trim()) setForm((p) => ({ ...p, address: label }));
-              const { displayName } = await reverseGeocodeLocation(lat, lng);
-              // offer reverse-geocoded only if address empty
-            }}
-          />
+          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('location.searchLabel')}</Text>
+          <LocationSearch onSelect={handlePlaceSelected} />
         </View>
 
-        <TouchableOpacity style={[styles.mapBtn, { borderColor: C.border }]} onPress={() => setMapVisible(true)} activeOpacity={0.85}>
+        <TouchableOpacity style={[styles.mapBtn, { borderColor: C.border }]} onPress={() => setMapVisible(true)} activeOpacity={0.85} accessibilityRole="button">
           <Text style={{ color: C.text, fontWeight: '700', fontSize: 13 }}>
-            {coords ? `📍 ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` : 'Pick on Map'}
+            {formatPinLabel(pin.coords, pin.source, t)}
           </Text>
         </TouchableOpacity>
+        {pin.stale && pin.coords && (
+          <Text style={{ color: '#B45309', fontSize: 12 }} testID="stale-pin-notice">{t('location.stalePinNotice')}</Text>
+        )}
 
         <View>
-          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>Complete Address</Text>
+          <Text style={[styles.fieldLabel, { color: C.textSecondary }]}>{t('profile.completeAddress')}</Text>
           <TextInput
             style={[styles.input, { borderColor: C.border, color: C.text, height: 80, textAlignVertical: 'top' }]}
             value={form.address}
-            onChangeText={(v) => set({ address: v })}
-            placeholder="House no., street, area…"
+            onChangeText={(v) => edit({ address: v })}
+            placeholder={t('address.placeholder')}
             placeholderTextColor={C.textSecondary}
             multiline
           />
@@ -148,15 +160,15 @@ export default function PersonalInfoScreen() {
           disabled={saving}
           activeOpacity={0.85}
         >
-          <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
+          <Text style={styles.saveBtnText}>{saving ? t('profile.saving') : t('profile.saveChanges')}</Text>
         </TouchableOpacity>
       </ScrollView>
 
       <MapPicker
         visible={mapVisible}
-        initialCoords={coords}
-        onConfirm={async (c) => {
-          setCoords(c);
+        initialCoords={pin.coords}
+        onConfirm={async (c, meta) => {
+          pin.select(c, meta?.source === 'gps' ? 'gps' : 'map');
           setMapVisible(false);
           if (!form.address.trim()) {
             const { displayName } = await reverseGeocodeLocation(c.latitude, c.longitude);

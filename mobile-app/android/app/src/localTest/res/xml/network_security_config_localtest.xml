@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  LOCAL-NETWORK TESTING VARIANT ONLY. Cleartext HTTP is permitted to this one LAN address (the developer machine running the backend
+  on port 5000, the same address as EXPO_PUBLIC_API_URL / EXPO_PUBLIC_BASE_URL in mobile-app/.env) and to nothing else.
+  If the machine's LAN address changes, update the <domain> below AND the build-time URLs; the build refuses a mismatch.
+  Android applies this on API 24+. (On API 23 the manifest's usesCleartextTraffic="false" stays in force, so cleartext stays blocked.)
+-->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false" />
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">192.168.0.192</domain>
+  </domain-config>
+</network-security-config>

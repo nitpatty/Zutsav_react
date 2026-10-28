@@ -9,15 +9,17 @@ import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useTranslation, useFormatters } from '../../i18n';
+import { RELATIONSHIP_VALUES, relationshipLabel } from '../../utils/familyLabels';
 
 /* ── Relationship options ─────────────────────────────────────────────── */
-const RELATIONSHIPS = [
-  'Father', 'Mother', 'Son', 'Daughter', 'Spouse',
-  'Brother', 'Sister', 'Grandfather', 'Grandmother', 'Other',
-];
+// The values are what the API stores and receives; only their displayed label is translated.
+const RELATIONSHIPS = RELATIONSHIP_VALUES;
 
 /* ── Main screen ─────────────────────────────────────────────────────── */
 export default function FamilyMemberFormScreen({ route, navigation }) {
+  const { t } = useTranslation();
+  const { formatDateWithOptions } = useFormatters();
   const { theme } = useThemeStore();
   const C = theme.colors;
 
@@ -35,8 +37,9 @@ export default function FamilyMemberFormScreen({ route, navigation }) {
 
   const validate = () => {
     const errs = {};
-    if (!name.trim()) errs.name = 'Name is required';
-    if (!relationship) errs.relationship = 'Relationship is required';
+    // keys (not text) are stored, so a message already on screen follows a language change
+    if (!name.trim()) errs.name = 'family.nameRequired';
+    if (!relationship) errs.relationship = 'family.relationshipRequired';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -54,16 +57,16 @@ export default function FamilyMemberFormScreen({ route, navigation }) {
 
       if (isEditing) {
         await api.patch(`/users/family-members/${member._id}`, payload);
-        Toast.show({ type: 'success', text1: 'Family member updated!' });
+        Toast.show({ type: 'success', text1: t('family.updated') });
       } else {
         await api.post('/users/family-members', payload);
-        Toast.show({ type: 'success', text1: 'Family member added!' });
+        Toast.show({ type: 'success', text1: t('family.added') });
       }
       navigation.goBack();
     } catch (err) {
       Toast.show({
         type: 'error',
-        text1: err.response?.data?.message || 'Failed to save',
+        text1: err.response?.data?.message || t('family.saveFailed'),
       });
     } finally {
       setSaving(false);
@@ -79,7 +82,7 @@ export default function FamilyMemberFormScreen({ route, navigation }) {
 
   const formatDate = (date) => {
     if (!date) return '';
-    return date.toLocaleDateString('en-IN', {
+    return formatDateWithOptions(date, {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
@@ -89,21 +92,21 @@ export default function FamilyMemberFormScreen({ route, navigation }) {
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
       <ScreenHeader
-        title={isEditing ? 'Edit Family Member' : 'Add Family Member'}
+        title={isEditing ? t('family.editTitle') : t('family.addTitle')}
         showBack
       />
 
       <ScrollView contentContainerStyle={styles.content}>
         {/* Name */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, { color: C.textSecondary }]}>Full Name *</Text>
+          <Text style={[styles.label, { color: C.textSecondary }]}>{t('profile.fullNameRequired')}</Text>
           <TextInput
             style={[styles.input, {
               backgroundColor: C.surface,
               color: C.text,
               borderColor: errors.name ? (C.error || '#DC2626') : C.borderLight,
             }]}
-            placeholder="Enter full name"
+            placeholder={t('family.namePlaceholder')}
             placeholderTextColor={C.textLight}
             value={name}
             onChangeText={(text) => {
@@ -113,14 +116,14 @@ export default function FamilyMemberFormScreen({ route, navigation }) {
           />
           {errors.name && (
             <Text style={[styles.errorText, { color: C.error || '#DC2626' }]}>
-              {errors.name}
+              {t(errors.name)}
             </Text>
           )}
         </View>
 
         {/* Relationship */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, { color: C.textSecondary }]}>Relationship *</Text>
+          <Text style={[styles.label, { color: C.textSecondary }]}>{t('family.relationshipLabel')}</Text>
           <View style={styles.relationshipGrid}>
             {RELATIONSHIPS.map((r) => (
               <TouchableOpacity
@@ -144,21 +147,21 @@ export default function FamilyMemberFormScreen({ route, navigation }) {
                     { color: relationship === r ? '#fff' : C.text },
                   ]}
                 >
-                  {r}
+                  {relationshipLabel(r, t)}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
           {errors.relationship && (
             <Text style={[styles.errorText, { color: C.error || '#DC2626' }]}>
-              {errors.relationship}
+              {t(errors.relationship)}
             </Text>
           )}
         </View>
 
         {/* Date of Birth */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, { color: C.textSecondary }]}>Date of Birth (optional)</Text>
+          <Text style={[styles.label, { color: C.textSecondary }]}>{t('family.dobLabel')}</Text>
           <TouchableOpacity
             style={[styles.dateInput, {
               backgroundColor: C.surface,
@@ -169,10 +172,10 @@ export default function FamilyMemberFormScreen({ route, navigation }) {
           >
             <Ionicons name="calendar-outline" size={18} color={C.textSecondary} />
             <Text style={[styles.dateText, { color: dateOfBirth ? C.text : C.textLight }]}>
-              {dateOfBirth ? formatDate(dateOfBirth) : 'Select date of birth'}
+              {dateOfBirth ? formatDate(dateOfBirth) : t('family.dobPlaceholder')}
             </Text>
             {dateOfBirth && (
-              <TouchableOpacity onPress={() => setDateOfBirth(null)}>
+              <TouchableOpacity onPress={() => setDateOfBirth(null)} accessibilityRole="button" accessibilityLabel={t('family.clearDob')}>
                 <Ionicons name="close-circle" size={18} color={C.textLight} />
               </TouchableOpacity>
             )}
@@ -203,7 +206,7 @@ export default function FamilyMemberFormScreen({ route, navigation }) {
             <>
               <Ionicons name={isEditing ? 'checkmark-circle' : 'add-circle'} size={18} color="#fff" />
               <Text style={styles.submitBtnText}>
-                {isEditing ? 'Update Member' : 'Add Member'}
+                {isEditing ? t('family.updateBtn') : t('family.addBtn')}
               </Text>
             </>
           )}

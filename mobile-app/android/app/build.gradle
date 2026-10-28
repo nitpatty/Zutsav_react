@@ -25,6 +25,15 @@ def getRNVersion() {
 }
 def rnVersion = getRNVersion()
 
+// ── Release signing values: read from the environment first, then Gradle properties. Never printed. ──
+def buildSecret(String name) {
+  def value = System.getenv(name) ?: findProperty(name)
+  return value == null ? '' : value.toString().trim()
+}
+def releaseSigningValue = { String name -> buildSecret(name) }
+def releaseSigningProvided = ['ZUTSAV_RELEASE_STORE_FILE', 'ZUTSAV_RELEASE_STORE_PASSWORD', 'ZUTSAV_RELEASE_KEY_ALIAS', 'ZUTSAV_RELEASE_KEY_PASSWORD']
+    .every { !buildSecret(it).isEmpty() }
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -124,19 +133,39 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Local release signing, only when ALL four values are provided (environment or Gradle properties).
+        // On EAS Build the managed credentials are injected on top of this and take over `release`.
+        if (releaseSigningProvided) {
+            release {
+                storeFile file(releaseSigningValue('ZUTSAV_RELEASE_STORE_FILE'))
+                storePassword releaseSigningValue('ZUTSAV_RELEASE_STORE_PASSWORD')
+                keyAlias releaseSigningValue('ZUTSAV_RELEASE_KEY_ALIAS')
+                keyPassword releaseSigningValue('ZUTSAV_RELEASE_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Never the debug keystore. Without credentials this is null and packaging a release is refused
+            // (see the taskGraph check below) instead of producing a debug-signed "release".
+            signingConfig releaseSigningProvided ? signingConfigs.release : null
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
+        }
+        // Standalone INTERNAL testing build for a backend on the local Wi-Fi (`./gradlew assembleLocalTest`). It is `release` plus
+        // exactly one difference: src/localTest/ adds a network-security-config that permits cleartext HTTP to the single LAN host
+        // listed there (every other host stays HTTPS-only). The `release` build type and the main manifest are not touched, and this
+        // variant needs the same release signing (never the debug key) — see the second taskGraph check at the end of this file.
+        localTest {
+            initWith release
+            matchingFallbacks = ['release']
+            signingConfig releaseSigningProvided ? signingConfigs.release : null
+            versionNameSuffix '-localtest'
         }
     }
     packagingOptions {
@@ -198,4 +227,44 @@ dependencies {
 if (rnVersion < versionToNumber(0, 75, 0)) {
     apply from: new File(["node", "--print", "require.resolve('@react-native-community/cli-platform-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), "../native_modules.gradle");
     applyNativeModulesAppBuildGradle(project)
+}
+
+// Refuse to package an unsigned or debug-signed release. EAS Build injects the managed signing config at
+// configuration time, so this only trips for local `assembleRelease` / `bundleRelease` without credentials.
+gradle.taskGraph.whenReady { graph ->
+    def packagesRelease = graph.allTasks.any { it.project == project && it.name in ['assembleRelease', 'bundleRelease', 'packageRelease', 'packageReleaseBundle'] }
+    if (!packagesRelease) return
+    def releaseSigning = android.buildTypes.release.signingConfig
+    if (releaseSigning == null || releaseSigning.name == 'debug') {
+        throw new GradleException(
+            'Release signing is not configured. Provide ZUTSAV_RELEASE_STORE_FILE, ZUTSAV_RELEASE_STORE_PASSWORD, ' +
+            'ZUTSAV_RELEASE_KEY_ALIAS and ZUTSAV_RELEASE_KEY_PASSWORD (environment or Gradle properties), or build with EAS ' +
+            'Build, which injects its managed credentials. A release build is never signed with the debug keystore.')
+    }
+}
+
+// The local-testing variant gets the same signing requirement as release, and its cleartext exception must match the backend host the
+// JS bundle is being built for: the API and base URLs (build-time EXPO_PUBLIC_*) must be http:// URLs whose host is listed in
+// src/localTest/res/xml/network_security_config_localtest.xml. Refusing here is safer than an APK that cannot reach its own backend
+// or that quietly depends on a host the config does not name.
+gradle.taskGraph.whenReady { graph ->
+    def packagesLocalTest = graph.allTasks.any { it.project == project && it.name in ['assembleLocalTest', 'packageLocalTest', 'bundleLocalTest', 'packageLocalTestBundle'] }
+    if (!packagesLocalTest) return
+    def localTestSigning = android.buildTypes.localTest.signingConfig
+    if (localTestSigning == null || localTestSigning.name == 'debug') {
+        throw new GradleException(
+            'Release signing is not configured for the local-testing build. Provide ZUTSAV_RELEASE_STORE_FILE, ZUTSAV_RELEASE_STORE_PASSWORD, ' +
+            'ZUTSAV_RELEASE_KEY_ALIAS and ZUTSAV_RELEASE_KEY_PASSWORD. It is never signed with the debug keystore.')
+    }
+    def permitted = new XmlSlurper().parse(file('src/localTest/res/xml/network_security_config_localtest.xml'))
+        .'domain-config'.domain*.text()*.trim()
+    ['EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_BASE_URL'].each { name ->
+        def value = (System.getenv(name) ?: '').trim()
+        def uri = value ? new URI(value) : null
+        if (uri == null || uri.scheme != 'http' || uri.host == null || !(uri.host in permitted)) {
+            throw new GradleException(
+                "The local-testing build needs ${name} set to an http:// URL on a host listed in " +
+                'src/localTest/res/xml/network_security_config_localtest.xml (currently: ' + permitted.join(', ') + ').')
+        }
+    }
 }

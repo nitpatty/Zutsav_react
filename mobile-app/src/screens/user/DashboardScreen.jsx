@@ -15,16 +15,18 @@ import { useThemeStore } from '../../store/themeStore';
 import { formatCurrency, daysUntil, bookingStatusColor, formatStatus, getInitials } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import NotificationBell from '../../components/NotificationBell';
+import { useLanguageStore } from '../../i18n/languageStore';
+import { useTranslation, useFormatters } from '../../i18n';
 
 // ── Static content config (no business logic — presentational only) ──
 const QUICK_ACTIONS = [
-  { key: 'pooja',    label: 'Book Pooja',  sub: 'Find & Book',      icon: 'flame',           tone: 'primary',   nav: 'PoojaList' },
-  { key: 'panchang', label: 'Panchang',    sub: 'Check Tithi',      icon: 'calendar',        tone: 'info',      nav: 'Panchang' },
-  { key: 'temples',  label: 'Temples',     sub: 'Explore Temples',  emoji: '🛕',             tone: 'success',   nav: 'Temples' },
-  { key: 'livestreams', label: 'Live Poojas', sub: 'Temple Livestreams', icon: 'videocam',    tone: 'secondary', nav: 'Livestreams' },
-  { key: 'shop',     label: 'Marketplace', sub: 'Samagri & Kits',   icon: 'storefront',      tone: 'warning',   nav: 'ShopTab' },
-  { key: 'orders',   label: 'Orders',      sub: 'My Purchases',     icon: 'receipt',         tone: 'secondary', nav: 'ShopTab', params: { screen: 'Orders' } },
-  { key: 'ai',       label: 'AI Guru',     sub: 'Ask Anything',     icon: 'sparkles',        tone: 'accent',    nav: 'AIAssistant' },
+  { key: 'pooja',    labelKey: 'home.quickBookPooja',  descKey: 'home.quickBookPoojaSub',  icon: 'flame',           tone: 'primary',   nav: 'PoojaList' },
+  { key: 'panchang', labelKey: 'panchang.title',       descKey: 'home.quickPanchangSub',   icon: 'calendar',        tone: 'info',      nav: 'Panchang' },
+  { key: 'temples',  labelKey: 'temples.title',        descKey: 'home.quickTemplesSub',    emoji: '🛕',             tone: 'success',   nav: 'Temples' },
+  { key: 'livestreams', labelKey: 'livestreams.title', descKey: 'home.quickLiveSub',       icon: 'videocam',    tone: 'secondary', nav: 'Livestreams' },
+  { key: 'shop',     labelKey: 'home.quickMarketplace', descKey: 'home.quickMarketplaceSub', icon: 'storefront',      tone: 'warning',   nav: 'ShopTab' },
+  { key: 'orders',   labelKey: 'home.quickOrders',     descKey: 'home.quickOrdersSub',     icon: 'receipt',         tone: 'secondary', nav: 'ShopTab', params: { screen: 'Orders' } },
+  { key: 'ai',       labelKey: 'home.quickAi',         descKey: 'home.quickAiSub',         icon: 'sparkles',        tone: 'accent',    nav: 'AIAssistant' },
 ];
 
 const FEST_GRADIENTS = [
@@ -93,6 +95,7 @@ function Particles() {
 
 // ── Quick action card with press micro-interaction ─────────────
 function ActionCard({ item, C, onPress }) {
+  const { t } = useTranslation();
   const scale = useRef(new Animated.Value(1)).current;
   const pressIn  = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 40, bounciness: 4 }).start();
   const pressOut = () => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, speed: 30, bounciness: 6 }).start();
@@ -115,8 +118,8 @@ function ActionCard({ item, C, onPress }) {
           )}
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.actionLabel, { color: C.text }]} numberOfLines={1}>{item.label}</Text>
-          <Text style={[styles.actionSub, { color: C.textSecondary }]} numberOfLines={1}>{item.sub}</Text>
+          <Text style={[styles.actionLabel, { color: C.text }]} numberOfLines={1}>{t(item.labelKey)}</Text>
+          <Text style={[styles.actionSub, { color: C.textSecondary }]} numberOfLines={1}>{t(item.descKey)}</Text>
         </View>
       </Pressable>
     </Animated.View>
@@ -124,13 +127,14 @@ function ActionCard({ item, C, onPress }) {
 }
 
 function Section({ title, onSeeAll, children, C }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: C.text }]}>{title}</Text>
         {onSeeAll && (
           <TouchableOpacity onPress={onSeeAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.seeAllBtn}>
-            <Text style={[styles.seeAll, { color: C.primary }]}>See all</Text>
+            <Text style={[styles.seeAll, { color: C.primary }]}>{t('home.seeAll')}</Text>
             <Ionicons name="chevron-forward" size={13} color={C.primary} />
           </TouchableOpacity>
         )}
@@ -141,6 +145,8 @@ function Section({ title, onSeeAll, children, C }) {
 }
 
 function FestivalCard({ f, index, C, onPress }) {
+  const { t } = useTranslation();
+  const { formatDateWithOptions } = useFormatters();
   const diff = f.date ? daysUntil(f.date) : null;
   const showCountdown = diff !== null && diff >= 0 && diff <= 14;
   const colors = FEST_GRADIENTS[index % FEST_GRADIENTS.length];
@@ -154,7 +160,7 @@ function FestivalCard({ f, index, C, onPress }) {
         </View>
         {showCountdown && (
           <View style={[styles.festCountdown, diff === 0 && { backgroundColor: '#DC2626' }]}>
-            <Text style={styles.festCountdownText}>{diff === 0 ? 'Today!' : `${diff}d left`}</Text>
+            <Text style={styles.festCountdownText}>{diff === 0 ? t('festivals.today') : t('home.daysLeft', { n: diff })}</Text>
           </View>
         )}
         <View style={{ marginTop: 'auto' }}>
@@ -162,7 +168,7 @@ function FestivalCard({ f, index, C, onPress }) {
           <View style={styles.festDateChip}>
             <Ionicons name="calendar-outline" size={11} color="#fff" />
             <Text style={styles.festDateText}>
-              {f.date ? new Date(f.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : ''}
+              {f.date ? formatDateWithOptions(new Date(f.date), { day: 'numeric', month: 'short' }) : ''}
             </Text>
           </View>
         </View>
@@ -172,6 +178,7 @@ function FestivalCard({ f, index, C, onPress }) {
 }
 
 function PoojaCard({ p, C, onPress }) {
+  const { t } = useTranslation();
   const [liked, setLiked] = useState(false);
   const price = p.salePrice || p.price || 0;
   const mrp = p.mrp && p.mrp > price ? p.mrp : null;
@@ -216,7 +223,7 @@ function PoojaCard({ p, C, onPress }) {
             <Text style={[styles.poojaPrice, { color: C.primary }]}>{formatCurrency(price)}</Text>
           </View>
           <TouchableOpacity style={[styles.bookNowBtn, { backgroundColor: C.primary }]} onPress={onPress} activeOpacity={0.85}>
-            <Text style={styles.bookNowText}>Book Now</Text>
+            <Text style={styles.bookNowText}>{t('home.bookNow')}</Text>
           </TouchableOpacity>
         </View>
       </Pressable>
@@ -225,6 +232,8 @@ function PoojaCard({ p, C, onPress }) {
 }
 
 function BookingRow({ b, C, onPress }) {
+  const { t } = useTranslation();
+  const { formatDateWithOptions } = useFormatters();
   const status = b.status || 'pending_payment';
   const color = bookingStatusColor[status] || C.primary;
 
@@ -239,11 +248,11 @@ function BookingRow({ b, C, onPress }) {
         </View>
       )}
       <View style={{ flex: 1 }}>
-        <Text style={[styles.bookingPuja, { color: C.text }]} numberOfLines={1}>{b.poojaId?.name || 'Pooja'}</Text>
+        <Text style={[styles.bookingPuja, { color: C.text }]} numberOfLines={1}>{b.poojaId?.name || t('home.poojaFallback')}</Text>
         <View style={styles.bookingDateRow}>
           <Ionicons name="calendar-outline" size={11} color={C.textSecondary} />
           <Text style={[styles.bookingDate, { color: C.textSecondary }]} numberOfLines={1}>
-            {b.scheduledDate ? new Date(b.scheduledDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+            {b.scheduledDate ? formatDateWithOptions(new Date(b.scheduledDate), { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
             {b.scheduledTime ? ` · ${b.scheduledTime}` : ''}
           </Text>
         </View>
@@ -258,6 +267,9 @@ function BookingRow({ b, C, onPress }) {
 }
 
 export default function DashboardScreen() {
+  const contentLanguage = useLanguageStore((s) => s.language); // refetch server-translated content when the UI language changes
+  const { t } = useTranslation();
+  const { formatDateWithOptions } = useFormatters();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
@@ -282,28 +294,28 @@ export default function DashboardScreen() {
         festivals: festRes.data.data   || festRes.data.festivals  || [],
       });
     } catch (err) {
-      if (!silent) Toast.show({ type: 'error', text1: 'Could not load dashboard' });
+      if (!silent) Toast.show({ type: 'error', text1: t('home.loadFailed') });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
-  useEffect(() => { fetchDashboard(); }, []);
+  useEffect(() => { fetchDashboard(); }, [contentLanguage]);
 
   const onRefresh = () => { setRefreshing(true); fetchDashboard(true); };
 
-  if (loading) return <LoadingSpinner fullScreen text="Loading…" />;
+  if (loading) return <LoadingSpinner fullScreen text={t('home.loading')} />;
 
   const greeting = () => {
     const h = new Date().getHours();
-    if (h < 12) return 'Good Morning';
-    if (h < 17) return 'Good Afternoon';
-    return 'Good Evening';
+    if (h < 12) return t('home.greetingMorning');
+    if (h < 17) return t('home.greetingAfternoon');
+    return t('home.greetingEvening');
   };
 
-  const todayStr = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
-  const firstName = user?.name?.split(' ')[0] || 'Devotee';
+  const todayStr = formatDateWithOptions(new Date(), { weekday: 'long', day: 'numeric', month: 'long' });
+  const firstName = user?.name?.split(' ')[0] || t('auth.devotee');
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
@@ -362,7 +374,7 @@ export default function DashboardScreen() {
         {/* ── Upcoming festivals ───────────────────────────────── */}
         {data?.festivals?.length > 0 && (
           <FadeInView delay={140}>
-            <Section title="Upcoming Festivals" onSeeAll={() => navigation.navigate('Festivals')} C={C}>
+            <Section title={t('home.sectionFestivals')} onSeeAll={() => navigation.navigate('Festivals')} C={C}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
                 {data.festivals.map((f, i) => (
                   <FestivalCard key={f._id} f={f} index={i} C={C} onPress={() => navigation.navigate('FestivalDetail', { festival: f })} />
@@ -375,7 +387,7 @@ export default function DashboardScreen() {
         {/* ── Available poojas ─────────────────────────────────── */}
         {data?.poojas?.length > 0 && (
           <FadeInView delay={200}>
-            <Section title="Available Poojas" onSeeAll={() => navigation.navigate('PoojaList')} C={C}>
+            <Section title={t('home.sectionPoojas')} onSeeAll={() => navigation.navigate('PoojaList')} C={C}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 14 }}>
                 {data.poojas.map((p) => (
                   <PoojaCard key={p._id} p={p} C={C} onPress={() => navigation.navigate('BookingFlow', { poojaId: p._id, pooja: p })} />
@@ -388,7 +400,7 @@ export default function DashboardScreen() {
         {/* ── Recent bookings ──────────────────────────────────── */}
         {data?.bookings?.length > 0 && (
           <FadeInView delay={260}>
-            <Section title="Recent Bookings" onSeeAll={() => navigation.navigate('BookingsTab')} C={C}>
+            <Section title={t('home.sectionBookings')} onSeeAll={() => navigation.navigate('BookingsTab')} C={C}>
               <View style={{ paddingHorizontal: 16, gap: 10 }}>
                 {data.bookings.map((b) => (
                   <BookingRow key={b._id} b={b} C={C} onPress={() => navigation.navigate('BookingDetail', { bookingId: b._id })} />
@@ -409,8 +421,8 @@ export default function DashboardScreen() {
               <Ionicons name="newspaper-outline" size={20} color={C.accent} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.blogTitle, { color: C.text }]}>Stories & Spiritual Wisdom</Text>
-              <Text style={[styles.blogSub, { color: C.textSecondary }]}>Read our latest devotional articles</Text>
+              <Text style={[styles.blogTitle, { color: C.text }]}>{t('home.blogTitle')}</Text>
+              <Text style={[styles.blogSub, { color: C.textSecondary }]}>{t('home.blogSub')}</Text>
             </View>
             <Ionicons name="arrow-forward" size={16} color={C.textLight} />
           </TouchableOpacity>
@@ -421,12 +433,12 @@ export default function DashboardScreen() {
           <LinearGradient colors={[C.primary, C.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.trustCard}>
             <View style={styles.trustGlow} pointerEvents="none" />
             <View style={{ flex: 1 }}>
-              <Text style={styles.trustTitle}>100% Trusted & Secure</Text>
+              <Text style={styles.trustTitle}>{t('home.trustTitle')}</Text>
               <View style={{ gap: 8, marginTop: 12 }}>
                 {[
-                  { icon: 'shield-checkmark', label: 'Verified Pandits' },
-                  { icon: 'lock-closed',      label: 'Secure Payments' },
-                  { icon: 'headset',          label: '24×7 Support' },
+                  { icon: 'shield-checkmark', label: t('home.trustPandits') },
+                  { icon: 'lock-closed',      label: t('home.trustPayments') },
+                  { icon: 'headset',          label: t('home.trustSupport') },
                 ].map((f) => (
                   <View key={f.label} style={styles.trustFeatureRow}>
                     <View style={styles.trustIconWrap}>

@@ -29,6 +29,8 @@ import TemplesScreen         from '../screens/user/TemplesScreen';
 import TempleDetailScreen    from '../screens/user/TempleDetailScreen';
 import NotificationsScreen   from '../screens/user/NotificationsScreen';
 import SettingsScreen        from '../screens/user/SettingsScreen';
+import LegalResourcesScreen  from '../screens/user/LegalResourcesScreen';
+import LegalDocumentScreen   from '../screens/user/LegalDocumentScreen';
 import AIAssistantScreen     from '../screens/user/AIAssistantScreen';
 import DeleteAccountScreen   from '../screens/user/DeleteAccountScreen';
 import LivestreamsScreen     from '../screens/user/LivestreamsScreen';
@@ -40,6 +42,7 @@ import FamilyMembersScreen  from '../screens/user/FamilyMembersScreen';
 import FamilyMemberFormScreen from '../screens/user/FamilyMemberFormScreen';
 import MyReferralsScreen    from '../screens/user/MyReferralsScreen';
 import WalletScreen         from '../screens/user/WalletScreen';
+import { useTranslation } from '../i18n';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -104,6 +107,8 @@ function ProfileStack() {
       <Stack.Screen name="FamilyMemberForm"  component={FamilyMemberFormScreen} />
       <Stack.Screen name="ChangePassword"    component={ChangePasswordScreen} />
       <Stack.Screen name="Settings"         component={SettingsScreen} />
+      <Stack.Screen name="LegalResources"   component={LegalResourcesScreen} />
+      <Stack.Screen name="LegalDocument"    component={LegalDocumentScreen} />
       <Stack.Screen name="DeleteAccount"    component={DeleteAccountScreen} />
       <Stack.Screen name="MyReferrals"       component={MyReferralsScreen} />
       <Stack.Screen name="Wallet"            component={WalletScreen} />
@@ -136,6 +141,7 @@ function BadgeIcon({ name, color, size, count, focused, tint }) {
 }
 
 export default function UserNavigator() {
+  const { t } = useTranslation(); // tab labels follow the UI language
   const { theme } = useThemeStore();
   const C = theme.colors;
   const { unreadCount } = useNotificationStore();
@@ -161,7 +167,7 @@ export default function UserNavigator() {
         name="HomeTab"
         component={HomeStack}
         options={{
-          title: 'Home',
+          title: t('nav.home'),
           tabBarIcon: ({ color, size, focused }) => (
             <BadgeIcon name={focused ? 'home' : 'home-outline'} size={size} color={color} count={0} focused={focused} tint={C.tabBarActive} />
           ),
@@ -171,7 +177,7 @@ export default function UserNavigator() {
         name="BookingsTab"
         component={BookingsStack}
         options={{
-          title: 'Bookings',
+          title: t('nav.bookings'),
           tabBarIcon: ({ color, size, focused }) => (
             <BadgeIcon name={focused ? 'calendar' : 'calendar-outline'} size={size} color={color} count={0} focused={focused} tint={C.tabBarActive} />
           ),
@@ -181,7 +187,7 @@ export default function UserNavigator() {
         name="ShopTab"
         component={ShopStack}
         options={{
-          title: 'Shop',
+          title: t('nav.shop'),
           tabBarIcon: ({ color, size, focused }) => (
             <BadgeIcon name={focused ? 'bag-handle' : 'bag-handle-outline'} size={size} color={color} count={cartCount} focused={focused} tint={C.tabBarActive} />
           ),
@@ -191,7 +197,7 @@ export default function UserNavigator() {
         name="ProfileTab"
         component={ProfileStack}
         options={{
-          title: 'Profile',
+          title: t('nav.profile'),
           tabBarIcon: ({ color, size, focused }) => (
             <BadgeIcon name={focused ? 'person-circle' : 'person-circle-outline'} size={size} color={color} count={unreadCount} focused={focused} tint={C.tabBarActive} />
           ),

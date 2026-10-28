@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet, ActivityIndicator } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeStore } from '../../store/themeStore';
 import usePincodeLookup from '../../hooks/usePincodeLookup';
+import { useTranslation } from '../../i18n';
 
 // RN port of the website's PincodeInput — same props contract:
 //   value    – current pincode string
@@ -10,6 +11,7 @@ import usePincodeLookup from '../../hooks/usePincodeLookup';
 //   onFill   – ({ state, city, district }) => void
 //   error    – string | null (external validation error)
 export default function PincodeInput({ value, onChange, onFill, error }) {
+  const { t } = useTranslation();
   const { theme } = useThemeStore();
   const C = theme.colors;
   const { loading, data, error: apiError } = usePincodeLookup(value);
@@ -34,7 +36,7 @@ export default function PincodeInput({ value, onChange, onFill, error }) {
           style={[styles.input, { color: C.text }]}
           value={value}
           onChangeText={(v) => onChange(v.replace(/\D/g, '').slice(0, 6))}
-          placeholder="Enter 6-digit pincode"
+          placeholder={t('location.pincodePlaceholder')}
           placeholderTextColor={C.textSecondary}
           keyboardType="number-pad"
           maxLength={6}
@@ -47,11 +49,11 @@ export default function PincodeInput({ value, onChange, onFill, error }) {
       {data ? (
         <View style={styles.chipRow}>
           {[
-            ['District', data.district],
-            ['City', data.city],
-            ['State', data.state],
-          ].filter(([, v]) => v).map(([label, v]) => (
-            <View key={label} style={[styles.chip, { backgroundColor: C.primary + '15', borderColor: C.primary + '40' }]}>
+            ['district', t('address.district'), data.district],
+            ['city', t('address.city'), data.city],
+            ['state', t('address.state'), data.state],
+          ].filter(([, , v]) => v).map(([id, label, v]) => (
+            <View key={id} style={[styles.chip, { backgroundColor: C.primary + '15', borderColor: C.primary + '40' }]}>
               <Text style={[styles.chipText, { color: C.primary }]}>{label}: {v}</Text>
             </View>
           ))}

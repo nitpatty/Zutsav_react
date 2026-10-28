@@ -380,9 +380,11 @@ export default function PanditKYCScreen() {
                   size={18}
                   color={selectedDecision === opt.value ? C.primary : C.textSecondary}
                 />
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={[styles.docLabel, { color: C.text }]}>{opt.title}</Text>
+                {/* minWidth: 0 lets this column shrink inside the card instead of being pushed past the screen edge; the title row
+                    wraps, so on a narrow screen the badge drops under the title rather than overflowing and being clipped. */}
+                <View style={styles.decisionBody}>
+                  <View style={styles.decisionTitleRow}>
+                    <Text style={[styles.docLabel, styles.decisionTitle, { color: C.text }]}>{opt.title}</Text>
                     {opt.badge && <Text style={styles.recommendedBadge}>{opt.badge}</Text>}
                   </View>
                   <Text style={[styles.docHint, { color: C.textSecondary }]}>{opt.sub}</Text>
@@ -542,9 +544,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,
     borderWidth: 2, borderRadius: 12, padding: 12,
   },
+  decisionBody:     { flex: 1, minWidth: 0 },
+  decisionTitleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 6, rowGap: 4 },
+  decisionTitle:    { flexShrink: 1 },
   recommendedBadge: {
     fontSize: 9, fontWeight: '800', color: '#15803D', backgroundColor: '#DCFCE7',
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, overflow: 'hidden',
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, overflow: 'hidden', flexShrink: 0,
   },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 20 },
   modalCard:     { borderRadius: 18, padding: 18, gap: 12 },

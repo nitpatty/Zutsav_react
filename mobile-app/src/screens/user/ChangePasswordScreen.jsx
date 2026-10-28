@@ -6,10 +6,13 @@ import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import ScreenHeader from '../../components/ScreenHeader';
+import { useTranslation } from '../../i18n';
+import { apiErrorMessage } from '../../utils/apiMessage';
 
 // Matches website validation exactly: new password min 6 chars, must match confirm.
 export default function ChangePasswordScreen() {
   const navigation = useNavigation();
+  const { t } = useTranslation();
   const { theme } = useThemeStore();
   const C = theme.colors;
 
@@ -22,31 +25,31 @@ export default function ChangePasswordScreen() {
   const toggle = (key) => setShow((p) => ({ ...p, [key]: !p[key] }));
 
   const handleSave = async () => {
-    if (!currentPassword) { Toast.show({ type: 'error', text1: 'Enter your current password' }); return; }
-    if (newPassword.length < 6) { Toast.show({ type: 'error', text1: 'New password must be at least 6 characters' }); return; }
-    if (newPassword !== confirmPassword) { Toast.show({ type: 'error', text1: 'Passwords do not match' }); return; }
+    if (!currentPassword) { Toast.show({ type: 'error', text1: t('profile.enterCurrentPassword') }); return; }
+    if (newPassword.length < 6) { Toast.show({ type: 'error', text1: t('profile.newPasswordMin') }); return; }
+    if (newPassword !== confirmPassword) { Toast.show({ type: 'error', text1: t('auth.passwordsMismatch') }); return; }
 
     try {
       setSaving(true);
       await api.patch('/users/change-password', { currentPassword, newPassword });
-      Toast.show({ type: 'success', text1: 'Password changed successfully' });
+      Toast.show({ type: 'success', text1: t('profile.passwordChanged') });
       navigation.goBack();
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not change password' });
+      Toast.show({ type: 'error', text1: apiErrorMessage(err, t('profile.changePasswordFailed')) });
     } finally {
       setSaving(false);
     }
   };
 
   const fields = [
-    { key: 'current', label: 'Current Password', value: currentPassword, onChange: setCurrentPassword, placeholder: 'Enter current password' },
-    { key: 'next',    label: 'New Password',      value: newPassword,     onChange: setNewPassword,     placeholder: 'At least 6 characters' },
-    { key: 'confirm', label: 'Confirm New Password', value: confirmPassword, onChange: setConfirmPassword, placeholder: 'Re-enter new password' },
+    { key: 'current', label: t('profile.currentPassword'), value: currentPassword, onChange: setCurrentPassword, placeholder: t('profile.currentPasswordPlaceholder') },
+    { key: 'next',    label: t('profile.newPassword'), value: newPassword, onChange: setNewPassword, placeholder: t('auth.passwordHint') },
+    { key: 'confirm', label: t('profile.confirmNewPassword'), value: confirmPassword, onChange: setConfirmPassword, placeholder: t('profile.reenterNewPassword') },
   ];
 
   return (
     <View style={[styles.root, { backgroundColor: C.background }]}>
-      <ScreenHeader title="Change Password" />
+      <ScreenHeader title={t('settings.changePassword')} />
       <View style={{ padding: 16, gap: 14 }}>
         {fields.map((f) => (
           <View key={f.key}>
@@ -73,7 +76,7 @@ export default function ChangePasswordScreen() {
           disabled={saving}
           activeOpacity={0.85}
         >
-          <Text style={styles.saveBtnText}>{saving ? 'Updating…' : 'Update Password'}</Text>
+          <Text style={styles.saveBtnText}>{saving ? t('profile.updating') : t('profile.updatePassword')}</Text>
         </TouchableOpacity>
       </View>
     </View>

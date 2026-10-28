@@ -13,6 +13,8 @@ import BackgroundDecorations from '../../components/auth/BackgroundDecorations';
 import ZutsavLogoMark from '../../components/auth/ZutsavLogoMark';
 import GradientButton from '../../components/auth/GradientButton';
 import { AUTH_COLORS } from '../../components/auth/colors';
+import { useTranslation } from '../../i18n';
+import { apiErrorMessage } from '../../utils/apiMessage';
 
 const OTP_LENGTH = 6;
 
@@ -28,6 +30,7 @@ export default function OTPScreen({ navigation, route }) {
   } = route.params || {};
 
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const { loginWithOtp, sendLoginOtp } = useAuthStore();
 
   // Password-reset and OTP-login OTPs share the backend's 60s resend cooldown
@@ -82,7 +85,7 @@ export default function OTPScreen({ navigation, route }) {
 
   const handleVerify = async () => {
     if (otpString.length < OTP_LENGTH) {
-      Toast.show({ type: 'error', text1: 'Enter all 6 digits' });
+      Toast.show({ type: 'error', text1: t('auth.enterAllDigits') });
       return;
     }
     try {
@@ -117,7 +120,7 @@ export default function OTPScreen({ navigation, route }) {
         navigation.goBack();
       }
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Invalid OTP' });
+      Toast.show({ type: 'error', text1: apiErrorMessage(err, t('auth.invalidOtp')) });
     } finally {
       setLoading(false);
     }
@@ -137,9 +140,9 @@ export default function OTPScreen({ navigation, route }) {
       setCountdown(RESEND_TIMER);
       setOtp(Array(OTP_LENGTH).fill(''));
       refs.current[0]?.focus();
-      Toast.show({ type: 'success', text1: 'OTP resent!' });
+      Toast.show({ type: 'success', text1: t('auth.otpResent') });
     } catch (err) {
-      Toast.show({ type: 'error', text1: err.response?.data?.message || 'Could not resend OTP' });
+      Toast.show({ type: 'error', text1: apiErrorMessage(err, t('auth.otpResendFailed')) });
     } finally {
       setResending(false);
     }
@@ -170,9 +173,9 @@ export default function OTPScreen({ navigation, route }) {
             <View style={styles.iconWrap}>
               <Ionicons name={channel === 'email' ? 'mail-outline' : 'logo-whatsapp'} size={18} color={AUTH_COLORS.forgotText} />
             </View>
-            <Text style={styles.heading}>Verify OTP</Text>
+            <Text style={styles.heading}>{t('auth.verifyOtp')}</Text>
             <Text style={styles.subtitle}>
-              Enter the 6-digit code sent to{'\n'}
+              {t('auth.enterCode')}{'\n'}
               <Text style={styles.target}>{displayTarget}</Text>
             </Text>
           </Animated.View>
@@ -196,7 +199,7 @@ export default function OTPScreen({ navigation, route }) {
             </View>
 
             <GradientButton
-              title={loading ? 'Verifying…' : 'Verify OTP'}
+              title={loading ? t('common.verifying') : t('auth.verifyOtp')}
               onPress={handleVerify}
               loading={loading}
               disabled={loading || otpString.length < OTP_LENGTH}
@@ -204,10 +207,10 @@ export default function OTPScreen({ navigation, route }) {
 
             <View style={styles.resendRow}>
               {countdown > 0 ? (
-                <Text style={styles.countdownText}>Resend OTP in {countdown}s</Text>
+                <Text style={styles.countdownText}>{t('auth.resendIn', { n: countdown })}</Text>
               ) : (
                 <TouchableOpacity onPress={handleResend} disabled={resending} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={styles.resendLink}>{resending ? 'Sending…' : 'Resend OTP'}</Text>
+                  <Text style={styles.resendLink}>{resending ? t('common.sending') : t('auth.resendOtp')}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -215,7 +218,7 @@ export default function OTPScreen({ navigation, route }) {
             {purpose === 'registration' && name && phone && email && (
               <TouchableOpacity style={styles.changeMethodRow} onPress={handleChangeChannel} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="swap-horizontal" size={14} color={AUTH_COLORS.forgotText} />
-                <Text style={styles.changeMethodText}>Use a different verification method</Text>
+                <Text style={styles.changeMethodText}>{t('auth.changeMethod')}</Text>
               </TouchableOpacity>
             )}
           </Animated.View>

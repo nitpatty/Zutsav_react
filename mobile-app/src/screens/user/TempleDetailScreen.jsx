@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
@@ -6,32 +6,46 @@ import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
+import ImageGallery from '../../components/shared/ImageGallery';
+import { mapTemple } from '../../utils/temple';
+import { useTranslation } from '../../i18n';
+import { useLanguageStore } from '../../i18n/languageStore';
 
 export default function TempleDetailScreen({ route }) {
   const { templeId, temple: templeParam } = route.params || {};
+  const { t } = useTranslation();
+  const contentLanguage = useLanguageStore((s) => s.language);
+  const openedInLanguage = useRef(contentLanguage);   // the language the item passed through navigation was fetched in
+  const requestRef = useRef(0);
   const { theme } = useThemeStore();
   const C = theme.colors;
-  const [temple, setTemple] = useState(templeParam || null);
+  const [rawTemple, setTemple] = useState(templeParam || null);
   const [loading, setLoading] = useState(!templeParam);
 
+  // Opened from the list with the item in hand: it is used as-is, with no request (unchanged). Opened by id only: fetched
+  // once. If the UI language changes while the screen is open, the entity is fetched again (same endpoint and id, the
+  // client adds ?lang=) so old-language text is not left on screen. A response for a superseded request is ignored.
+  const entityId = templeId || templeParam?._id;
   useEffect(() => {
-    if (!templeParam && templeId) {
-      api.get(`/temples/${templeId}`)
-        .then(({ data }) => setTemple(data.data || data.temple))
-        .catch(() => Toast.show({ type: 'error', text1: 'Could not load temple' }))
-        .finally(() => setLoading(false));
-    }
-  }, [templeId]);
+    if (!entityId) return undefined;
+    if (templeParam && contentLanguage === openedInLanguage.current) return undefined;
+    const request = ++requestRef.current;
+    api.get(`/temples/${entityId}`)
+      .then(({ data }) => { if (request === requestRef.current) setTemple((prev) => data.data || data.temple || prev); })
+      .catch(() => { if (request === requestRef.current) Toast.show({ type: 'error', text1: t('temples.detailLoadFailed') }); })
+      .finally(() => { if (request === requestRef.current) setLoading(false); });
+    return () => { requestRef.current += 1; };
+  }, [entityId, contentLanguage]);
 
   if (loading) return <LoadingSpinner fullScreen />;
-  if (!temple) return null;
+  if (!rawTemple) return null;
+  const temple = mapTemple(rawTemple);
 
   const infoItems = [
-    { icon: 'location',       label: 'Location',   value: [temple.street, temple.city, temple.state, temple.pincode].filter(Boolean).join(', ') },
-    { icon: 'time',           label: 'Timings',    value: temple.timings },
-    { icon: 'star',           label: 'Deity',      value: temple.deity },
-    { icon: 'call',           label: 'Phone',      value: temple.phone },
-    { icon: 'globe',          label: 'Website',    value: temple.website },
+    { icon: 'location',       label: t('temples.address'),      value: temple.fullAddress },
+    { icon: 'time',           label: t('temples.openingHours'), value: temple.openingHours },
+    { icon: 'star',           label: t('temples.primaryDeity'), value: temple.primaryDeity },
+    { icon: 'pricetag',       label: t('temples.category'),     value: temple.category },
   ].filter((i) => i.value);
 
   return (
@@ -43,19 +57,24 @@ export default function TempleDetailScreen({ route }) {
             <Ionicons name="business" size={32} color={C.primary} />
           </View>
           <Text style={[styles.name, { color: C.text }]}>{temple.name}</Text>
-          {temple.deity && <Text style={[styles.deity, { color: C.primary }]}>{temple.deity}</Text>}
+          {temple.primaryDeity ? <Text style={[styles.deity, { color: C.primary }]}>{temple.primaryDeity}</Text> : null}
         </View>
 
-        {temple.description && (
+        <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
+          <Text style={[styles.cardTitle, { color: C.text }]}>{t('temples.gallery')}</Text>
+          <ImageGallery images={temple.images} />
+        </View>
+
+        {temple.description ? (
           <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <Text style={[styles.cardTitle, { color: C.text }]}>About</Text>
+            <Text style={[styles.cardTitle, { color: C.text }]}>{t('temples.about')}</Text>
             <Text style={[styles.desc, { color: C.textSecondary }]}>{temple.description}</Text>
           </View>
-        )}
+        ) : null}
 
         {infoItems.length > 0 && (
           <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <Text style={[styles.cardTitle, { color: C.text }]}>Information</Text>
+            <Text style={[styles.cardTitle, { color: C.text }]}>{t('temples.information')}</Text>
             {infoItems.map((item) => (
               <View key={item.label} style={styles.infoRow}>
                 <Ionicons name={item.icon} size={16} color={C.primary} />

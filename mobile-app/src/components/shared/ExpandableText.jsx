@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, LayoutAnimation, Platform, UIManager } from 'react-native';
+import { useTranslation } from '../../i18n';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -15,6 +16,7 @@ export default function ExpandableText({
   toggleColor = '#B45309',
   containerStyle,
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
   const [measured, setMeasured] = useState(false);
@@ -45,7 +47,7 @@ export default function ExpandableText({
       {isTruncated && (
         <TouchableOpacity onPress={toggle} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
           <Text style={{ color: toggleColor, fontSize: 11, fontWeight: '700', marginTop: 2 }}>
-            {expanded ? 'Show Less' : 'Show More'}
+            {expanded ? t('poojas.showLess') : t('poojas.showMore')}
           </Text>
         </TouchableOpacity>
       )}
