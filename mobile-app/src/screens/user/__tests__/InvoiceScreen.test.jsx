@@ -110,12 +110,15 @@ describe('InvoiceScreen — official persisted booking invoice (F-02)', () => {
 describe('InvoiceScreen — multiple invoices for one booking', () => {
   const two = () => responseBody([invoice(), finalInvoice()], booking({ paymentStatus: 'FULLY_PAID' }));
 
-  it('lists every official invoice, defaults to the first, and shows the payment history', async () => {
+  // Day 30: the API returns a booking's invoices OLDEST first (one per payment). The screen used to open index 0 — the advance — so
+  // after the final payment it still showed the old invoice. It now opens the current one (see utils/invoiceSelection.js).
+  it('lists every official invoice, defaults to the CURRENT one (the latest payment\'s), keeps the older one selectable, and shows the payment history', async () => {
     mockInvoices(two());
     render(<InvoiceScreen route={route()} />);
     await screen.findByText('2 invoices for this booking');
-    expect(screen.getByLabelText('Invoice INV-2026-000101').props.accessibilityState.selected).toBe(true);
-    expect(screen.getByLabelText('Invoice INV-2026-000102').props.accessibilityState.selected).toBe(false);
+    expect(screen.getByLabelText('Invoice INV-2026-000102').props.accessibilityState.selected).toBe(true);
+    expect(screen.getByLabelText('Invoice INV-2026-000101').props.accessibilityState.selected).toBe(false);
+    expect(meta('Invoice No')).toBe('INV-2026-000102');
     expect(screen.getByText('Payment History for Order ZB-2026-0042')).toBeTruthy();
     expect(screen.getByText('INV-2026-000101 · Txn: MT-TEST-1')).toBeTruthy();
     expect(screen.getByText('INV-2026-000102 · Txn: MT-TEST-2')).toBeTruthy();
@@ -125,15 +128,18 @@ describe('InvoiceScreen — multiple invoices for one booking', () => {
     mockInvoices(two());
     render(<InvoiceScreen route={route()} />);
     await screen.findByText('2 invoices for this booking');
-    expect(meta('Invoice No')).toBe('INV-2026-000101');
-
-    fireEvent.press(screen.getByLabelText('Invoice INV-2026-000102'));
-
-    await waitFor(() => expect(screen.getByLabelText('Invoice INV-2026-000102').props.accessibilityState.selected).toBe(true));
-    expect(meta('Invoice No')).toBe('INV-2026-000102');
+    expect(meta('Invoice No')).toBe('INV-2026-000102');          // the current (final-payment) invoice
     expect(screen.getAllByText('Final Payment').length).toBeGreaterThan(0);
     expect(screen.getByText('Previously Paid')).toBeTruthy();
     expect(screen.queryByText('Balance Due')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('Invoice INV-2026-000101'));   // the older, advance invoice is still there to inspect
+
+    await waitFor(() => expect(screen.getByLabelText('Invoice INV-2026-000101').props.accessibilityState.selected).toBe(true));
+    expect(meta('Invoice No')).toBe('INV-2026-000101');
+    expect(screen.getAllByText('Advance Payment').length).toBeGreaterThan(0);
+    expect(screen.getByText('Balance Due')).toBeTruthy();
+    expect(screen.queryByText('Previously Paid')).toBeNull();
   });
 
   it('Share / Download PDF operates on the SELECTED invoice only', async () => {
@@ -143,14 +149,14 @@ describe('InvoiceScreen — multiple invoices for one booking', () => {
 
     fireEvent.press(screen.getByText('Share / Download PDF'));
     await waitFor(() => expect(Sharing.shareAsync).toHaveBeenCalledTimes(1));
-    expect(sharedHtml()).toContain('INV-2026-000101');
-    expect(sharedHtml()).not.toContain('INV-2026-000102');
+    expect(sharedHtml()).toContain('INV-2026-000102');          // by default the PDF is the one on screen: the current invoice
+    expect(sharedHtml()).not.toContain('INV-2026-000101');
 
-    fireEvent.press(screen.getByLabelText('Invoice INV-2026-000102'));
+    fireEvent.press(screen.getByLabelText('Invoice INV-2026-000101'));
     fireEvent.press(await screen.findByText('Share / Download PDF'));
     await waitFor(() => expect(Sharing.shareAsync).toHaveBeenCalledTimes(2));
-    expect(sharedHtml()).toContain('INV-2026-000102');
-    expect(sharedHtml()).not.toContain('INV-2026-000101');
+    expect(sharedHtml()).toContain('INV-2026-000101');
+    expect(sharedHtml()).not.toContain('INV-2026-000102');
     expect(Sharing.shareAsync).toHaveBeenLastCalledWith('file:///tmp/invoice.pdf', { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
   });
 });

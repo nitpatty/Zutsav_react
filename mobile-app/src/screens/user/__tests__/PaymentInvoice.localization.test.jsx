@@ -242,14 +242,15 @@ describe('InvoiceScreen localization (controls only)', () => {
     render(<InvoiceScreen route={route()} />);
     await screen.findByText(hi('invoice.count', { n: 2 }));
     expect(screen.getByText(`HEADER:${hi('invoice.title')}`)).toBeTruthy();
-    expect(screen.getByLabelText(hi('invoice.a11yInvoice', { number: 'INV-2026-000101' })).props.accessibilityState.selected).toBe(true);
-    fireEvent.press(screen.getByLabelText(hi('invoice.a11yInvoice', { number: 'INV-2026-000102' })));
-    await waitFor(() => expect(screen.getByLabelText(hi('invoice.a11yInvoice', { number: 'INV-2026-000102' })).props.accessibilityState.selected).toBe(true));
-    expect(meta('Invoice No')).toBe('INV-2026-000102');
+    // Day 30: the screen opens the CURRENT (latest payment's) invoice; the older one is picked explicitly.
+    expect(screen.getByLabelText(hi('invoice.a11yInvoice', { number: 'INV-2026-000102' })).props.accessibilityState.selected).toBe(true);
+    fireEvent.press(screen.getByLabelText(hi('invoice.a11yInvoice', { number: 'INV-2026-000101' })));
+    await waitFor(() => expect(screen.getByLabelText(hi('invoice.a11yInvoice', { number: 'INV-2026-000101' })).props.accessibilityState.selected).toBe(true));
+    expect(meta('Invoice No')).toBe('INV-2026-000101');
     fireEvent.press(screen.getByText(hi('invoice.share')));
     await waitFor(() => expect(Sharing.shareAsync).toHaveBeenCalledTimes(1));
-    expect(sharedHtml()).toContain('INV-2026-000102');
-    expect(sharedHtml()).not.toContain('INV-2026-000101');
+    expect(sharedHtml()).toContain('INV-2026-000101');
+    expect(sharedHtml()).not.toContain('INV-2026-000102');
     expect(Sharing.shareAsync).toHaveBeenLastCalledWith('file:///tmp/invoice.pdf', { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
   });
 

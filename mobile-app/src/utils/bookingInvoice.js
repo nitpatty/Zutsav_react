@@ -20,6 +20,9 @@
  *  - Nothing is fabricated: missing optional values stay empty.
  */
 
+/** Booking-details wording for a booking with no kit (the PDF compares against it to decide whether a kit name exists). */
+export const WITHOUT_KIT = 'Without Samagri';
+
 export const PMT_LABEL = { PARTIAL: 'Advance Payment', REMAINING: 'Final Payment', FULL: 'Full Payment' };
 
 const num = (v) => { const n = Number(v); return v != null && Number.isFinite(n) ? n : 0; };
@@ -224,7 +227,7 @@ export function buildInvoiceView(invoice, booking, company) {
       urgent: !!(b.bookingType === 'urgent' || b.isUrgent),
       location: [customer.address, customer.city].filter(Boolean).join(', '),
       pandit: str(b.panditId?.name) || (['paid', 'pandit_assigned'].includes(b.status) ? 'Being Assigned' : ''),
-      kit: b.withKit && kits.length > 0 ? kits.map((k) => k.name || 'Samagri Kit').join(', ') : 'Without Samagri',
+      kit: b.withKit && kits.length > 0 ? kits.map((k) => k.name || 'Samagri Kit').join(', ') : WITHOUT_KIT,
     },
     pricing,
     lineItems,

@@ -794,6 +794,91 @@ From the first round of on-device testing of the local-Wi-Fi APK. Mobile only; n
 - **Tests:** new `BookingDetail.noTimeline`, `PanditNotificationBell`, `PanditKYCScreen.decision`, `ProfilePhotoRemoval`, `ScheduleCalendar`,
   `PanditDashboardScreen.calendar`, `slippyMap`; rewritten `MapPicker.android`; updated `MapPicker`, `LocationWidgets.i18n`, `Bookings.localization`, `Formatting.localization`.
 
+## Day 30 — the app showed an OLD invoice
+
+- **Root cause:** a booking has **one invoice per payment** (`Invoice.paymentLedgerId`; e.g. an advance, then a final payment).
+  `GET /api/invoices/booking/:id` returns them `sort({ invoiceDate: 1 })` — **oldest first** — and `InvoiceScreen` opened `invoices[0]`
+  (`selected = 0`, a rule ported from the website's `InvoicePage`, `data.invoices[0]`). So after the final payment the screen still opened the
+  advance invoice (with its balance due); the newer invoice was only reachable through the selector.
+- **"Latest" from the real data model:** `invoiceDate` is the time of that payment (`ledger.paidAt`) and `previouslyPaid`/`outstandingAfter`
+  snapshot the position at it, so the newest *active* invoice is the one that shows where the booking stands now. `invoiceVersion` is never set
+  beyond its default 1 and `invoiceNumber` is a string, so neither is used. Rule (`utils/invoiceSelection.js`): the active invoice with the latest
+  `invoiceDate` (ties → later in the API's order; unreadable dates never win); if none is active, the latest of all of them, shown as cancelled.
+  Older invoices stay in the selector and in "Payment History".
+- **Also fixed on the same screen:** the user's pick is tracked by invoice id (not an index); a reply for a booking the user already left is ignored;
+  the previous booking's data is cleared when the target changes (navigating to another booking reuses the screen), so a slow or failed load never
+  leaves another booking's invoice on screen; the shared PDF is built from the same selected invoice as the display.
+- **Ruled out:** wrong booking relationship (the screen passes the booking id and the backend filters by it and by owner); a cache (the screen has none);
+  stale share URL (the PDF is generated from the selected invoice on demand); invoice-generation timing (invoices are created inside the payment
+  confirmation handlers before they respond — `booking.controller.js` calls `generateInvoiceForPayment`); backend returning the wrong record
+  (it returns all of them, in a documented order).
+- **Not changed:** `bookingInvoice.js`, `bookingInvoiceHtml.js`, any invoice field, amount, number or date; the backend; the website. The shared HTML is asserted
+  byte-identical to the unchanged builders' output. **Website note (owner decision):** `InvoicePage.jsx` still opens `invoices[0]` (the oldest) with no selector,
+  so it shows the advance invoice at the top and the final one only in its Payment History; that is a website/product choice and was not touched.
+- **Tests:** `utils/__tests__/invoiceSelection.test.js` (15) and `screens/user/__tests__/InvoiceScreen.currentInvoice.test.jsx` (18); three
+  existing `InvoiceScreen` tests that pinned "defaults to the first" now pin the current invoice. With the original screen swapped back, 8 of the new tests fail.
+
+## Day 31 — mobile invoice PDF brought to website parity (template only)
+
+Audit: `docs/INVOICE_SOURCE_OF_TRUTH_AUDIT.md` (Option C). Mobile-only; no backend, website, model, dependency or config change.
+
+- **Root cause (confirmed):** the website invoice and the mobile PDF read the same persisted invoice (`GET /api/invoices/booking/:id`) but are rendered
+  by different code — the website's `InvoicePage.jsx` (browser print) and the mobile `utils/bookingInvoiceHtml.js` (`expo-print`). The old mobile HTML
+  was a reduced layout that did not print fields `buildInvoiceView` already held (gateway, gateway transaction id, language, booking type, location,
+  kit, booking id, Bill To layout, footer contacts). The supplied pair had identical invoice number, amounts, tax and transaction id, so it was a template
+  difference, not a different or stale record.
+- **Changed (`bookingInvoiceHtml.js`):** website-ordered sections — branded header (seller name, address, GSTIN/PAN, contacts; "TAX INVOICE", payment-type label,
+  Invoice No / Order No / Issue Date / Service Date / Place of Supply, payment-status pill, cancelled-payment note); Bill To; Booking Details (service, date, time,
+  language, booking type, location, Pandit, kit, booking id); Order Items (# / Description / Qty / Unit Price / Amount, subtotal, tax line, grand total); Payment
+  Details (order total, previously paid, this invoice, balance due, payment type, gateway, merchant and gateway transaction ids — each only when present); Tax
+  Summary (taxable amount, rate, IGST or CGST+SGST columns per the stored `gstBreakdown`, total tax; the kit row uses the kit's name like the website);
+  amount in words + status; footer (tagline, Support/WhatsApp/Website, "computer-generated"). Fixed A4 (`INVOICE_PAGE` 595×842, passed to
+  `Print.printToFileAsync` for booking invoices only; expo-print's `margins` is iOS-only, so margins are in the HTML), table-based layout, blocks kept unbroken,
+  long text wraps, every dynamic value escaped, no external resource. `bookingInvoice.js`: only the `WITHOUT_KIT` constant was extracted (same text, same output).
+  `InvoiceScreen.jsx`: only the A4 print options. The marketplace order invoice is unchanged.
+- **Deliberately NOT printed (no authoritative source / unapproved legal text):** "Payment Method: UPI / PhonePe" (a website literal; no stored method), customer
+  "GSTIN: Unregistered", the ITC statement, a "Generated" timestamp (render time, not an invoice field), a separate "Service At" block (the website prints Bill To
+  twice; there is no service-address field), and a logo (the bundled icon would have to be inlined as base64 or read through `expo-asset`/`expo-file-system`, neither a
+  declared dependency; the brand is the seller name as before). The 18% rate is not hard-coded: rates come from the stored amounts. Owner/compliance decisions are
+  listed in the audit (section K).
+- **Unchanged and still different from the website:** multi-payment selection — the app opens the latest ACTIVE invoice (Day 30, `invoiceSelection.js`, preserved, selection
+  keyed by invoice id, stale-reply guards intact); the website still opens `invoices[0]` (the oldest). Owner decision pending.
+- **Tests:** new `utils/__tests__/bookingInvoiceHtml.parity.test.js` (41: a synthetic sample with the audited amounts — ₹2,375 / IGST ₹67.5 / ₹2,442.5 — identity, dates, booking
+  details, payment ids, tax columns, section order, footer, excluded literals, no discount/coin/hard-coded-rate content, advance/final payments, CGST/SGST vs IGST, multi-kit
+  with changed catalog prices, missing optional values, cancelled/archived/legacy, seller snapshot, escaping, A4 contract, purity, no localization import) and
+  `screens/user/__tests__/InvoiceScreen.pdfParity.test.jsx` (5: A4 options, selected-invoice and booking-switch content, order invoice unchanged). No existing assertion was changed
+  or weakened; the Day 21 byte-identical-across-UI-languages and no-i18n-import guards pass unchanged.
+- **Verification:** full `npm run test:ci` — 98 suites, 1,982 tests passed (before this task: 96 / 1,936); randomized full runs with seeds 31, 6161 and 90210 each 98 / 1,982; `git diff --check` clean;
+  secret scan clean. The sample HTML was also rendered in headless Edge at 595 px for a layout check — Chromium, not Android's print renderer; **not verified on a device**
+  (Android pagination, fonts and the emoji in the thank-you line are for the owner to check).
+- **Build:** `assembleLocalTest` with the throwaway internal-testing key outside the repo and `http://192.168.0.192:5000` (main manifest `usesCleartextTraffic=false`, `allowBackup=false`,
+  cleartext only to that host via the localTest network-security config). Package `com.zutsav.app`, version `1.0.0-localtest` (code 1), 74,202,699 bytes, SHA-256
+  `47453681794d1e2337d6000d817a390b4c57339929aef0fdc60560b47dbcb640`, kept at `C:\Users\HP\ZutsavTestBuilds\zutsav-localtest-invoice-parity.apk` (outside the repo).
+
+## Day 32 — platform logo on the mobile invoice PDF
+
+Supersedes the "no logo" exclusion in Day 31. Nothing else on the invoice changed; no backend, website, dependency or config change.
+
+- **Source:** the website's logo is `useSettings().logoUrl` = the admin-managed `logo` of the public `GET /api/settings/public`, resolved against the backend origin. Mobile uses the
+  same value. The bundled `assets/icon.png` is the app icon and cannot be confirmed as the current official logo, so it is not used; nothing is hard-coded.
+- **Loading (`utils/invoiceLogo.js`):** expo-print renders in a native web view that does not wait for remote images, so the logo is downloaded *before* the PDF is made and embedded as a
+  `data:` URI. Plain `fetch` (public, no token; the invoice API call set is unchanged): settings → `resolveLogoUrl` (a stored path, or an absolute URL only on the app's own backend origin;
+  other hosts, `..`, queries, quotes, spaces refused) → image GET → content type must be PNG/JPEG/WEBP/SVG → ≤ 1.5 MB → `FileReader` → data URI of the *verified* type. 8 s overall limit, one cached
+  entry per logo URL. Any failure resolves `null`; it never throws. The screen starts the request when a booking invoice opens and awaits it when sharing.
+- **Template (`bookingInvoiceHtml.js`, optional 2nd argument `{ logoDataUri }`):** the value is validated again (`isInvoiceLogoDataUri`: base64 PNG/JPEG/WEBP/SVG data URI only). With a logo the header shows the image
+  (height 38, width auto, max-width 190, contained, in the left brand cell) and, like the website, the gold legal suffix "PVT. LTD."; without one, or with anything invalid, the markup is byte-identical to Day 31's
+  text-only header. Removing the brand block from a with-logo document gives the text-only document byte for byte, for advance, final, cancelled and CGST/SGST invoices.
+- **Language:** the logo is part of the input, not of the UI; the shared HTML is byte-identical in English, Hindi and Tamil for the same invoice and logo (the Day 21 guard is unchanged).
+- **Tests:** `invoiceLogo.test.js` (URL trust, data-URI validation, content types, size, failures, timeout, caching, public/no-token), `bookingInvoiceHtml.logo.test.js` (placement, sizing, only the brand block differs,
+  every invalid/untrusted value falls back, determinism), `InvoiceScreen.logo.test.jsx` (9: embedded in the shared PDF, requested once and not for marketplace orders or through the invoice API, share waits for a slow
+  logo, selection/booking switches, null/invalid/offline fallbacks with no error toast, language identity). No existing assertion was changed.
+- **Verification:** full `npm run test:ci` — 101 suites, 2,083 tests passed (Day 31: 98 / 1,982); randomized full runs with seeds 77, 4242 and 808080 each 101 / 2,083; `git diff --check` clean; secret scan clean.
+  The header was rendered in headless Edge with a stand-in image (Chromium, not Android's print renderer). **Not verified on a device:** the real logo on Android, the localTest APK fetching it over the LAN.
+- **Known limits:** no logo is shown when the admin has not uploaded one, when the backend is unreachable at share time (≤ 8 s wait), or when the file is not PNG/JPEG/WEBP/SVG or exceeds 1.5 MB; the text header is then used.
+  A logo with dark artwork has no background of its own on the navy header, exactly as on the website.
+- **Build:** `assembleLocalTest` (throwaway internal-testing key outside the repo; `http://192.168.0.192:5000`; main manifest `usesCleartextTraffic=false`, `allowBackup=false`). Package `com.zutsav.app`,
+  version `1.0.0-localtest`, 74,204,913 bytes, SHA-256 `343d1752f61cc8d5bda0f9e7e35f8bb714ca231a35840ca4aa59f72554836fe5`, at `C:\Users\HP\ZutsavTestBuilds\zutsav-localtest-invoice-logo.apk` (outside the repo).
+
 ## Follow-ups from F-03 (not fixed here)
 
 - **F-06 (deep link / app return):** `redirectUrl`'s return page is the *website* (`<clientUrl>/payment-callback/<txn>?cart=1`).

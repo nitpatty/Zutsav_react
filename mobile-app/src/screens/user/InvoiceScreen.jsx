@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform
 } from 'react-native';
@@ -13,7 +13,9 @@ import { company } from '../../config/company.config';
 import {
   mapBookingInvoiceResponse, buildInvoiceView, summariseInvoice,
 } from '../../utils/bookingInvoice';
-import { buildBookingInvoiceHtml, esc } from '../../utils/bookingInvoiceHtml';
+import { buildBookingInvoiceHtml, esc, INVOICE_PAGE } from '../../utils/bookingInvoiceHtml';
+import { invoiceKey, resolveSelectedIndex } from '../../utils/invoiceSelection';
+import { loadInvoiceLogo } from '../../utils/invoiceLogo';
 import ScreenHeader from '../../components/ScreenHeader';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { useTranslation } from '../../i18n';
@@ -49,46 +51,66 @@ export default function InvoiceScreen({ route }) {
   const [bookingData, setBookingData] = useState(null);   // { booking, invoices } — persisted booking invoices
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  const [selected, setSelected] = useState(0);
+  // The invoice the USER picked, tracked by id (null = show the current one, see utils/invoiceSelection.js). An index would silently
+  // point at a different invoice after a reload or a changed order.
+  const [selectedKey, setSelectedKey] = useState(null);
   const [sharing, setSharing] = useState(false);
+  const latestRequest = useRef(0);   // only the newest request may touch the screen
+  // The platform logo for the PDF is fetched in the background while the invoice is read, and awaited (never rejects, bounded) when sharing.
+  const logoRequest = useRef(null);
+  useEffect(() => { logoRequest.current = type === 'order' ? null : loadInvoiceLogo(); }, [type]);
 
   const load = useCallback(async () => {
+    const ticket = ++latestRequest.current;
     setLoading(true);
     setErrorMsg('');
+    // Whatever was on screen belongs to the previous request/booking: never keep it around as if it were this one's, e.g. when the
+    // new request fails or is slow (navigating to another booking reuses this screen with new params).
+    setData(null);
+    setBookingData(null);
+    setSelectedKey(null);
     try {
       if (type === 'order') {
         const { data: res } = await api.get(`/marketplace/orders/${id}/invoice`);
+        if (ticket !== latestRequest.current) return;   // superseded by a newer request (or unmounted)
         setData(res);
       } else {
         // Official persisted invoices (same API as the website's InvoicePage). The older
         // /bookings/:id/invoice returns { booking, paymentLedger } — no invoice documents.
         const { data: res } = await api.get(`/invoices/booking/${id}`);
+        if (ticket !== latestRequest.current) return;   // a slower reply for a booking the user already left must not overwrite the current one
         setBookingData(mapBookingInvoiceResponse(res));
-        setSelected(0);
       }
     } catch (err) {
+      if (ticket !== latestRequest.current) return;
       const status = err?.response?.status;
       // the kind is stored (not the text) so a language change never re-runs the load or leaves old-language text
       setErrorMsg(status === 403 || status === 404 ? 'access' : 'failed');
     } finally {
-      setLoading(false);
+      if (ticket === latestRequest.current) setLoading(false);
     }
   }, [type, id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => { latestRequest.current += 1; };      // leaving the screen / changing the target invalidates any request in flight
+  }, [load]);
 
   const invoices = bookingData?.invoices || [];
+  // The CURRENT invoice (latest active payment's) unless the user picked another; display and PDF share both use this one `view`.
+  const activeIndex = resolveSelectedIndex(invoices, selectedKey);
   const view = useMemo(() => {
-    if (type === 'order' || !invoices.length) return null;
-    const inv = invoices[Math.min(selected, invoices.length - 1)];
-    return buildInvoiceView(inv, bookingData.booking, company);
-  }, [type, invoices, selected, bookingData]);
+    if (type === 'order' || activeIndex < 0) return null;
+    return buildInvoiceView(invoices[activeIndex], bookingData.booking, company);
+  }, [type, invoices, activeIndex, bookingData]);
 
   const handleShare = async () => {
     try {
       setSharing(true);
-      const html = type === 'order' ? buildOrderHtml(data) : buildBookingInvoiceHtml(view);
-      const { uri } = await Print.printToFileAsync({ html });
+      const logoDataUri = type === 'order' ? null : await (logoRequest.current || loadInvoiceLogo());   // null → the text-only header; never blocks sharing
+      const html = type === 'order' ? buildOrderHtml(data) : buildBookingInvoiceHtml(view, { logoDataUri });
+      // the booking invoice is an A4 portrait document (like the website's print layout); the marketplace order invoice keeps the default page
+      const { uri } = await Print.printToFileAsync(type === 'order' ? { html } : { html, ...INVOICE_PAGE });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf' });
       } else {
@@ -138,7 +160,7 @@ export default function InvoiceScreen({ route }) {
         ) : (
           <>
             {invoices.length > 1 && (
-              <InvoiceSelector invoices={invoices} selected={selected} onSelect={setSelected} C={C} />
+              <InvoiceSelector invoices={invoices} selected={activeIndex} onSelect={(i) => setSelectedKey(invoiceKey(invoices[i]))} C={C} />
             )}
             <BookingInvoice view={view} invoices={invoices} C={C} />
           </>
