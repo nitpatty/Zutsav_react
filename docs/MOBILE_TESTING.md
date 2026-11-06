@@ -879,6 +879,29 @@ Supersedes the "no logo" exclusion in Day 31. Nothing else on the invoice change
 - **Build:** `assembleLocalTest` (throwaway internal-testing key outside the repo; `http://192.168.0.192:5000`; main manifest `usesCleartextTraffic=false`, `allowBackup=false`). Package `com.zutsav.app`,
   version `1.0.0-localtest`, 74,204,913 bytes, SHA-256 `343d1752f61cc8d5bda0f9e7e35f8bb714ca231a35840ca4aa59f72554836fe5`, at `C:\Users\HP\ZutsavTestBuilds\zutsav-localtest-invoice-logo.apk` (outside the repo).
 
+## Day 33 — Pandit KYC Verification could not be left (back navigation)
+
+Navigation only. No KYC API, payload, status value, document handling, OTP, retention choice, backend, website, dependency, lockfile, environment or native change.
+
+- **Observed (device):** Pandit → My Profile → KYC Verification; the header back arrow did not return to My Profile, and opening the Profile tab again landed straight on KYC.
+- **Root cause (reproduced in Jest before the fix):** the dashboard's KYC alert card, the dashboard "KYC" quick action and the `kyc_approved` / `kyc_rejected` / `kyc_reupload` notification handlers all call
+  `navigate('PanditProfileTab', { screen: 'PanditKYC' })`. In React Navigation 6, when the nested Profile stack has not rendered yet, `screen` becomes that stack's *initial* route and `initialRouteName`
+  (`PanditProfileMain`) is skipped, so the stack was `['PanditKYC']` with nothing beneath it. Back (header `goBack()` or Android hardware back) had nothing to pop to, and because tabs keep their state, the Profile tab kept
+  showing KYC. The Profile menu row itself (`navigate('PanditKYC')` inside the stack) was always correct — stack `['PanditProfileMain', 'PanditKYC']`.
+- **Files changed:** `mobile-app/src/screens/pandit/PanditDashboardScreen.jsx` (2 call sites), `mobile-app/src/screens/pandit/PanditNotificationsScreen.jsx` (3 handlers). Each now passes `initial: false`, so the Profile stack
+  renders its own initial route (My Profile) first and KYC is pushed on top. `PanditNavigator`, `PanditGateNavigator`, `PanditKYCScreen`, `ScreenHeader` and every User/Admin route are unchanged.
+- **Behaviour now:** Dashboard/Notifications/Profile → KYC → header back or Android back → My Profile; the Profile tab then shows My Profile; repeated open/back cycles keep the Profile stack at exactly
+  `['PanditProfileMain']` ↔ `['PanditProfileMain', 'PanditKYC']`. The gate navigator's own KYC re-submission route is untouched.
+- **Tests added (`navigation/__tests__/PanditKYCBackNavigation.test.jsx`, 13):** real `PanditNavigator` with the real dashboard, profile, notification centre and KYC screens (only the schedule calendar, NetInfo, toast and
+  the API module are stubbed; the API returns a *submitted* pandit with front/back documents). Covers header back and Android hardware back from the Profile entry; three open/back cycles; both dashboard entries (header and
+  hardware back); each `kyc_*` notification through the real handlers; leaving and reopening the Profile tab; the Submitted note, "Submitted Documents" and front/back sections plus the authenticated document GETs unchanged; and
+  no POST/PATCH/PUT/DELETE during navigation. Hardware back is driven by capturing the `hardwareBackPress` listeners React Navigation registers (this jest-expo setup has no `BackHandler.mockPressBack`) and dispatching newest-first.
+  Run against the unfixed code, the 7 dashboard-entry cases failed with the stack `['PanditKYC']` while the 3 Profile-entry cases passed; removing `initial: false` from one handler again fails its notification test.
+- **Verification:** focused (new test, `PanditKYCScreen.decision`, `PanditDashboardScreen.calendar`, `PanditNotificationBell`, `TabLabels.i18n`, `RootNavigator.session`, User `ProfilePhotoRemoval` / `SettingsScreen.legal`) — 8 suites, 61 tests passed;
+  full `npm run test:ci` — 102 suites, 2,096 tests passed (Day 32: 101 / 2,083, +13); `git diff --check` clean; pattern secret scan of the changed and new files clean. No Expo export or APK was built.
+- **Not verified on a device:** the owner still needs to retest on Android — Dashboard → KYC card/quick action and Profile → KYC Verification, then header back, system back and the Profile tab — in the next build.
+- **Related, not changed (out of scope):** the dashboard "My Services" and "Manage Pujas" quick actions use the same `navigate('PanditProfileTab', { screen: 'PanditPoojaServices' })` shape and have the same missing-parent-screen problem; they are not KYC and were left alone.
+
 ## Follow-ups from F-03 (not fixed here)
 
 - **F-06 (deep link / app return):** `redirectUrl`'s return page is the *website* (`<clientUrl>/payment-callback/<txn>?cart=1`).

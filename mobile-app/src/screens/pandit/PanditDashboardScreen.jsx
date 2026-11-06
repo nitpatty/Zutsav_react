@@ -140,7 +140,8 @@ export default function PanditDashboardScreen() {
     { label: 'Earnings Report', icon: 'bar-chart-outline', nav: 'PanditEarnings' },
     { label: 'Customer Reviews', icon: 'star-outline', nav: 'PanditRatings' },
     { label: 'Profile', icon: 'person-outline', nav: 'PanditProfileTab', params: { screen: 'PanditProfileMain' } },
-    { label: 'KYC', icon: 'document-text-outline', nav: 'PanditProfileTab', params: { screen: 'PanditKYC' } },
+    // initial:false — without it the not-yet-rendered Profile stack starts AT PanditKYC (no My Profile beneath), so back can't return to it.
+    { label: 'KYC', icon: 'document-text-outline', nav: 'PanditProfileTab', params: { screen: 'PanditKYC', initial: false } },
     { label: 'Referrals', icon: 'people-outline', nav: 'PanditReferralTab' },
     { label: 'My Blogs', icon: 'newspaper-outline', nav: 'PanditMyBlogs' },
     { label: 'Festivals', icon: 'calendar-outline', nav: 'Festivals' },
@@ -179,7 +180,7 @@ export default function PanditDashboardScreen() {
         showsVerticalScrollIndicator={false}
       >
         {!kycApproved && (
-          <TouchableOpacity onPress={() => navigation.navigate('PanditProfileTab', { screen: 'PanditKYC' })} activeOpacity={0.85}>
+          <TouchableOpacity onPress={() => navigation.navigate('PanditProfileTab', { screen: 'PanditKYC', initial: false })} activeOpacity={0.85}>
             <Card padding={SPACING.md} style={[styles.alertCard, { backgroundColor: COLORS.warningBg }]} elevation="raised">
               <IconContainer name="warning-outline" size="sm" color={COLORS.warning} />
               <Body color="#7A4B12" style={styles.alertText}>

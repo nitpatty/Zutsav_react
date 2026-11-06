@@ -21,9 +21,10 @@ const panditHandlers = {
     const match = (res.referrals || []).find((r) => r._id === data.referralId);
     if (match) navigation.navigate('PanditReferralTab', { screen: 'PanditReferralDetail', params: { referral: match } });
   },
-  kyc_approved:  async (_, navigation) => navigation.navigate('PanditProfileTab', { screen: 'PanditKYC' }),
-  kyc_rejected:  async (_, navigation) => navigation.navigate('PanditProfileTab', { screen: 'PanditKYC' }),
-  kyc_reupload:  async (_, navigation) => navigation.navigate('PanditProfileTab', { screen: 'PanditKYC' }),
+  // initial:false keeps My Profile beneath KYC in the Profile stack (see PanditKYCBackNavigation.test.jsx).
+  kyc_approved:  async (_, navigation) => navigation.navigate('PanditProfileTab', { screen: 'PanditKYC', initial: false }),
+  kyc_rejected:  async (_, navigation) => navigation.navigate('PanditProfileTab', { screen: 'PanditKYC', initial: false }),
+  kyc_reupload:  async (_, navigation) => navigation.navigate('PanditProfileTab', { screen: 'PanditKYC', initial: false }),
   payout_released: async (_, navigation) => navigation.navigate('PanditHomeTab', { screen: 'PanditEarnings' }),
   pandit_approved: async (_, navigation) => navigation.navigate('PanditProfileTab', { screen: 'PanditProfileMain' }),
 };
