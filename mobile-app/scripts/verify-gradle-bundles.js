@@ -26,7 +26,10 @@ function main(argv = process.argv.slice(2)) {
   if (only && !FLAVORS[only]) throw new Error('--only must be "publicApp" or "adminApp"');
   const flavors = only ? [only] : Object.keys(FLAVORS);
   // A leftover variable in this shell must not decide the result: the flavor's own wiring has to.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^ZUTSAV_APP_VARIANT$|^EXPO_PUBLIC_APP_VARIANT$/.test(k)));
+  // Release bundling refuses to start without production endpoints (build-config/productionEnv.js). This script inspects module
+  // composition, not connectivity, so it supplies the production values as plain strings; nothing here makes a network request.
+  const endpoints = { EXPO_PUBLIC_API_URL: 'https://zutsav.com/api', EXPO_PUBLIC_BASE_URL: 'https://zutsav.com', EXPO_PUBLIC_WEB_URL: 'https://zutsav.com' };
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^ZUTSAV_APP_VARIANT$|^EXPO_PUBLIC_APP_VARIANT$/.test(k))), ...endpoints };
   let failed = false;
 
   for (const flavor of flavors) {

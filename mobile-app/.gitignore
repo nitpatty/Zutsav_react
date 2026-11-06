@@ -3,3 +3,5 @@ node_modules
 .env
 .env.local
 .env.*.local
+# signed Release APKs prepared for direct distribution (docs/PUBLIC_PRIVATE_BUILD_GUIDE.md, section 11); never committed
+release-artifacts/

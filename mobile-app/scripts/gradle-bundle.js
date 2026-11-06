@@ -15,8 +15,11 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { variantEnv } = require('../build-config/variantEnv');
+const { describeProductionEnv, productionEnvProblems } = require('../build-config/productionEnv');
 
 const FLAG = '--zutsav-app-variant';
+const BUILD_TYPE_FLAG = '--zutsav-build-type';
+const BUILD_TYPES = ['release', 'localtest'];
 const MARKER_FILE = 'zutsav-variant.txt';
 
 // Same resolution the Gradle script used for the CLI before it was redirected here.
@@ -25,17 +28,23 @@ const expoCli = () => require.resolve('@expo/cli', { paths: [require.resolve('ex
 function splitArgs(argv) {
   const rest = [];
   let variant;
+  let buildType;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === FLAG) {
       if (variant !== undefined || i + 1 >= argv.length) throw new Error(`${FLAG} must be given exactly once, with a value.`);
       variant = argv[i + 1];
+      i += 1;
+    } else if (argv[i] === BUILD_TYPE_FLAG) {
+      if (buildType !== undefined || i + 1 >= argv.length) throw new Error(`${BUILD_TYPE_FLAG} must be given exactly once, with a value.`);
+      buildType = argv[i + 1];
       i += 1;
     } else {
       rest.push(argv[i]);
     }
   }
   if (variant === undefined) throw new Error(`${FLAG} <public|admin> is required: refusing to bundle without knowing which app this is.`);
-  return { variant, rest };
+  if (!BUILD_TYPES.includes(buildType)) throw new Error(`${BUILD_TYPE_FLAG} <${BUILD_TYPES.join('|')}> is required: refusing to bundle without knowing which kind of build this is.`);
+  return { variant, buildType, rest };
 }
 
 // cli and baseEnv are injectable so a test can observe exactly what the child process receives.
@@ -48,7 +57,15 @@ function main(argv = process.argv.slice(2), { cli = expoCli, baseEnv = process.e
     rest = parsed.rest;
     variant = parsed.variant;
     env = variantEnv(variant, baseEnv);
-    console.log(`[zutsav] bundling the "${variant}" variant (ZUTSAV_APP_VARIANT=${variant}).`);
+    // A Release bundle is only ever built for the production endpoints, taken from the build environment: it must not inherit
+    // the LAN development values from .env or src/config/env.js. (The local-testing build keeps its own LAN rules in build.gradle.)
+    if (parsed.buildType === 'release') {
+      const problems = productionEnvProblems(env);
+      if (problems.length) throw new Error(`refusing to bundle a Release build for the "${variant}" variant:\n  - ${problems.join('\n  - ')}`);
+      const target = describeProductionEnv(env);
+      console.log(`[zutsav] production endpoints: api=${target.api} base=${target.base} web=${target.web} socket=${target.socket}`);
+    }
+    console.log(`[zutsav] bundling the "${variant}" variant (ZUTSAV_APP_VARIANT=${variant}), ${parsed.buildType} build.`);
   } catch (e) {
     console.error(`[zutsav] ${e.message}`);
     return 1;
@@ -70,4 +87,4 @@ function main(argv = process.argv.slice(2), { cli = expoCli, baseEnv = process.e
 
 if (require.main === module) process.exit(main());
 
-module.exports = { FLAG, MARKER_FILE, splitArgs, main };
+module.exports = { BUILD_TYPE_FLAG, FLAG, MARKER_FILE, splitArgs, main };

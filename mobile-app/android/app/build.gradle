@@ -315,9 +315,20 @@ afterEvaluate {
                 "(${flavorMetroVariants.keySet().join(', ')}). Refusing to bundle for a guessed variant.")
         }
         def metroVariant = flavorMetroVariants[flavor]
+        // Release bundles are validated against the production endpoints by scripts/gradle-bundle.js; the local-testing build is
+        // not (it has its own LAN rules in the packaging guards below). Any other bundle task is refused rather than guessed.
+        def bundleBuildType = taskName.endsWith('ReleaseJsAndAssets') ? 'release' : (taskName.endsWith('LocalTestJsAndAssets') ? 'localtest' : null)
+        if (bundleBuildType == null) {
+            throw new GradleException("Task '${taskName}' is neither a Release nor a LocalTest bundle; refusing to bundle a build of unknown kind.")
+        }
         tasks.named(taskName).configure { task ->
             task.cliFile.set(file("${projectRoot}/scripts/gradle-bundle.js"))
-            task.extraPackagerArgs.addAll('--zutsav-app-variant', metroVariant)
+            task.extraPackagerArgs.addAll('--zutsav-app-variant', metroVariant, '--zutsav-build-type', bundleBuildType)
+            // Expo inlines these into the bundle, but Gradle does not know the bundler reads them. As inputs, a changed endpoint
+            // re-runs the task instead of packaging a bundle built for the previous values.
+            ['EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_BASE_URL', 'EXPO_PUBLIC_WEB_URL'].each { envName ->
+                task.inputs.property("zutsav.${envName}".toString(), providers.environmentVariable(envName).orElse(''))
+            }
             def marker = { new File(task.jsIntermediateSourceMapsDir.get().asFile, 'zutsav-variant.txt') }
             task.doFirst { marker().delete() }
             task.doLast {

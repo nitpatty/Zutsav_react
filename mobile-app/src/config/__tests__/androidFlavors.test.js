@@ -210,7 +210,8 @@ describe('Gradle → Metro wiring (the child process really gets the variant)', 
       "const fs = require('fs');",
       "const out = process.argv[process.argv.indexOf('--record') + 1];",
       'if (process.env.FAKE_CLI_FAIL) process.exit(Number(process.env.FAKE_CLI_FAIL));',
-      'fs.writeFileSync(out, JSON.stringify({ args: process.argv.slice(2), zutsav: process.env.ZUTSAV_APP_VARIANT, client: process.env.EXPO_PUBLIC_APP_VARIANT }));',
+      'const e = process.env;',
+      'fs.writeFileSync(out, JSON.stringify({ args: process.argv.slice(2), zutsav: e.ZUTSAV_APP_VARIANT, client: e.EXPO_PUBLIC_APP_VARIANT, api: e.EXPO_PUBLIC_API_URL, base: e.EXPO_PUBLIC_BASE_URL, web: e.EXPO_PUBLIC_WEB_URL }));',
     ].join('\n'));
   });
   afterAll(() => { fs.rmSync(dir, { recursive: true, force: true }); });
@@ -224,7 +225,9 @@ describe('Gradle → Metro wiring (the child process really gets the variant)', 
     const record = path.join(dir, `${name}.json`);
     const map = path.join(dir, name, 'index.android.bundle.packager.map');
     fs.mkdirSync(path.dirname(map), { recursive: true });
-    const status = gradleBundle.main([...argv, 'export:embed', '--record', record, '--sourcemap-output', map], { cli: () => stub, baseEnv: { PATH: process.env.PATH, ...baseEnv } });
+    // most cases are about the variant, so they run as a local-testing build unless they name their own build type
+    const buildType = argv.includes(gradleBundle.BUILD_TYPE_FLAG) ? [] : [gradleBundle.BUILD_TYPE_FLAG, 'localtest'];
+    const status = gradleBundle.main([...argv, ...buildType, 'export:embed', '--record', record, '--sourcemap-output', map], { cli: () => stub, baseEnv: { PATH: process.env.PATH, ...baseEnv } });
     const markerFile = path.join(path.dirname(map), gradleBundle.MARKER_FILE);
     return {
       status,
@@ -272,6 +275,63 @@ describe('Gradle → Metro wiring (the child process really gets the variant)', 
     expect(r.marker).toBeNull();
   });
 
+  describe('Release bundles are fail-closed on the production endpoints', () => {
+    const PROD = { EXPO_PUBLIC_API_URL: 'https://zutsav.com/api', EXPO_PUBLIC_BASE_URL: 'https://zutsav.com', EXPO_PUBLIC_WEB_URL: 'https://zutsav.com' };
+    const release = (name, variant, env) => attempt(name, ['--zutsav-app-variant', variant, '--zutsav-build-type', 'release'], env);
+
+    it('both variants are bundled with the identical production endpoints, and only the variant differs', () => {
+      const pub = release('rel-public', 'public', PROD);
+      const adm = release('rel-admin', 'admin', PROD);
+      expect(pub.status).toBe(0);
+      expect(adm.status).toBe(0);
+      const endpoints = (s) => ({ api: s.api, base: s.base, web: s.web });
+      expect(endpoints(pub.seen)).toEqual({ api: PROD.EXPO_PUBLIC_API_URL, base: PROD.EXPO_PUBLIC_BASE_URL, web: PROD.EXPO_PUBLIC_WEB_URL });
+      expect(endpoints(adm.seen)).toEqual(endpoints(pub.seen));
+      expect([pub.seen.zutsav, pub.seen.client, adm.seen.zutsav, adm.seen.client]).toEqual(['public', 'public', 'admin', 'admin']);
+      expect(pub.seen.args).not.toContain('--zutsav-build-type');
+    });
+
+    it.each([['api'], ['base'], ['web']])('refuses a Release bundle when the %s URL is missing: it never falls back to .env or the development host', (which) => {
+      const env = { ...PROD };
+      delete env[`EXPO_PUBLIC_${which.toUpperCase()}_URL`];
+      const r = release(`rel-missing-${which}`, 'public', env);
+      expect(r.status).toBe(1);
+      expect(r.seen).toBeNull();
+      expect(r.marker).toBeNull();
+    });
+
+    it.each([
+      ['the LAN address from .env', { EXPO_PUBLIC_API_URL: 'http://192.168.0.192:5000/api', EXPO_PUBLIC_BASE_URL: 'http://192.168.0.192:5000' }],
+      ['localhost', { EXPO_PUBLIC_API_URL: 'https://localhost/api', EXPO_PUBLIC_BASE_URL: 'https://localhost' }],
+      ['the emulator host', { EXPO_PUBLIC_API_URL: 'https://10.0.2.2/api', EXPO_PUBLIC_BASE_URL: 'https://10.0.2.2' }],
+      ['cleartext http on the production host', { EXPO_PUBLIC_API_URL: 'http://zutsav.com/api', EXPO_PUBLIC_BASE_URL: 'http://zutsav.com' }],
+      ['an API URL without /api', { EXPO_PUBLIC_API_URL: 'https://zutsav.com' }],
+      ['a doubled /api prefix', { EXPO_PUBLIC_API_URL: 'https://zutsav.com/api/api' }],
+      ['an API on a different origin than the base URL', { EXPO_PUBLIC_API_URL: 'https://api.zutsav.com/api' }],
+    ])('refuses a Release bundle built for %s', (_label, override) => {
+      const r = release(`rel-bad-${_label.replace(/\W+/g, '-')}`, 'admin', { ...PROD, ...override });
+      expect(r.status).toBe(1);
+      expect(r.seen).toBeNull();
+    });
+
+    it('does not check the endpoints of a local-testing bundle (its LAN rules live in the packaging guards)', () => {
+      const r = attempt('lt-lan', ['--zutsav-app-variant', 'public', '--zutsav-build-type', 'localtest'], { EXPO_PUBLIC_API_URL: 'http://192.168.0.192:5000/api' });
+      expect(r.status).toBe(0);
+    });
+
+    it('refuses to bundle without a build type, or with an unknown one', () => {
+      expect(gradleBundle.main(['--zutsav-app-variant', 'public', 'export:embed'], { cli: () => stub, baseEnv: { ...PROD } })).toBe(1);
+      expect(gradleBundle.main(['--zutsav-app-variant', 'public', '--zutsav-build-type', 'debug', 'export:embed'], { cli: () => stub, baseEnv: { ...PROD } })).toBe(1);
+    });
+
+    it('the log names the selected endpoints but never a credential', () => {
+      release('rel-log', 'public', PROD);
+      const logged = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      expect(logged).toContain('api=https://zutsav.com/api');
+      expect(logged).toContain('socket=wss://zutsav.com/socket.io');
+    });
+  });
+
   it('variantEnv never mutates the caller\'s environment', () => {
     const base = { PATH: 'x' };
     const env = variantEnv('admin', base);
@@ -285,7 +345,10 @@ describe('Gradle → Metro wiring (the child process really gets the variant)', 
       expect(g).toMatch(/afterEvaluate \{/);
       expect(g).toMatch(/tasks\.named\(taskName\)\.configure/);
       expect(g).toContain('scripts/gradle-bundle.js');
-      expect(g).toMatch(/task\.extraPackagerArgs\.addAll\('--zutsav-app-variant', metroVariant\)/);
+      expect(g).toMatch(/task\.extraPackagerArgs\.addAll\('--zutsav-app-variant', metroVariant, '--zutsav-build-type', bundleBuildType\)/);
+      // a changed endpoint must re-run the bundle task instead of packaging a bundle built for the previous values
+      expect(g).toMatch(/\['EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_BASE_URL', 'EXPO_PUBLIC_WEB_URL'\]\.each/);
+      expect(g).toMatch(/task\.inputs\.property\(/);
       expect(g).toMatch(/task\.cliFile\.set\(/);
       // the earlier attempt (a configureEach registered before the plugin's own configuration) was silently overwritten
       expect(g).not.toMatch(/tasks\.configureEach/);

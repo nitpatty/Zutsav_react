@@ -323,3 +323,61 @@ once. Each flavor now carries its own port (section 3).
 **UX observations (existing behavior, not changed):** after a final location denial the app gives no hint that the user must
 enable the permission in Android settings; the Public dev bundle served by Metro (`dev=true`) still contains the unfolded
 `'zutsavadmin'` string in `src/config/appVariant.js` (the production bundle folds it away; verified by `npm run verify:gradle-bundles`).
+
+## 11. Production APKs for direct distribution (WhatsApp)
+
+Both apps are sent as APK files, not through Google Play, and both talk to the SAME production backend. Only the application ID,
+URL scheme, Metro variant, role availability and signing identity differ.
+
+### Production endpoints (from the production Nginx configuration)
+
+| Variable | Value | Supporting Nginx directive |
+|---|---|---|
+| `EXPO_PUBLIC_API_URL` | `https://zutsav.com/api` | `server_name zutsav.com www.zutsav.com;` listening on 443 ssl; `location /api/ { proxy_pass http://localhost:5000; }` has no URI part, so the `/api` prefix is **kept** and the backend receives `/api/...` |
+| `EXPO_PUBLIC_BASE_URL` | `https://zutsav.com` | same server block; uploads are `location ^~ /uploads/ { alias /home/appuser/apps/uploads/; }`, so images and logos are `https://zutsav.com/uploads/...` |
+| `EXPO_PUBLIC_WEB_URL` | `https://zutsav.com` | same server block serves the website (`root .../frontend/build`, SPA fallback); referral links are `${WEB_URL}/r/<token>` |
+| Socket.IO (derived from `BASE_URL`) | `wss://zutsav.com/socket.io` | `location /socket.io/ { proxy_pass http://localhost:5000; ... Upgrade/Connection headers }`, prefix kept; the client uses the default path `/socket.io` with the websocket transport |
+
+`api.zutsav.com` (in `eas.json`) and `app.zutsav.com` (the fallback in `src/config/env.js`) are **not served by the supplied Nginx
+configuration**; do not use them for these builds. The upstream `localhost:5000` is internal to the server and never appears in the app.
+
+### Release bundling is fail-closed
+
+`scripts/gradle-bundle.js` runs `build-config/productionEnv.js` before the bundler starts, for every Release bundle (both
+flavors, APK and AAB). It stops the build unless all three variables are set **in the build environment** (not `.env`) and are
+`https://` URLs on a public DNS name with the default port, the API path is exactly `/api`, and the API and base URL share an origin.
+`localhost`, IP addresses (loopback, LAN, emulator), `.local`/`.internal` style names and cleartext HTTP are rejected. The
+variables are also Gradle inputs of the bundle task, so changing them re-bundles instead of reusing an old bundle. The local-testing
+build is unaffected (it keeps its LAN rules).
+
+### Building (PowerShell; passwords are never typed on a command line or printed)
+
+```powershell
+cd mobile-app
+$env:EXPO_PUBLIC_API_URL  = 'https://zutsav.com/api'
+$env:EXPO_PUBLIC_BASE_URL = 'https://zutsav.com'
+$env:EXPO_PUBLIC_WEB_URL  = 'https://zutsav.com'
+# load ONE app's signing variables from the owner-only file (use ADMIN for the Admin build); nothing is echoed
+Get-Content "$HOME\.zutsav\keystores\zutsav-release-credentials.env" | Where-Object { $_ -like 'ZUTSAV_PUBLIC_RELEASE_*' } |
+  ForEach-Object { $k, $v = $_ -split '=', 2; Set-Item "env:$k" $v }
+npm run build:public:release     # assemblePublicAppRelease  -> android/app/build/outputs/apk/publicApp/release/
+# new shell, then the same with ADMIN:  npm run build:admin:release   # assembleAdminAppRelease
+```
+
+### Signing identities
+
+The two production keystores live in `~/.zutsav/keystores/` (outside the repository and outside OneDrive): `zutsav-public-release.jks`
+(alias `zutsav-public`) and `zutsav-admin-release.jks` (alias `zutsav-admin`), plus `zutsav-release-credentials.env` holding the
+eight `ZUTSAV_*_RELEASE_*` variables. **Losing either keystore or its password permanently prevents updating that app in place.**
+Back up the keystores and store the passwords in a company/client-controlled password manager; do not email or WhatsApp them.
+
+### Updating and reinstalling
+
+Android only installs an update over an app signed by the SAME certificate. A copy of `com.zutsav.app` signed with any other key
+(the debug key, the internal-testing key, or whatever key signed an APK sent earlier) cannot be updated in place by the Public
+production APK: it must be uninstalled first, which deletes that app's local data on the device. Nothing in the repository or on the
+build machine identifies the key of the APK that was previously sent over WhatsApp, so this cannot be ruled out in advance.
+`com.zutsav.app.admin` is a new package and installs alongside the Public app. Version codes are independent per app; raise
+`versionCode` in `android/app/build.gradle` for every later build that is sent to the same devices.
+
+`release-artifacts/` (git-ignored) holds the delivered APKs, `SHA256SUMS.txt` and `BUILD_VERIFICATION.md` for the latest build.
