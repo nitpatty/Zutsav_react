@@ -1,0 +1,4 @@
+<resources>
+  <!-- Admin flavor only (com.zutsav.app.admin): the launcher label that tells it apart from the Public app. -->
+  <string name="app_name">Zutsav Admin</string>
+</resources>

@@ -8,7 +8,10 @@ import AuthNavigator from './AuthNavigator';
 import UserNavigator from './UserNavigator';
 import PanditNavigator from './PanditNavigator';
 import PanditGateNavigator from './PanditGateNavigator';
-import AdminNavigator from './AdminNavigator';
+import Toast from 'react-native-toast-message';
+// The Admin module is reached ONLY through this seam (variants/adminModule); never import AdminNavigator directly.
+import { AdminNavigator } from '../variants/adminModule';
+import { getRoleSupport, unsupportedRoleMessage } from '../variants/roleSupport';
 import { connectSocket, disconnectSocket, onNotification } from '../utils/socket';
 import { useNotificationStore } from '../store/notificationStore';
 import { useCartStore } from '../store/cartStore';
@@ -25,7 +28,11 @@ function GateSpinner() {
 }
 
 export default function RootNavigator() {
-  const { user, ready } = useAuthStore();
+  const { user, ready, rejectUnsupportedSession } = useAuthStore();
+  // Which kind of account is signed in, and whether THIS build serves it (variants/roleSupport). A role it does not
+  // serve (Admin in the public app, or an unknown role) must never reach any navigator — least of all the User one.
+  const roleSupport = user ? getRoleSupport(user.role) : null;
+  const unsupportedRole = !!user && !roleSupport.supported;
   const { loadTheme }   = useThemeStore();
   const { addRealtime, fetchUnreadCount } = useNotificationStore();
   const { load: loadCart } = useCartStore();
@@ -37,8 +44,15 @@ export default function RootNavigator() {
   // to the foreground (no-op until the session is restored; never navigates). See utils/paymentRecovery.
   usePaymentRecovery({ user, ready });
 
+  // A signed-in user this build does not serve (e.g. the role changed on the server): say why, end the session.
   useEffect(() => {
-    if (!user) { disconnectSocket(); return; }
+    if (!unsupportedRole) return;
+    Toast.show({ type: 'error', text1: unsupportedRoleMessage(roleSupport.reason) });
+    rejectUnsupportedSession();
+  }, [unsupportedRole]);
+
+  useEffect(() => {
+    if (!user || unsupportedRole) { disconnectSocket(); return; }
     connectSocket().then((sock) => {
       if (!sock) return;
       const off = onNotification((n) => addRealtime(n));
@@ -68,7 +82,10 @@ export default function RootNavigator() {
     );
   }
 
-  if (user.role === 'admin' || user.role === 'system_admin') {
+  // Unsupported role: nothing is mounted while the effect above clears the session (then the Auth stack shows).
+  if (unsupportedRole) return <GateSpinner />;
+
+  if (roleSupport.kind === 'admin') {
     return (
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Admin" component={AdminNavigator} />
@@ -76,7 +93,7 @@ export default function RootNavigator() {
     );
   }
 
-  if (user.role === 'pandit') {
+  if (roleSupport.kind === 'pandit') {
     // Block until the FIRST status check resolves (success OR failure) —
     // never let PanditNavigator (Dashboard/Bookings/Earnings/Calendar/
     // Notifications/Settings) mount even momentarily while this is in
@@ -101,9 +118,13 @@ export default function RootNavigator() {
     );
   }
 
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="User" component={UserNavigator} />
-    </Stack.Navigator>
-  );
+  if (roleSupport.kind === 'user') {
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="User" component={UserNavigator} />
+      </Stack.Navigator>
+    );
+  }
+
+  return <GateSpinner />; // unreachable while getRoleSupport only returns the kinds above; never fall through to User
 }

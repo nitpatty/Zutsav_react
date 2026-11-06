@@ -2,6 +2,16 @@
 
 Scope: `mobile-app/` only. Nothing here changes the website, the backend or any payment flow.
 
+> **Phase 3 update — read `docs/PUBLIC_PRIVATE_BUILD_GUIDE.md` first for anything about building or signing.** The Android project now
+> has two product flavors, `publicApp` (`com.zutsav.app`) and `adminApp` (`com.zutsav.app.admin`). Consequences for this document:
+> the build tasks are flavor-specific (`assemblePublicAppRelease`, `assembleAdminAppLocalTest`, ...; the bare `assembleRelease` /
+> `assembleLocalTest` build both), and the single generic signing identity `ZUTSAV_RELEASE_*` described below **no longer exists**:
+> production signing is `ZUTSAV_PUBLIC_RELEASE_*` and `ZUTSAV_ADMIN_RELEASE_*` (separate keys), and the `localTest` build uses its
+> own internal-testing identity `ZUTSAV_LOCALTEST_*`. The hardening described below (cleartext only in debug, backup off, no
+> RECORD_AUDIO / SYSTEM_ALERT_WINDOW in release, the LAN exception only in `localTest`) is unchanged and applies to both flavors.
+> Where this file still says `ZUTSAV_RELEASE_*`, `assembleRelease`, `assembleLocalTest` or `app-localTest.apk`, read the per-flavor
+> equivalents (APKs now land in `app/build/outputs/apk/<flavor>/<buildType>/`).
+
 ## Where the native configuration lives (read this first)
 
 `mobile-app/android/` is **committed**. Because it exists, EAS Build and `expo run:android` use it as it is and do **not**

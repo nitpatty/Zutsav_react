@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react-native';
 import * as SecureStore from 'expo-secure-store';
+import Toast from 'react-native-toast-message';
 import api from '../../api/axios';
 import RootNavigator from '../RootNavigator';
 import { useAuthStore } from '../../store/authStore';
@@ -31,7 +32,10 @@ jest.mock('../AuthNavigator', () => ({ __esModule: true, default: mockMarker('AU
 jest.mock('../UserNavigator', () => ({ __esModule: true, default: mockMarker('USER_STACK') }));
 jest.mock('../PanditNavigator', () => ({ __esModule: true, default: mockMarker('PANDIT_STACK') }));
 jest.mock('../PanditGateNavigator', () => ({ __esModule: true, default: mockMarker('PANDIT_GATE_STACK') }));
-jest.mock('../AdminNavigator', () => ({ __esModule: true, default: mockMarker('ADMIN_STACK') }));
+// RootNavigator reaches Admin only through the variants/adminModule seam; this is the Admin-enabled (private) build.
+// (The public build is covered by RootNavigator.public.test.jsx, which uses the real public stand-in.)
+jest.mock('../../variants/adminModule', () => ({ __esModule: true, AdminNavigator: mockMarker('ADMIN_STACK'), ADMIN_AVAILABLE: true }));
+jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
 jest.mock('../../utils/socket', () => ({
   connectSocket: jest.fn(async () => null),
   disconnectSocket: jest.fn(),
@@ -135,5 +139,75 @@ describe('RootNavigator ↔ session expiry', () => {
 
     await waitFor(() => expect(screen.getByText('AUTH_STACK')).toBeTruthy());
     expect(useCartStore.getState().items).toEqual([]);
+  });
+});
+
+describe('RootNavigator ↔ role routing (Admin-enabled build)', () => {
+  const ADMIN = { _id: 'aA', name: 'Admin A', email: 'ad@example.invalid', role: 'admin' };
+  const SYSTEM_ADMIN = { _id: 'sA', name: 'System A', email: 'sa@example.invalid', role: 'system_admin' };
+  const ALL_MARKERS = ['USER_STACK', 'PANDIT_STACK', 'PANDIT_GATE_STACK', 'ADMIN_STACK', 'AUTH_STACK'];
+  const shown = () => ALL_MARKERS.filter((m) => screen.queryByText(m));
+
+  // A session injected straight into the store, the way a stale or unusual role would arrive (setSession itself refuses it).
+  const injectSession = async (user, token = 'tokX') => {
+    await act(async () => { useAuthStore.setState({ user, token }); });
+  };
+
+  it('routes a User to the User navigator only', async () => {
+    render(<RootNavigator />);
+    await signIn(USER, 'tokA');
+    await waitFor(() => expect(screen.getByText('USER_STACK')).toBeTruthy());
+    expect(shown()).toEqual(['USER_STACK']);
+  });
+
+  it('routes an approved Pandit to the Pandit navigator only', async () => {
+    render(<RootNavigator />);
+    await signIn(PANDIT, 'tokP');
+    await waitFor(() => expect(screen.getByText('PANDIT_STACK')).toBeTruthy());
+    expect(shown()).toEqual(['PANDIT_STACK']);
+  });
+
+  it('routes a Pandit awaiting approval to the existing Pandit gate only', async () => {
+    panditStatus = 'under_review';
+    render(<RootNavigator />);
+    await signIn(PANDIT, 'tokP');
+    await waitFor(() => expect(screen.getByText('PANDIT_GATE_STACK')).toBeTruthy());
+    expect(shown()).toEqual(['PANDIT_GATE_STACK']);
+  });
+
+  it.each([['admin', ADMIN], ['system_admin', SYSTEM_ADMIN]])('routes a %s to the Admin navigator only', async (_role, account) => {
+    render(<RootNavigator />);
+    await signIn(account, 'tokAdmin');
+    await waitFor(() => expect(screen.getByText('ADMIN_STACK')).toBeTruthy());
+    expect(shown()).toEqual(['ADMIN_STACK']);
+    expect(Toast.show).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an unrecognised role', { _id: 'x1', role: 'superuser' }],
+    ['a differently-cased role', { _id: 'x2', role: 'Admin' }],
+    ['a missing role', { _id: 'x3' }],
+    ['a null role', { _id: 'x4', role: null }],
+  ])('never serves %s from the User navigator: the session is ended and the Auth stack shows', async (_label, account) => {
+    render(<RootNavigator />);
+    await injectSession(account);
+
+    expect(screen.queryByText('USER_STACK')).toBeNull();
+    expect(screen.queryByText('PANDIT_STACK')).toBeNull();
+    expect(screen.queryByText('ADMIN_STACK')).toBeNull();
+
+    await waitFor(() => expect(screen.getByText('AUTH_STACK')).toBeTruthy());
+    expect(screen.queryByText('USER_STACK')).toBeNull();
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(useAuthStore.getState().token).toBeNull();
+    expect(Toast.show).toHaveBeenCalledWith({ type: 'error', text1: 'Sorry, this account type is not supported in this app.' });
+  });
+
+  it('does not open a realtime connection or load the cart for an unsupported role', async () => {
+    const { connectSocket } = require('../../utils/socket');
+    render(<RootNavigator />);
+    await injectSession({ _id: 'x1', role: 'superuser' });
+    await waitFor(() => expect(screen.getByText('AUTH_STACK')).toBeTruthy());
+    expect(connectSocket).not.toHaveBeenCalled();
   });
 });

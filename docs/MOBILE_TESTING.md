@@ -934,3 +934,23 @@ Navigation only. No KYC API, payload, status value, document handling, OTP, rete
   untested here because Node and Hermes differ.
 - `mobile-app/%ProgramData%/Microsoft/Windows/UUS/State/_active.uusver` is a tracked stray
   file (Windows artefact) — unrelated, left untouched.
+## Phase 3 — two Android apps (Public `com.zutsav.app`, Private Admin `com.zutsav.app.admin`)
+
+Full guide: `docs/PUBLIC_PRIVATE_BUILD_GUIDE.md`. New Jest suites (static checks plus real behavior of the Node entry points Gradle uses):
+`src/config/__tests__/androidFlavors.test.js` (flavor identity, labels/icons, scheme isolation, the bundler wrapper really handing the
+variant to its child process, developer commands, per-flavor signing and the guard's task-name coverage),
+`androidArtifacts.test.js` (the merged-manifest / APK checker fails when each property is wrong), and an updated
+`androidRelease.test.js` (per-flavor signing; the old single `ZUTSAV_RELEASE_*` assertions were replaced, not removed).
+`npm run test:ci`: 111 suites, 2,400 tests (was 109 / 2,316).
+
+Tests that need the Android toolchain (not part of `test:ci`): `npm run verify:gradle-bundles`, `verify:android-guards`,
+`verify:android-manifests`, and `node scripts/verify-android-artifacts.js apk <apk> <variant>`.
+Day-to-day: `npm run start:public|start:admin`, `npm run android:public|android:admin` (see the guide for all commands). `npm run android`
+now installs the **Public** debug app.
+
+### Phase 3 closeout (device verification)
+
+Device and QA-backend run documented in `docs/PUBLIC_PRIVATE_BUILD_GUIDE.md` section 10 (login, role rejection, session isolation,
+PDF, share sheet, image picker, permission denial/retry, deep links). Fixed there: referral prefill from `zutsav://register?ref=` and
+one Metro port per app. Two Metro servers can now run together (`npm run start:public` on 8081, `npm run start:admin` on 8082).
+`npm run test:ci`: 111 suites, 2,408 tests.

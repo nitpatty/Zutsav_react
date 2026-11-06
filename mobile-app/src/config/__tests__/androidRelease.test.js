@@ -67,10 +67,10 @@ describe('release manifest hardening (F-24)', () => {
   });
 });
 
-describe('release signing (F-24)', () => {
-  it('the release build type is never signed with the debug keystore', () => {
+describe('release signing (F-24; per-flavor since Phase 3, see androidFlavors.test.js)', () => {
+  it('the release build type is never signed with the debug keystore and names no key itself (each flavor supplies its own)', () => {
     expect(releaseBlock()).not.toMatch(/signingConfigs\.debug/);
-    expect(releaseBlock()).toMatch(/signingConfig releaseSigningProvided \? signingConfigs\.release : null/);
+    expect(releaseBlock()).not.toMatch(/^\s*signingConfig\s/m);
   });
 
   it('debug builds keep the debug keystore', () => {
@@ -79,7 +79,9 @@ describe('release signing (F-24)', () => {
 
   it('release credentials come from the environment / Gradle properties, never from the repository', () => {
     const g = gradle();
-    for (const name of ['ZUTSAV_RELEASE_STORE_FILE', 'ZUTSAV_RELEASE_STORE_PASSWORD', 'ZUTSAV_RELEASE_KEY_ALIAS', 'ZUTSAV_RELEASE_KEY_PASSWORD']) expect(g).toContain(`'${name}'`);
+    // the names are built from three prefixes + the four parts (ZUTSAV_PUBLIC_RELEASE, ZUTSAV_ADMIN_RELEASE, ZUTSAV_LOCALTEST)
+    for (const prefix of ['ZUTSAV_PUBLIC_RELEASE', 'ZUTSAV_ADMIN_RELEASE', 'ZUTSAV_LOCALTEST']) expect(g).toContain(`'${prefix}'`);
+    for (const part of ['STORE_FILE', 'STORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD']) expect(g).toContain(`'${part}'`);
     expect(g).toMatch(/System\.getenv\(name\) \?: findProperty\(name\)/);
     // the only literal passwords allowed in the file are the standard public debug-keystore ones
     expect([...g.matchAll(/(?:storePassword|keyPassword)\s+'([^']*)'/g)].map((m) => m[1])).toEqual(['android', 'android']);
@@ -137,10 +139,13 @@ describe('local-network testing variant (isolated from release)', () => {
 
   it('is signed like release (never the debug key) and its packaging tasks are covered by a refusing guard', () => {
     expect(localTestBlock()).toMatch(/initWith release/);
-    expect(localTestBlock()).toMatch(/signingConfig releaseSigningProvided \? signingConfigs\.release : null/);
-    expect(localTestBlock()).not.toMatch(/signingConfigs\.debug/);
+    // always its own non-null identity: null would let a flavor's production key be inherited
+    expect(localTestBlock()).toMatch(/signingConfig signingConfigs\.localTest\s/);
+    expect(localTestBlock()).not.toMatch(/signingConfigs\.debug|signingConfigs\.(public|admin)Release/);
     const g = gradle();
-    expect(g).toMatch(/'assembleLocalTest'/);
+    expect(g).toMatch(/\(Release\|LocalTest\)/);
+    expect(g).toMatch(/publicAppLocalTest/);
+    expect(g).toMatch(/adminAppLocalTest/);
     expect(g).toMatch(/never signed with the debug keystore/);
     expect(g).toMatch(/network_security_config_localtest\.xml/);
   });
@@ -159,7 +164,11 @@ describe('map provider configuration (F-16 — Ola Maps is server-side only)', (
   it('has no Google Maps configuration in the native project or Expo config', () => {
     expect(mainManifest()).not.toMatch(/com\.google\.android\.geo\.API_KEY/);
     expect(debugManifest()).not.toMatch(/com\.google\.android\.geo\.API_KEY/);
-    expect(gradle()).not.toMatch(/googleMapsApiKey|GOOGLE_MAPS|manifestPlaceholders/);
+    expect(gradle()).not.toMatch(/googleMapsApiKey|GOOGLE_MAPS/);
+    // manifestPlaceholders exist for the per-flavor URL scheme only; none may carry a map key
+    const placeholders = [...gradle().matchAll(/manifestPlaceholders\s*=\s*\[([^\]]*)\]/g)].map((m) => m[1].trim());
+    expect(placeholders.length).toBeGreaterThan(0);
+    for (const p of placeholders) expect(p).toMatch(/^appScheme:\s*'[a-z]+'$/);
     expect(read('app.json')).not.toMatch(/googleMaps|GOOGLE_MAPS/i);
     expect(read('eas.json')).not.toMatch(/GOOGLE_MAPS|MAPS_ENABLED/);
     expect(read('.env.example')).not.toMatch(/GOOGLE_MAPS|MAPS_ENABLED/);

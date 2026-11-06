@@ -25,14 +25,25 @@ def getRNVersion() {
 }
 def rnVersion = getRNVersion()
 
-// ── Release signing values: read from the environment first, then Gradle properties. Never printed. ──
+// ── Signing values: read from the environment first, then Gradle properties. Never printed. ──
+// Three SEPARATE identities, each with its own four variables (<PREFIX>_STORE_FILE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD):
+//   ZUTSAV_PUBLIC_RELEASE  production signing of the Public app   (com.zutsav.app)
+//   ZUTSAV_ADMIN_RELEASE   production signing of the Admin app    (com.zutsav.app.admin)
+//   ZUTSAV_LOCALTEST       internal-testing key for the localTest build type (either flavor); never a production key
+// Nothing falls back from one identity to another, to the debug keystore, or to the old generic ZUTSAV_RELEASE_* names.
 def buildSecret(String name) {
   def value = System.getenv(name) ?: findProperty(name)
   return value == null ? '' : value.toString().trim()
 }
-def releaseSigningValue = { String name -> buildSecret(name) }
-def releaseSigningProvided = ['ZUTSAV_RELEASE_STORE_FILE', 'ZUTSAV_RELEASE_STORE_PASSWORD', 'ZUTSAV_RELEASE_KEY_ALIAS', 'ZUTSAV_RELEASE_KEY_PASSWORD']
-    .every { !buildSecret(it).isEmpty() }
+def signingParts = ['STORE_FILE', 'STORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD']
+def signingValue = { String prefix, String part -> buildSecret("${prefix}_${part}") }
+def signingProvided = { String prefix -> signingParts.every { !signingValue(prefix, it).isEmpty() } }
+def PUBLIC_RELEASE_SIGNING = 'ZUTSAV_PUBLIC_RELEASE'
+def ADMIN_RELEASE_SIGNING = 'ZUTSAV_ADMIN_RELEASE'
+def LOCALTEST_SIGNING = 'ZUTSAV_LOCALTEST'
+
+// Each flavor's JavaScript bundle is built for exactly one Metro variant (see metro.config.js / build-config/metroVariant.js).
+def flavorMetroVariants = [publicApp: 'public', adminApp: 'admin']
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -61,7 +72,9 @@ react {
     //   The list of variants to that are debuggable. For those we're going to
     //   skip the bundling of the JS bundle and the assets. By default is just 'debug'.
     //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
-    // debuggableVariants = ["liteDebug", "prodDebug"]
+    //   With product flavors the debug variants are no longer named just 'debug': without this list they would be treated
+    //   as release-like and embed a JS bundle instead of loading from Metro.
+    debuggableVariants = ["publicAppDebug", "adminAppDebug"]
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.
@@ -118,11 +131,15 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    // The namespace (the Kotlin/Java package of MainActivity, R, BuildConfig) stays com.zutsav.app for both apps; only the
+    // applicationId (the installed identity) differs, so no source file moves.
     namespace 'com.zutsav.app'
     defaultConfig {
         applicationId 'com.zutsav.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        // Public (com.zutsav.app) and Admin (com.zutsav.app.admin) are different packages, so each keeps its own,
+        // independent versionCode history. Bump them per distribution of that app.
         versionCode 1
         versionName "1.0.0"
     }
@@ -133,15 +150,52 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        // Local release signing, only when ALL four values are provided (environment or Gradle properties).
-        // On EAS Build the managed credentials are injected on top of this and take over `release`.
-        if (releaseSigningProvided) {
-            release {
-                storeFile file(releaseSigningValue('ZUTSAV_RELEASE_STORE_FILE'))
-                storePassword releaseSigningValue('ZUTSAV_RELEASE_STORE_PASSWORD')
-                keyAlias releaseSigningValue('ZUTSAV_RELEASE_KEY_ALIAS')
-                keyPassword releaseSigningValue('ZUTSAV_RELEASE_KEY_PASSWORD')
+        // The three identities below always EXIST but are only FILLED when all four of their values are provided. An empty
+        // one cannot sign anything: packaging fails (validateSigning) instead of falling back to another key.
+        publicRelease {
+            if (signingProvided(PUBLIC_RELEASE_SIGNING)) {
+                storeFile file(signingValue(PUBLIC_RELEASE_SIGNING, 'STORE_FILE'))
+                storePassword signingValue(PUBLIC_RELEASE_SIGNING, 'STORE_PASSWORD')
+                keyAlias signingValue(PUBLIC_RELEASE_SIGNING, 'KEY_ALIAS')
+                keyPassword signingValue(PUBLIC_RELEASE_SIGNING, 'KEY_PASSWORD')
             }
+        }
+        adminRelease {
+            if (signingProvided(ADMIN_RELEASE_SIGNING)) {
+                storeFile file(signingValue(ADMIN_RELEASE_SIGNING, 'STORE_FILE'))
+                storePassword signingValue(ADMIN_RELEASE_SIGNING, 'STORE_PASSWORD')
+                keyAlias signingValue(ADMIN_RELEASE_SIGNING, 'KEY_ALIAS')
+                keyPassword signingValue(ADMIN_RELEASE_SIGNING, 'KEY_PASSWORD')
+            }
+        }
+        localTest {
+            if (signingProvided(LOCALTEST_SIGNING)) {
+                storeFile file(signingValue(LOCALTEST_SIGNING, 'STORE_FILE'))
+                storePassword signingValue(LOCALTEST_SIGNING, 'STORE_PASSWORD')
+                keyAlias signingValue(LOCALTEST_SIGNING, 'KEY_ALIAS')
+                keyPassword signingValue(LOCALTEST_SIGNING, 'KEY_PASSWORD')
+            }
+        }
+    }
+    flavorDimensions 'appVariant'
+    productFlavors {
+        // Public Zutsav: user + pandit. Label "Zutsav" and the launcher icon come from src/main (unchanged).
+        publicApp {
+            dimension 'appVariant'
+            manifestPlaceholders = [appScheme: 'zutsav']
+            // The Metro port this app's debug build looks for. A debug APK has the port baked in (react_native_dev_server_port,
+            // set by the React Native plugin from -PreactNativeDevServerPort in defaultConfig; this flavor value takes precedence),
+            // so two apps that need DIFFERENT Metro variants must use different ports to run at the same time.
+            resValue 'integer', 'react_native_dev_server_port', '8081'
+            signingConfig signingConfigs.publicRelease
+        }
+        // Private Zutsav Admin: com.zutsav.app.admin. Label and icon are overlaid from src/adminApp/res.
+        adminApp {
+            dimension 'appVariant'
+            applicationIdSuffix '.admin'
+            manifestPlaceholders = [appScheme: 'zutsavadmin']
+            resValue 'integer', 'react_native_dev_server_port', '8082'
+            signingConfig signingConfigs.adminRelease
         }
     }
     buildTypes {
@@ -149,22 +203,23 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Never the debug keystore. Without credentials this is null and packaging a release is refused
-            // (see the taskGraph check below) instead of producing a debug-signed "release".
-            signingConfig releaseSigningProvided ? signingConfigs.release : null
+            // No signingConfig here on purpose: each flavor supplies its own production identity (publicRelease /
+            // adminRelease above). Never the debug keystore. Without that flavor's credentials packaging is refused by
+            // the taskGraph guard at the end of this file instead of producing a debug-signed or wrongly-signed "release".
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
         }
-        // Standalone INTERNAL testing build for a backend on the local Wi-Fi (`./gradlew assembleLocalTest`). It is `release` plus
-        // exactly one difference: src/localTest/ adds a network-security-config that permits cleartext HTTP to the single LAN host
-        // listed there (every other host stays HTTPS-only). The `release` build type and the main manifest are not touched, and this
-        // variant needs the same release signing (never the debug key) — see the second taskGraph check at the end of this file.
+        // Standalone INTERNAL testing build for a backend on the local Wi-Fi (`./gradlew assemblePublicAppLocalTest` / `assembleAdminAppLocalTest`).
+        // It is `release` plus exactly one difference: src/localTest/ adds a network-security-config that permits cleartext HTTP to the
+        // single LAN host listed there (every other host stays HTTPS-only). The `release` build type and the main manifest are not
+        // touched. It is signed ONLY with the internal-testing identity (ZUTSAV_LOCALTEST_*): always that config (never null, so a
+        // flavor's production key cannot be inherited), never the debug key, never a production key. See the guards at the end of this file.
         localTest {
             initWith release
             matchingFallbacks = ['release']
-            signingConfig releaseSigningProvided ? signingConfigs.release : null
+            signingConfig signingConfigs.localTest
             versionNameSuffix '-localtest'
         }
     }
@@ -229,33 +284,99 @@ if (rnVersion < versionToNumber(0, 75, 0)) {
     applyNativeModulesAppBuildGradle(project)
 }
 
-// Refuse to package an unsigned or debug-signed release. EAS Build injects the managed signing config at
-// configuration time, so this only trips for local `assembleRelease` / `bundleRelease` without credentials.
-gradle.taskGraph.whenReady { graph ->
-    def packagesRelease = graph.allTasks.any { it.project == project && it.name in ['assembleRelease', 'bundleRelease', 'packageRelease', 'packageReleaseBundle'] }
-    if (!packagesRelease) return
-    def releaseSigning = android.buildTypes.release.signingConfig
-    if (releaseSigning == null || releaseSigning.name == 'debug') {
-        throw new GradleException(
-            'Release signing is not configured. Provide ZUTSAV_RELEASE_STORE_FILE, ZUTSAV_RELEASE_STORE_PASSWORD, ' +
-            'ZUTSAV_RELEASE_KEY_ALIAS and ZUTSAV_RELEASE_KEY_PASSWORD (environment or Gradle properties), or build with EAS ' +
-            'Build, which injects its managed credentials. A release build is never signed with the debug keystore.')
+// ── Metro variant per flavor ──
+// The React Native Gradle plugin bundles every non-debuggable variant with `node <cliFile> export:embed ...`, run through
+// project.exec, which has NO per-task environment: a variable assigned here would never reach the process that loads Metro.
+// So each createBundle<Variant>JsAndAssets task is pointed at scripts/gradle-bundle.js instead. That script sets
+// ZUTSAV_APP_VARIANT (Metro module selection) and EXPO_PUBLIC_APP_VARIANT (client config, e.g. the deep-link scheme) for the
+// Expo CLI child process and then runs the real Expo CLI with all the remaining arguments. A bundle task whose flavor is not
+// listed in flavorMetroVariants fails the build rather than being bundled for a guessed variant.
+//
+// Ordering matters: the React Native plugin registers these tasks (and sets their cliFile) when the Android plugin reports the
+// variants, which happens in afterEvaluate. A configureEach registered earlier ran BEFORE that and was silently overwritten
+// (the Admin bundle then contained the Public stub), so the override is applied afterwards, through named().configure, whose
+// actions run after the plugin's own. As a second, independent check each task verifies after it ran that the wrapper
+// really executed for the expected variant (it writes zutsav-variant.txt next to the intermediate source map only after a
+// successful bundle); a task that skipped the wrapper fails instead of leaving a bundle of unknown variant for packaging.
+afterEvaluate {
+    def bundleTaskNames = tasks.names.findAll { it ==~ /^createBundle.+JsAndAssets$/ }
+    // Every variant that embeds JavaScript (all but the debuggable ones) must have its bundle task wired below.
+    android.applicationVariants.all { variant ->
+        if (variant.name in ['publicAppDebug', 'adminAppDebug']) return
+        def expectedTask = "createBundle${variant.name.capitalize()}JsAndAssets".toString()
+        if (!(expectedTask in bundleTaskNames)) {
+            throw new GradleException("Variant '${variant.name}' has no ${expectedTask} task to wire to a Metro variant; refusing to continue.")
+        }
+    }
+    bundleTaskNames.each { taskName ->
+        def flavor = flavorMetroVariants.keySet().find { taskName.startsWith("createBundle${it.capitalize()}".toString()) }
+        if (flavor == null) {
+            throw new GradleException("Task '${taskName}' bundles JavaScript for a variant whose flavor is not mapped to a Metro variant " +
+                "(${flavorMetroVariants.keySet().join(', ')}). Refusing to bundle for a guessed variant.")
+        }
+        def metroVariant = flavorMetroVariants[flavor]
+        tasks.named(taskName).configure { task ->
+            task.cliFile.set(file("${projectRoot}/scripts/gradle-bundle.js"))
+            task.extraPackagerArgs.addAll('--zutsav-app-variant', metroVariant)
+            def marker = { new File(task.jsIntermediateSourceMapsDir.get().asFile, 'zutsav-variant.txt') }
+            task.doFirst { marker().delete() }
+            task.doLast {
+                def written = marker().isFile() ? marker().text.trim() : ''
+                if (written != "variant=${metroVariant}".toString()) {
+                    throw new GradleException("${task.name} did not run through scripts/gradle-bundle.js for the '${metroVariant}' variant " +
+                        "(marker: '${written}'). Refusing to leave a bundle of unknown variant for packaging.")
+                }
+            }
+        }
     }
 }
 
-// The local-testing variant gets the same signing requirement as release, and its cleartext exception must match the backend host the
-// JS bundle is being built for: the API and base URLs (build-time EXPO_PUBLIC_*) must be http:// URLs whose host is listed in
-// src/localTest/res/xml/network_security_config_localtest.xml. Refusing here is safer than an APK that cannot reach its own backend
-// or that quietly depends on a host the config does not name.
+// ── Packaging guards ──
+// Every task that can produce an installable or distributable artifact of a release-like variant (APK or AAB) must be signed by
+// THAT flavor's own identity. The rule is keyed on the variant name taken from the task name, so a task this file has never
+// heard of (a future flavor, a renamed task) is refused instead of slipping through. Aggregate tasks such as assembleRelease
+// depend on the per-variant tasks, which are checked. Debug variants are not covered: they are never production artifacts.
+// Credentials are named in messages, never printed.
+def packagingSigningRules = [
+    publicAppRelease  : [config: 'publicRelease', prefix: PUBLIC_RELEASE_SIGNING, what: 'the Public app release (com.zutsav.app)'],
+    adminAppRelease   : [config: 'adminRelease',  prefix: ADMIN_RELEASE_SIGNING,  what: 'the Admin app release (com.zutsav.app.admin)'],
+    publicAppLocalTest: [config: 'localTest',     prefix: LOCALTEST_SIGNING,      what: 'the Public app local-testing build'],
+    adminAppLocalTest : [config: 'localTest',     prefix: LOCALTEST_SIGNING,      what: 'the Admin app local-testing build'],
+]
+def packagingTaskName = ~/^(assemble|bundle|package|install|sign|validateSigning)(.*?)(Release|LocalTest)(Bundle)?$/
+
 gradle.taskGraph.whenReady { graph ->
-    def packagesLocalTest = graph.allTasks.any { it.project == project && it.name in ['assembleLocalTest', 'packageLocalTest', 'bundleLocalTest', 'packageLocalTestBundle'] }
-    if (!packagesLocalTest) return
-    def localTestSigning = android.buildTypes.localTest.signingConfig
-    if (localTestSigning == null || localTestSigning.name == 'debug') {
-        throw new GradleException(
-            'Release signing is not configured for the local-testing build. Provide ZUTSAV_RELEASE_STORE_FILE, ZUTSAV_RELEASE_STORE_PASSWORD, ' +
-            'ZUTSAV_RELEASE_KEY_ALIAS and ZUTSAV_RELEASE_KEY_PASSWORD. It is never signed with the debug keystore.')
+    def packagedVariants = [] as Set
+    graph.allTasks.findAll { it.project == project }.each { task ->
+        def m = packagingTaskName.matcher(task.name)
+        if (!m.matches() || m.group(2).isEmpty()) return
+        def variantName = m.group(2)[0].toLowerCase() + m.group(2).substring(1) + m.group(3)
+        if (!packagedVariants.add(variantName)) return
+        def rule = packagingSigningRules[variantName]
+        if (rule == null) {
+            throw new GradleException("Task '${task.name}' packages the variant '${variantName}', which this build does not recognise " +
+                "(known: ${packagingSigningRules.keySet().join(', ')}). Refusing to package a release-like variant without a signing rule.")
+        }
+        def signing = android.applicationVariants.find { it.name == variantName }?.signingConfig
+        if (signing == null || signing.name != rule.config) {
+            throw new GradleException("The variant '${variantName}' is not bound to its own signing identity ('${rule.config}'); " +
+                'refusing to package it. A release is never signed with the debug keystore or another flavor\'s key.')
+        }
+        def missing = signingParts.findAll { signingValue(rule.prefix, it).isEmpty() }.collect { "${rule.prefix}_${it}" }
+        if (!missing.isEmpty()) {
+            throw new GradleException("Signing is not configured for ${rule.what}. Provide ${missing.join(', ')} " +
+                '(environment or Gradle properties). It is never signed with the debug keystore, another flavor\'s key or a shared key.')
+        }
+        if (!file(signingValue(rule.prefix, 'STORE_FILE')).isFile()) {
+            throw new GradleException("${rule.prefix}_STORE_FILE does not point to an existing keystore file, so ${rule.what} cannot be signed.")
+        }
     }
+
+    // The local-testing variants also need their cleartext exception to match the backend host the JS bundle is built for: the API
+    // and base URLs (build-time EXPO_PUBLIC_*) must be http:// URLs whose host is listed in
+    // src/localTest/res/xml/network_security_config_localtest.xml. Refusing here is safer than an APK that cannot reach its own
+    // backend or that quietly depends on a host the config does not name.
+    if (!packagedVariants.any { it.endsWith('LocalTest') }) return
     def permitted = new XmlSlurper().parse(file('src/localTest/res/xml/network_security_config_localtest.xml'))
         .'domain-config'.domain*.text()*.trim()
     ['EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_BASE_URL'].each { name ->

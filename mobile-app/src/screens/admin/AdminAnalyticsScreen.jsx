@@ -5,7 +5,7 @@ import api from '../../api/axios';
 import { useThemeStore } from '../../store/themeStore';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
-import DashboardChart from '../../components/admin/DashboardChart';
+import DashboardChart from '../../components/shared/DashboardChart';
 
 export default function AdminAnalyticsScreen() {
   const { theme } = useThemeStore();

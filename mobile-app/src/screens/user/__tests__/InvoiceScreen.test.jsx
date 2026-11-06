@@ -238,6 +238,8 @@ describe('document types and access paths stay distinct', () => {
     expect(offenders).toEqual([]);
   });
 
+  // This describes the full (Admin-enabled) source tree. The Admin screens still exist in the repository for every build;
+  // a public bundle that leaves them out is checked separately, so this list is intentionally not variant-dependent.
   it('the invoice entry points are exactly: customer booking/order detail and the admin booking/refund screens', () => {
     const callers = listSource(SRC)
       .filter((f) => /navigate\(\s*['"]Invoice['"]/.test(fs.readFileSync(f, 'utf8')))

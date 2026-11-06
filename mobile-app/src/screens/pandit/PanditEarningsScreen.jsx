@@ -9,7 +9,7 @@ import { COLORS } from '../../theme/tokens';
 import { formatDate, formatCurrency } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ScreenHeader from '../../components/ScreenHeader';
-import DashboardChart from '../../components/admin/DashboardChart';
+import DashboardChart from '../../components/shared/DashboardChart';
 
 const TABS = [
   { key: 'stats',   label: 'Overview' },

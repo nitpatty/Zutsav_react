@@ -8,7 +8,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useThemeStore } from '../../store/themeStore';
 import { formatCurrency, timeAgo } from '../../utils/helpers';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import DashboardChart from '../../components/admin/DashboardChart';
+import DashboardChart from '../../components/shared/DashboardChart';
 
 const ACTIVITY_CATEGORIES = ['all', 'bookings', 'payments', 'orders', 'shipping', 'referrals', 'users', 'admin'];
 const NAV_MAP = { bookings: 'AdminBookingsTab', orders: 'AdminOrdersTab' };

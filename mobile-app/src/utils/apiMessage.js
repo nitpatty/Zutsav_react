@@ -4,9 +4,14 @@
 //
 // This only chooses text. It never inspects or changes the status handling around it, and it is not used for
 // checkout/booking machine codes (those keep their own handling).
+import { ROLE_NOT_SUPPORTED } from '../variants/roleSupport';
+
 const MAX_LENGTH = 300;
 
 export function apiErrorMessage(err, fallback) {
+  // A sign-in refused locally because this app does not serve the account's role (variants/roleSupport). Its message
+  // is the one approved wording, so every sign-in screen shows it identically.
+  if (err?.code === ROLE_NOT_SUPPORTED && typeof err.message === 'string' && err.message) return err.message;
   const message = err?.response?.data?.message;
   if (typeof message === 'string') {
     const trimmed = message.trim();

@@ -56,8 +56,11 @@ export default function RegisterScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
 
-  // Accept referral code from deep-link route params or global referral code store
-  const initialRef = route?.params?.referralCode || global.__zutsav_referral_code || '';
+  // Accept referral code from deep-link route params or global referral code store. A deep link such as
+  // zutsav://register?ref=CODE reaches this screen as route.params.ref (React Navigation hands over the query parameters under
+  // their own names); in-app navigation passes referralCode. The global is only set after a cold start has mounted this screen.
+  const linkRef = [route?.params?.referralCode, route?.params?.ref].find((v) => typeof v === 'string' && v.trim() !== '');
+  const initialRef = (linkRef ? linkRef.trim() : '') || global.__zutsav_referral_code || '';
   // Clear the global so it doesn't persist across navigation
   if (global.__zutsav_referral_code) delete global.__zutsav_referral_code;
 

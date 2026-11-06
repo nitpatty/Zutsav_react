@@ -17,15 +17,16 @@ import { useAuthStore } from './src/store/authStore';
 import { useThemeStore } from './src/store/themeStore';
 import { setupFCM } from './src/utils/fcm';
 import { toastConfig } from './src/utils/toastConfig';
+import { APP_SCHEME } from './src/config/appVariant';
 
 // ── Deep-link configuration ───────────────────────────────────────────────
 // Handles:
-//   zutsav://register?ref=CODE   (app scheme)
+//   zutsav://register?ref=CODE   (app scheme of the Public app; the Admin app uses zutsavadmin:// instead, see appVariant.js)
 //   https://www.zutsav.com/register?ref=CODE  (web URL)
 // When the app is opened via a referral link, the referral code is passed as
 // a route param to the Register screen so it can be pre-filled.
 const linking = {
-  prefixes: ['zutsav://', 'https://www.zutsav.com', 'https://zutsav.com'],
+  prefixes: [`${APP_SCHEME}://`, 'https://www.zutsav.com', 'https://zutsav.com'],
   config: {
     screens: {
       Auth: {

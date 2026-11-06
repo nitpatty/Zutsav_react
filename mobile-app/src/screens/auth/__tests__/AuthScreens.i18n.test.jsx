@@ -102,7 +102,7 @@ describe('LoginScreen', () => {
     render(<LoginScreen navigation={nav()} route={{ params: {} }} />);
     fireEvent.changeText(screen.getByPlaceholderText(hi.auth.identifierPlaceholder), ' a@example.invalid ');
     fireEvent.changeText(screen.getByPlaceholderText(hi.auth.passwordPlaceholder), 'secret1');
-    api.post.mockResolvedValueOnce({ data: { token: 't', user: { _id: 'u1', preferredLanguage: 'hi' } } });
+    api.post.mockResolvedValueOnce({ data: { token: 't', user: { _id: 'u1', role: 'user', preferredLanguage: 'hi' } } });
     fireEvent.press(screen.getByText(hi.auth.login));
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
     expect(api.post).toHaveBeenCalledWith('/auth/login', { emailOrPhone: 'a@example.invalid', password: 'secret1', rememberMe: true });
@@ -180,6 +180,40 @@ describe('RegisterScreen', () => {
     fireEvent.press(screen.getByText(hi.auth.continueArrow));
     expect(navigation.navigate).toHaveBeenCalledWith('VerificationChannel', {
       name: 'Asha', phone: '9876543210', email: 'a@example.invalid', role: 'pandit', referralCode: 'ABCDEF',
+    });
+  });
+
+  // Found on a device: zutsav://register?ref=CODE opened Register with the referral field EMPTY, because a deep link delivers the
+  // query parameter as route.params.ref while the screen only read route.params.referralCode.
+  describe('referral code from a deep link (route.params.ref)', () => {
+    const referralField = () => screen.getByPlaceholderText('e.g. ABCDEF');
+
+    it('prefills the field from route.params.ref', () => {
+      render(<RegisterScreen navigation={nav()} route={{ params: { ref: 'QA123' } }} />);
+      expect(referralField().props.value).toBe('QA123');
+    });
+
+    it('still prefills from route.params.referralCode, which wins when both are present', () => {
+      render(<RegisterScreen navigation={nav()} route={{ params: { referralCode: 'ABCDEF', ref: 'QA123' } }} />);
+      expect(referralField().props.value).toBe('ABCDEF');
+    });
+
+    it('ignores an empty or non-text ref and leaves the field empty', () => {
+      for (const ref of ['', '   ', 42, ['x'], { a: 1 }, null]) {
+        const { unmount } = render(<RegisterScreen navigation={nav()} route={{ params: { ref } }} />);
+        expect(referralField().props.value).toBe('');
+        unmount();
+      }
+    });
+
+    it('passes a prefilled ref on to the verification step', () => {
+      const navigation = nav();
+      render(<RegisterScreen navigation={navigation} route={{ params: { ref: ' QA123 ' } }} />);
+      fireEvent.changeText(screen.getByPlaceholderText('Your full name'), 'Asha');
+      fireEvent.changeText(screen.getByPlaceholderText('10-digit mobile number'), '9876543210');
+      fireEvent.changeText(screen.getByPlaceholderText('your@email.com'), 'a@example.invalid');
+      fireEvent.press(screen.getByText('Continue →'));
+      expect(navigation.navigate).toHaveBeenCalledWith('VerificationChannel', expect.objectContaining({ referralCode: 'QA123' }));
     });
   });
 });
@@ -351,7 +385,7 @@ describe('SetPasswordScreen', () => {
 
   it('registration sends the selected language with every existing field, referral attribution and the English consent record', async () => {
     await setLang('hi');
-    api.post.mockResolvedValue({ data: { token: 'tok', user: { _id: 'u9', preferredLanguage: 'hi' } } });
+    api.post.mockResolvedValue({ data: { token: 'tok', user: { _id: 'u9', role: 'pandit', preferredLanguage: 'hi' } } });
     render(<SetPasswordScreen navigation={nav()} route={route} />);
     fill('hi');
     fireEvent.press(screen.getByText(hi.auth.createAccount));
@@ -369,7 +403,7 @@ describe('SetPasswordScreen', () => {
   });
 
   it('English users send preferredLanguage "en"; the language follows what was selected last', async () => {
-    api.post.mockResolvedValue({ data: { token: 'tok', user: { _id: 'u9' } } });
+    api.post.mockResolvedValue({ data: { token: 'tok', user: { _id: 'u9', role: 'user' } } });
     render(<SetPasswordScreen navigation={nav()} route={route} />);
     fill('en');
     fireEvent.press(screen.getByText('Create Account'));

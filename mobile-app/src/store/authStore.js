@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import api, { setSessionExpiredHandler } from '../api/axios';
 import { clearLocalSession, clearUserScopedData } from '../utils/sessionCleanup';
 import { applyAccountLanguage } from '../i18n/languageStore';
+import { getRoleSupport, roleRejection } from '../variants/roleSupport';
 
 // Mobile always asks for the backend's persistent-session lifetime. The token is
 // kept in SecureStore until it expires or the user logs out, so the short
@@ -16,6 +17,26 @@ const REMEMBER_ME = true;
 // Concurrent 401s all route here; they share one run.
 let expiryInFlight = null;
 
+// Best-effort server-side revocation of a session this app is refusing to keep, through the EXISTING POST /auth/logout
+// (it ends the Admin-tier session record the sign-in just created; it is a no-op for tokens without one). The token is
+// passed explicitly because nothing is stored for it, it is never logged, and a failure (offline, timeout, 4xx/5xx)
+// is swallowed: the local refusal never depends on it. Callers do not wait for it.
+function revokeServerSession(token) {
+  if (!token) return Promise.resolve();
+  return Promise.resolve()
+    .then(() => api.post('/auth/logout', undefined, { timeout: 5000, headers: { Authorization: `Bearer ${token}` } }))
+    .catch(() => {});
+}
+
+// For a session that was just issued by the server and is NOT stored yet. If this app does not serve the account's
+// role, refuse it before anything is written (SecureStore, state, caches) and ask the server to end it.
+function refuseUnsupportedSession(user, token) {
+  const support = getRoleSupport(user?.role);
+  if (support.supported) return;
+  revokeServerSession(token);
+  throw roleRejection(support.reason);
+}
+
 export const useAuthStore = create((set, get) => ({
   user:    null,
   token:   null,
@@ -27,19 +48,38 @@ export const useAuthStore = create((set, get) => ({
       const token = await SecureStore.getItemAsync('zutsav_token');
       const raw   = await SecureStore.getItemAsync('zutsav_user');
       if (token && raw) {
-        set({ token, user: JSON.parse(raw), ready: true });
+        const user = JSON.parse(raw);
+        if (getRoleSupport(user?.role).supported) {
+          set({ token, user, ready: true });
+          return;
+        }
+        // A session for a role this build does not serve (e.g. an Admin session left by an earlier install): it is never
+        // put in state, the stored credentials and per-account data are wiped (never throws), and the server is asked
+        // to end it without waiting. The app then starts signed out.
+        await clearLocalSession();
+        revokeServerSession(token);
+        set({ user: null, token: null, ready: true });
       } else {
         set({ ready: true });
       }
     } catch {
-      set({ ready: true });
+      set({ user: null, token: null, ready: true });
     }
+  },
+
+  // Root routing found a signed-in user whose role this build does not serve (e.g. the role changed on the server):
+  // end the session locally first, then ask the server to end it.
+  rejectUnsupportedSession: async () => {
+    const { token } = get();
+    await get().clearSession();
+    revokeServerSession(token);
   },
 
   login: async (emailOrPhone, password) => {
     set({ loading: true });
     try {
       const { data } = await api.post('/auth/login', { emailOrPhone, password, rememberMe: REMEMBER_ME });
+      refuseUnsupportedSession(data.user, data.token); // before the deletion-pending branch and before any storage
       if (!data.deletionPending) {
         await clearUserScopedData(); // no previous account's cart/cache may carry over
         await SecureStore.setItemAsync('zutsav_token', data.token);
@@ -57,6 +97,7 @@ export const useAuthStore = create((set, get) => ({
   },
 
   setSession: async (token, user) => {
+    refuseUnsupportedSession(user, token); // before anything is cleared or stored
     await clearUserScopedData();
     await SecureStore.setItemAsync('zutsav_token', token);
     await SecureStore.setItemAsync('zutsav_user', JSON.stringify(user));
@@ -71,6 +112,7 @@ export const useAuthStore = create((set, get) => ({
 
   loginWithOtp: async (emailOrPhone, otp) => {
     const { data } = await api.post('/auth/login/otp/verify', { emailOrPhone, otp, rememberMe: REMEMBER_ME });
+    refuseUnsupportedSession(data.user, data.token); // before the deletion-pending branch and before any storage
     // deletion_pending accounts resume the 30-day grace period — no token is
     // issued and no session is persisted (mirrors password login)
     if (!data.deletionPending) {
